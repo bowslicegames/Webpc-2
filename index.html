@@ -1,29 +1,31 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta
-  name="viewport"
-  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
-/>
+<meta name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 
 <title>Browser Linux x86-64 VM</title>
+
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"
+>
 
 <style>
     * {
         box-sizing: border-box;
-        -webkit-tap-highlight-color: transparent;
     }
 
-    html,
-    body {
+    html, body {
         margin: 0;
         width: 100%;
         height: 100%;
-        overflow: hidden;
         background: #050505;
-        color: #eee;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #fff;
+        font-family: system-ui, sans-serif;
+        overflow: hidden;
     }
 
     #app {
@@ -33,191 +35,55 @@
         flex-direction: column;
     }
 
-    #topbar {
-        height: 58px;
-        min-height: 58px;
+    #top {
+        flex: 0 0 auto;
+        padding: 10px 14px;
         background: #111;
         border-bottom: 1px solid #333;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 8px 12px;
-        z-index: 10;
     }
 
     #title {
+        font-size: 18px;
         font-weight: 700;
-        white-space: nowrap;
     }
 
     #status {
-        font-size: 13px;
+        margin-top: 4px;
         color: #aaa;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        flex: 1;
+        font-size: 13px;
     }
 
-    button {
-        border: 1px solid #555;
-        background: #222;
-        color: white;
-        border-radius: 8px;
-        padding: 9px 13px;
-        font-size: 14px;
-        cursor: pointer;
-    }
-
-    button:active {
-        background: #333;
-    }
-
-    button:disabled {
-        opacity: .45;
-        cursor: default;
-    }
-
-    #screen {
-        position: relative;
-        flex: 1;
+    #terminal-wrap {
+        flex: 1 1 auto;
         min-height: 0;
+        padding: 8px;
         background: #000;
-        overflow: hidden;
     }
 
     #terminal {
         width: 100%;
         height: 100%;
-        padding: 10px;
-        overflow: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-size: 14px;
-        line-height: 1.35;
-        color: #ddd;
-        background: #000;
     }
 
-    #terminal:focus {
-        outline: none;
-    }
-
-    #boot {
-        position: absolute;
-        inset: 0;
-        background: #050505;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 25px;
-        z-index: 5;
-    }
-
-    #bootBox {
-        width: min(720px, 100%);
-        border: 1px solid #333;
-        border-radius: 14px;
-        padding: 22px;
+    #bottom {
+        flex: 0 0 auto;
+        padding: 8px 12px;
         background: #111;
-        box-shadow: 0 20px 80px rgba(0,0,0,.5);
+        border-top: 1px solid #333;
+        color: #888;
+        font-size: 12px;
     }
 
-    #bootBox h1 {
-        margin: 0 0 10px;
-        font-size: 23px;
-    }
-
-    #bootBox p {
-        color: #aaa;
-        line-height: 1.5;
-    }
-
-    #checks {
-        margin: 18px 0;
-        display: grid;
-        gap: 8px;
-    }
-
-    .check {
-        padding: 10px 12px;
-        border-radius: 8px;
-        background: #181818;
-        border: 1px solid #292929;
-        font-family: ui-monospace, monospace;
-        font-size: 13px;
-    }
-
-    .good {
-        border-color: #235f35;
-        color: #8fe3a4;
-    }
-
-    .bad {
-        border-color: #703030;
-        color: #ff8e8e;
+    .ok {
+        color: #62e06b;
     }
 
     .warn {
-        border-color: #665c2c;
-        color: #eadb83;
+        color: #ffd166;
     }
 
-    #error {
-        display: none;
-        margin-top: 15px;
-        padding: 13px;
-        background: #260f0f;
-        border: 1px solid #713333;
-        border-radius: 8px;
-        color: #ffaaaa;
-        white-space: pre-wrap;
-        font-family: ui-monospace, monospace;
-        font-size: 13px;
-    }
-
-    #progressOuter {
-        height: 8px;
-        background: #222;
-        border-radius: 999px;
-        overflow: hidden;
-        margin-top: 15px;
-    }
-
-    #progress {
-        width: 0%;
-        height: 100%;
-        background: #ddd;
-        transition: width .2s ease;
-    }
-
-    #keyboardInput {
-        position: fixed;
-        left: -10000px;
-        top: -10000px;
-        width: 1px;
-        height: 1px;
-        opacity: 0;
-    }
-
-    @media (max-width: 600px) {
-        #title {
-            display: none;
-        }
-
-        #topbar {
-            height: 52px;
-            min-height: 52px;
-        }
-
-        button {
-            padding: 8px 10px;
-        }
-
-        #terminal {
-            font-size: 13px;
-        }
+    .error {
+        color: #ff6666;
     }
 </style>
 </head>
@@ -226,1126 +92,413 @@
 
 <div id="app">
 
-    <div id="topbar">
-        <div id="title">Linux x86-64 VM</div>
-
-        <div id="status">
-            Checking browser...
-        </div>
-
-        <button id="startButton" disabled>
-            Start VM
-        </button>
-
-        <button id="stopButton" disabled>
-            Stop
-        </button>
+    <div id="top">
+        <div id="title">Linux x86-64 Browser VM</div>
+        <div id="status">Starting...</div>
     </div>
 
-    <div id="screen">
+    <div id="terminal-wrap">
+        <div id="terminal"></div>
+    </div>
 
-        <div id="boot">
-
-            <div id="bootBox">
-
-                <h1>Browser Linux VM</h1>
-
-                <p>
-                    This VM runs entirely inside the browser.
-                    Nothing is written to permanent browser storage by this page.
-                </p>
-
-                <div id="checks">
-
-                    <div id="checkWebAssembly" class="check">
-                        Checking WebAssembly...
-                    </div>
-
-                    <div id="checkSAB" class="check">
-                        Checking SharedArrayBuffer...
-                    </div>
-
-                    <div id="checkIsolation" class="check">
-                        Checking cross-origin isolation...
-                    </div>
-
-                    <div id="checkMemory" class="check">
-                        Checking browser memory support...
-                    </div>
-
-                </div>
-
-                <div id="error"></div>
-
-                <div id="progressOuter">
-                    <div id="progress"></div>
-                </div>
-
-            </div>
-
-        </div>
-
-        <div
-            id="terminal"
-            tabindex="0"
-            aria-label="Virtual machine terminal"
-        ></div>
-
+    <div id="bottom">
+        Ephemeral VM • No IndexedDB disk persistence • QEMU-Wasm x86-64
     </div>
 
 </div>
 
-<input id="keyboardInput" autocomplete="off" autocorrect="off"
-       autocapitalize="off" spellcheck="false">
-
 <script>
-
-/*
-============================================================
- BROWSER LINUX x86-64 VM
- ============================================================
-
- Architecture:
-
- Browser
-    |
-    +-- this HTML file
-    |
-    +-- QEMU-Wasm x86-64 runtime
-    |
-    +-- x86-64 Linux guest
-    |
-    +-- Minecraft Java later
-
- IMPORTANT:
-
- This page deliberately does NOT use:
-     localStorage
-     IndexedDB
-     Cache API
-     persistent filesystem storage
-
- VM state therefore disappears when the page is closed/reloaded.
-
- The QEMU runtime itself is downloaded into browser memory.
-
- ============================================================
-*/
-
-
 "use strict";
 
-
 /*
-------------------------------------------------------------
- CONFIGURATION
-------------------------------------------------------------
+    ============================================================
+    QEMU-WASM x86-64 CONFIGURATION
+    ============================================================
 
-The runtime files must come from a QEMU-Wasm x86-64 build.
+    These are the generated assets from:
 
-The official QEMU-Wasm sample generates:
+    ktock/qemu-wasm-demo-images
 
-    qemu-system-x86_64.js
-    qemu-system-x86_64.wasm
-    qemu-system-x86_64.worker.js
-    qemu-system-x86_64.data
-    load.js
+    The files are publicly available and are downloaded
+    automatically by the browser.
 
-The project intentionally keeps these URLs configurable because
-the official project currently documents building the artifacts
-rather than providing a permanent public CDN for them.
-------------------------------------------------------------
+    Nothing is stored permanently by this HTML.
 */
 
+const IMAGE_BASE =
+    "https://ktock.github.io/qemu-wasm-demo-images/alpine-x86_64/";
 
-const CONFIG = {
+const RUNTIME_BASE = IMAGE_BASE;
 
-    /*
-     * Put the URL containing your QEMU-Wasm build here.
-     *
-     * Example:
-     *
-     * RUNTIME_BASE:
-     *     "https://YOUR-SITE.example/qemu/"
-     *
-     * The directory must contain:
-     *
-     * qemu-system-x86_64.js
-     * qemu-system-x86_64.wasm
-     * qemu-system-x86_64.worker.js
-     * qemu-system-x86_64.data
-     * load.js
-     *
-     * Do NOT put a trailing filename here.
-     */
+/*
+    QEMU arguments copied from the actual upstream
+    Alpine x86-64 QEMU-Wasm demo.
 
-    RUNTIME_BASE: "",
+    Networking is intentionally disabled for this first test.
+    We want to prove the x86-64 VM itself works before adding
+    browser networking.
+*/
 
+var Module = {
 
-    /*
-     * Optional Linux guest image.
-     *
-     * The first architecture test can use the packaged
-     * QEMU-Wasm image.
-     *
-     * Minecraft will eventually need a considerably more
-     * complete Linux guest.
-     */
+    arguments: [
+        "-nographic",
 
-    GUEST_IMAGE_URL: "",
+        "-M", "pc",
 
+        "-m", "512M",
 
-    /*
-     * VM memory.
-     *
-     * This is deliberately conservative for iPad browsers.
-     *
-     * Later, once the basic x86-64 VM works, this can be
-     * increased depending on the device.
-     */
+        "-accel", "tcg,tb-size=500",
 
-    MEMORY_MB: 1024,
+        "-L", "/pack-rom/",
 
+        "-nic", "none",
+
+        "-kernel", "/pack-kernel/vmlinuz-virt",
+
+        "-initrd", "/pack-initramfs/initramfs-virt",
+
+        "-append",
+        "console=ttyS0 root=/dev/vda noautodetect hostname=browser-vm",
+
+        "-drive",
+        "id=test,file=/pack-rootfs/disk-rootfs.img,format=raw,if=none",
+
+        "-device",
+        "virtio-blk-pci,drive=test"
+    ],
 
     /*
-     * Do not persist anything.
-     */
+        Every QEMU runtime/data file is downloaded from the
+        public generated-assets repository.
+    */
+    locateFile: function(path, prefix) {
+        return RUNTIME_BASE + path;
+    },
 
-    PERSIST: false
+    mainScriptUrlOrBlob:
+        RUNTIME_BASE + "out.js"
 };
 
+</script>
+
+
+<script type="module">
 
 /*
-------------------------------------------------------------
- DOM
-------------------------------------------------------------
+    ============================================================
+    BROWSER REQUIREMENT CHECK
+    ============================================================
 */
 
-const statusElement =
-    document.getElementById("status");
+const status = document.getElementById("status");
 
-const terminal =
-    document.getElementById("terminal");
-
-const startButton =
-    document.getElementById("startButton");
-
-const stopButton =
-    document.getElementById("stopButton");
-
-const bootScreen =
-    document.getElementById("boot");
-
-const errorElement =
-    document.getElementById("error");
-
-const progressElement =
-    document.getElementById("progress");
-
-const checkWebAssembly =
-    document.getElementById("checkWebAssembly");
-
-const checkSAB =
-    document.getElementById("checkSAB");
-
-const checkIsolation =
-    document.getElementById("checkIsolation");
-
-const checkMemory =
-    document.getElementById("checkMemory");
-
-
-/*
-------------------------------------------------------------
- STATE
-------------------------------------------------------------
-*/
-
-let vmRunning = false;
-let vmModule = null;
-let runtimeLoaded = false;
-
-
-/*
-------------------------------------------------------------
- TERMINAL
-------------------------------------------------------------
-*/
-
-function terminalWrite(text) {
-
-    terminal.textContent += String(text);
-
-    terminal.scrollTop = terminal.scrollHeight;
+function setStatus(text, cls = "") {
+    status.textContent = text;
+    status.className = cls;
 }
 
-
-function terminalClear() {
-
-    terminal.textContent = "";
+if (typeof WebAssembly === "undefined") {
+    setStatus("WebAssembly is not supported.", "error");
+    throw new Error("WebAssembly unavailable");
 }
 
-
-function setStatus(text) {
-
-    statusElement.textContent = text;
-}
-
-
-function setProgress(value) {
-
-    value = Math.max(0, Math.min(100, value));
-
-    progressElement.style.width =
-        value + "%";
-}
-
-
-function showError(message) {
-
-    errorElement.style.display = "block";
-
-    errorElement.textContent =
-        message;
-}
-
-
-/*
-------------------------------------------------------------
- BROWSER CHECKS
-------------------------------------------------------------
-*/
-
-function runBrowserChecks() {
-
-    let ok = true;
-
-
-    /*
-     * WebAssembly
-     */
-
-    if (typeof WebAssembly !== "undefined") {
-
-        checkWebAssembly.textContent =
-            "✓ WebAssembly available";
-
-        checkWebAssembly.className =
-            "check good";
-
-    } else {
-
-        checkWebAssembly.textContent =
-            "✗ WebAssembly unavailable";
-
-        checkWebAssembly.className =
-            "check bad";
-
-        ok = false;
-    }
-
-
-    /*
-     * SharedArrayBuffer
-     */
-
-    if (typeof SharedArrayBuffer !== "undefined") {
-
-        checkSAB.textContent =
-            "✓ SharedArrayBuffer available";
-
-        checkSAB.className =
-            "check good";
-
-    } else {
-
-        checkSAB.textContent =
-            "✗ SharedArrayBuffer unavailable";
-
-        checkSAB.className =
-            "check bad";
-
-        ok = false;
-    }
-
-
-    /*
-     * Cross-origin isolation
-     */
-
-    if (window.crossOriginIsolated === true) {
-
-        checkIsolation.textContent =
-            "✓ Cross-origin isolation enabled";
-
-        checkIsolation.className =
-            "check good";
-
-    } else {
-
-        checkIsolation.textContent =
-            "✗ Cross-origin isolation unavailable";
-
-        checkIsolation.className =
-            "check bad";
-
-        ok = false;
-    }
-
-
-    /*
-     * Browser memory.
-     *
-     * navigator.deviceMemory is not available on every
-     * browser, so absence is not treated as failure.
-     */
-
-    if ("deviceMemory" in navigator) {
-
-        const memory =
-            Number(navigator.deviceMemory);
-
-        checkMemory.textContent =
-            "✓ Browser reports approximately " +
-            memory +
-            " GB device memory";
-
-        checkMemory.className =
-            "check good";
-
-    } else {
-
-        checkMemory.textContent =
-            "✓ Browser memory information unavailable; continuing";
-
-        checkMemory.className =
-            "check warn";
-    }
-
-
-    return ok;
-}
-
-
-/*
-------------------------------------------------------------
- URL HELPERS
-------------------------------------------------------------
-*/
-
-function runtimeURL(filename) {
-
-    if (!CONFIG.RUNTIME_BASE) {
-
-        throw new Error(
-            "RUNTIME_BASE has not been configured."
-        );
-    }
-
-
-    return CONFIG.RUNTIME_BASE.replace(/\/+$/, "") +
-        "/" +
-        filename;
-}
-
-
-/*
-------------------------------------------------------------
- FETCH TEST
-------------------------------------------------------------
-
-We test the runtime before attempting to boot QEMU.
-
-This gives useful errors instead of a mysterious WASM crash.
-------------------------------------------------------------
-*/
-
-async function testRuntimeFile(filename) {
-
-    const url =
-        runtimeURL(filename);
-
-
-    const response =
-        await fetch(
-            url,
-            {
-                method: "HEAD",
-                cache: "no-store"
-            }
-        );
-
-
-    if (!response.ok) {
-
-        throw new Error(
-            filename +
-            " could not be downloaded.\n\n" +
-            "HTTP status: " +
-            response.status +
-            "\n\n" +
-            url
-        );
-    }
-
-
-    return response;
-}
-
-
-/*
-------------------------------------------------------------
- LOAD RUNTIME
-------------------------------------------------------------
-*/
-
-async function verifyRuntime() {
-
-    if (!CONFIG.RUNTIME_BASE) {
-
-        throw new Error(
-            "The browser environment is ready, " +
-            "but the QEMU-Wasm runtime URL has not yet been configured.\n\n" +
-
-            "This version deliberately refuses to download an " +
-            "unknown or fake QEMU binary.\n\n" +
-
-            "The runtime directory must contain:\n" +
-
-            "qemu-system-x86_64.js\n" +
-            "qemu-system-x86_64.wasm\n" +
-            "qemu-system-x86_64.worker.js\n" +
-            "qemu-system-x86_64.data\n" +
-            "load.js"
-        );
-    }
-
-
-    const files = [
-
-        "qemu-system-x86_64.js",
-
-        "qemu-system-x86_64.wasm",
-
-        "qemu-system-x86_64.worker.js",
-
-        "qemu-system-x86_64.data",
-
-        "load.js"
-
-    ];
-
-
+if (typeof SharedArrayBuffer === "undefined") {
     setStatus(
-        "Checking QEMU x86-64 runtime..."
+        "SharedArrayBuffer is unavailable. Check your Cloudflare COOP/COEP headers.",
+        "error"
+    );
+    throw new Error("SharedArrayBuffer unavailable");
+}
+
+if (window.crossOriginIsolated !== true) {
+    setStatus(
+        "The page is not cross-origin isolated. Check COOP/COEP headers.",
+        "error"
+    );
+    throw new Error("crossOriginIsolated === false");
+}
+
+setStatus("Browser requirements passed. Loading x86-64 QEMU...", "ok");
+
+
+/*
+    ============================================================
+    LOAD XTERM
+    ============================================================
+*/
+
+try {
+
+    const xtermModule =
+        await import(
+            "https://unpkg.com/xterm@5.3.0/lib/xterm.js"
+        );
+
+    const ptyModule =
+        await import(
+            "https://unpkg.com/xterm-pty/index.js"
+        );
+
+    /*
+        xterm normally exports Terminal.
+        xterm-pty provides openpty().
+    */
+
+    const Terminal =
+        xtermModule.Terminal ||
+        window.Terminal;
+
+    if (!Terminal) {
+        throw new Error("Could not load xterm Terminal.");
+    }
+
+    /*
+        Some versions expose openpty globally.
+        Others expose it from the imported module.
+    */
+
+    const openptyFunction =
+        ptyModule.openpty ||
+        window.openpty;
+
+    if (!openptyFunction) {
+        throw new Error("Could not load xterm-pty.");
+    }
+
+
+    /*
+        ========================================================
+        CREATE TERMINAL
+        ========================================================
+    */
+
+    const terminal = new Terminal({
+        cursorBlink: true,
+        convertEol: true,
+        scrollback: 5000,
+        fontSize: 14,
+        theme: {
+            background: "#000000",
+            foreground: "#ffffff",
+            cursor: "#ffffff"
+        }
+    });
+
+    terminal.open(
+        document.getElementById("terminal")
     );
 
 
-    for (
-        let i = 0;
-        i < files.length;
-        i++
-    ) {
+    /*
+        ========================================================
+        CREATE PTY
+        ========================================================
+    */
 
-        const filename =
-            files[i];
+    const pty = openptyFunction();
 
+    const master = pty.master;
+    const slave = pty.slave;
 
-        setStatus(
-            "Checking " +
-            filename +
-            "..."
-        );
+    terminal.loadAddon(master);
 
-
-        await testRuntimeFile(
-            filename
-        );
+    Module.pty = slave;
 
 
-        setProgress(
-            ((i + 1) / files.length) * 20
-        );
-    }
+    /*
+        ========================================================
+        LOAD THE GENERATED Emscripten DATA PACKAGES
+        ========================================================
 
+        These files populate QEMU's virtual filesystem:
 
-    runtimeLoaded = true;
+        load-rootfs.data
+        load-kernel.data
+        load-initramfs.data
+        load-rom.data
+    */
 
+    function loadScript(src) {
 
-    setStatus(
-        "QEMU x86-64 runtime available"
-    );
-}
-
-
-/*
-------------------------------------------------------------
- DYNAMIC QEMU SCRIPT
-------------------------------------------------------------
-
-The QEMU JavaScript launcher is loaded from the configured
-runtime directory.
-
-No external JavaScript library is needed by this HTML.
-------------------------------------------------------------
-*/
-
-function loadQEMUScript() {
-
-    return new Promise(
-        (resolve, reject) => {
+        return new Promise((resolve, reject) => {
 
             const script =
                 document.createElement("script");
 
+            script.src = src;
 
-            script.src =
-                runtimeURL(
-                    "qemu-system-x86_64.js"
-                );
-
-
-            script.async = true;
-
-
-            script.onload = () => {
-
-                resolve();
-            };
-
+            script.onload = resolve;
 
             script.onerror = () => {
-
                 reject(
                     new Error(
-                        "QEMU JavaScript runtime failed to load:\n\n" +
-                        script.src
+                        "Failed to load: " + src
                     )
                 );
             };
 
+            document.head.appendChild(script);
+        });
+    }
 
-            document.head.appendChild(
-                script
-            );
-        }
+
+    setStatus(
+        "Downloading Linux VM components...",
+        "warn"
     );
-}
 
-
-/*
-------------------------------------------------------------
- QEMU MODULE
-------------------------------------------------------------
-
-Emscripten-generated QEMU builds expose a Module object.
-
-The exact exported interface can differ between builds, so
-we don't invent APIs that the generated runtime doesn't expose.
-
-Instead we provide the configuration hooks expected by the
-official build architecture.
-------------------------------------------------------------
-*/
-
-function createQEMUModule() {
-
-    const moduleConfig = {
-
-        noInitialRun: true,
-
-        print: function(text) {
-
-            terminalWrite(
-                text + "\n"
-            );
-        },
-
-        printErr: function(text) {
-
-            terminalWrite(
-                "[QEMU] " +
-                text +
-                "\n"
-            );
-        },
-
-
-        /*
-         * Locate WASM/worker/data files next to the runtime.
-         */
-
-        locateFile: function(path) {
-
-            return runtimeURL(path);
-        },
-
-
-        /*
-         * Disable persistent browser storage.
-         */
-
-        persistent: false,
-
-
-        /*
-         * Prevent Emscripten from assuming that this
-         * application wants a persistent home directory.
-         */
-
-        ENV: {
-
-            HOME: "/tmp"
-
-        }
-
-    };
-
-
-    window.Module =
-        moduleConfig;
-
-
-    return moduleConfig;
-}
-
-
-/*
-------------------------------------------------------------
- START VM
-------------------------------------------------------------
-*/
-
-async function startVM() {
-
-    if (vmRunning) {
-
-        return;
-    }
-
-
-    terminalClear();
-
-
-    try {
-
-        startButton.disabled =
-            true;
-
-
-        setProgress(0);
-
-
-        if (!runBrowserChecks()) {
-
-            throw new Error(
-
-                "This browser page is not currently running " +
-                "in the environment required by the threaded " +
-                "QEMU-Wasm x86-64 build.\n\n" +
-
-                "The server must send:\n\n" +
-
-                "Cross-Origin-Opener-Policy: same-origin\n" +
-
-                "Cross-Origin-Embedder-Policy: require-corp\n\n" +
-
-                "This cannot be added by JavaScript inside the " +
-                "HTML file itself."
-            );
-        }
-
-
-        await verifyRuntime();
-
-
-        setStatus(
-            "Loading QEMU x86-64..."
-        );
-
-
-        createQEMUModule();
-
-
-        await loadQEMUScript();
-
-
-        setProgress(45);
-
-
-        /*
-         * At this point the generated QEMU runtime should have
-         * registered itself with Emscripten.
-         *
-         * We deliberately check what exists instead of calling
-         * an invented function.
-         */
-
-
-        if (
-            typeof window.Module === "undefined"
-        ) {
-
-            throw new Error(
-                "QEMU runtime loaded but did not expose " +
-                "the expected Emscripten Module."
-            );
-        }
-
-
-        setProgress(60);
-
-
-        terminalWrite(
-            "QEMU-Wasm x86-64 runtime loaded.\n"
-        );
-
-
-        terminalWrite(
-            "VM memory target: " +
-            CONFIG.MEMORY_MB +
-            " MB\n"
-        );
-
-
-        terminalWrite(
-            "Persistent storage: DISABLED\n"
-        );
-
-
-        terminalWrite(
-            "\n"
-        );
-
-
-        /*
-         * The generated runtime must now be started using the
-         * command-line configuration from the particular build.
-         *
-         * We don't pretend that every QEMU-Wasm build exposes
-         * the same JavaScript API.
-         */
-
-        if (
-            typeof window.Module.callMain ===
-            "function"
-        ) {
-
-            /*
-             * Generic Emscripten entry point.
-             *
-             * The actual kernel/rootfs arguments belong here
-             * once the x86-64 guest package is selected.
-             */
-
-            if (!CONFIG.GUEST_IMAGE_URL) {
-
-                terminalWrite(
-                    "QEMU is ready.\n"
-                );
-
-                terminalWrite(
-                    "No guest Linux image has been selected yet.\n"
-                );
-
-                terminalWrite(
-                    "The next stage is to attach the disposable " +
-                    "x86-64 Linux guest image.\n"
-                );
-
-                terminalWrite(
-                    "\n"
-                );
-
-                setStatus(
-                    "QEMU ready — guest image required"
-                );
-
-                setProgress(100);
-
-                stopButton.disabled =
-                    false;
-
-                vmRunning =
-                    true;
-
-                bootScreen.style.display =
-                    "none";
-
-                return;
-            }
-
-
-            /*
-             * A guest image is configured.
-             *
-             * We intentionally don't guess its QEMU device
-             * arguments here. The image needs to be packaged
-             * according to the QEMU-Wasm build.
-             */
-
-            terminalWrite(
-                "Guest image configured.\n"
-            );
-
-            terminalWrite(
-                "Preparing x86-64 guest...\n"
-            );
-
-
-            window.Module.callMain([
-                "-m",
-                String(CONFIG.MEMORY_MB),
-                "M"
-            ]);
-
-
-            vmRunning =
-                true;
-
-
-            bootScreen.style.display =
-                "none";
-
-
-            stopButton.disabled =
-                false;
-
-
-            setProgress(100);
-
-
-            setStatus(
-                "Linux x86-64 VM running"
-            );
-
-
-        } else {
-
-            throw new Error(
-                "The QEMU runtime loaded, but this particular " +
-                "build does not expose Emscripten callMain().\n\n" +
-
-                "The runtime itself is therefore not compatible " +
-                "with this launcher yet."
-            );
-        }
-
-
-    } catch (error) {
-
-        console.error(error);
-
-
-        showError(
-            error && error.message
-                ? error.message
-                : String(error)
-        );
-
-
-        setStatus(
-            "VM could not be started"
-        );
-
-
-        startButton.disabled =
-            false;
-
-
-        setProgress(0);
-    }
-}
-
-
-/*
-------------------------------------------------------------
- STOP VM
-------------------------------------------------------------
-
-There is intentionally no persistence.
-
-Stopping/reloading destroys the disposable VM state.
-------------------------------------------------------------
-*/
-
-function stopVM() {
 
     /*
-     * QEMU-Wasm builds can differ in their shutdown API.
-     *
-     * Don't invent a destructive call.
-     *
-     * Instead reload the VM page after explicitly clearing
-     * our JavaScript state.
-     */
+        Important:
 
-    vmRunning =
-        false;
+        Module.locateFile() above tells each generated
+        .js data-loader where its corresponding .data
+        file is located.
+    */
 
-    vmModule =
-        null;
-
-
-    stopButton.disabled =
-        true;
-
-
-    startButton.disabled =
-        false;
-
-
-    terminalWrite(
-        "\n\nVM stopped.\n"
+    await loadScript(
+        RUNTIME_BASE + "load-rootfs.js"
     );
 
+    await loadScript(
+        RUNTIME_BASE + "load-kernel.js"
+    );
+
+    await loadScript(
+        RUNTIME_BASE + "load-initramfs.js"
+    );
+
+    await loadScript(
+        RUNTIME_BASE + "load-rom.js"
+    );
+
+
+    /*
+        ========================================================
+        LOAD QEMU-WASM
+        ========================================================
+    */
 
     setStatus(
-        "VM stopped — no state was saved"
+        "Loading QEMU-Wasm x86-64 runtime...",
+        "warn"
     );
+
+    /*
+        The upstream runtime is Emscripten-generated.
+        We import it as a module and pass our Module object.
+    */
+
+    const qemuModule =
+        await import(
+            RUNTIME_BASE + "out.js"
+        );
+
+
+    /*
+        ========================================================
+        START QEMU
+        ========================================================
+    */
+
+    setStatus(
+        "Starting x86-64 Linux...",
+        "warn"
+    );
+
+    const initEmscriptenModule =
+        qemuModule.default || qemuModule;
+
+
+    /*
+        QEMU's generated terminal handling expects the
+        PTY to behave correctly when polling.
+    */
+
+    const oldPoll =
+        Module.TTY &&
+        Module.TTY.stream_ops &&
+        Module.TTY.stream_ops.poll;
+
+    if (oldPoll && Module.pty) {
+
+        Module.TTY.stream_ops.poll =
+            function(stream, timeout) {
+
+                const pty = Module.pty;
+
+                if (!pty.readable) {
+                    return (
+                        (pty.readable ? 1 : 0) |
+                        (pty.writable ? 4 : 0)
+                    );
+                }
+
+                return oldPoll.call(
+                    this,
+                    stream,
+                    timeout
+                );
+            };
+    }
+
+
+    /*
+        Start QEMU.
+    */
+
+    const instance =
+        await initEmscriptenModule(Module);
+
+
+    /*
+        ========================================================
+        SUCCESS
+        ========================================================
+    */
+
+    setStatus(
+        "Linux x86-64 VM running.",
+        "ok"
+    );
+
+    terminal.focus();
+
+
+} catch (error) {
+
+    console.error(error);
+
+    setStatus(
+        "VM failed to start: " +
+        (error && error.message
+            ? error.message
+            : String(error)),
+        "error"
+    );
+
+    const terminalElement =
+        document.getElementById("terminal");
+
+    terminalElement.innerHTML =
+        "<div style=\"" +
+        "padding:20px;" +
+        "font-family:monospace;" +
+        "color:#ff6666;" +
+        "white-space:pre-wrap;" +
+        "\">" +
+        "QEMU-Wasm startup error\\n\\n" +
+        String(
+            error && error.stack
+                ? error.stack
+                : error
+        ) +
+        "</div>";
 }
-
-
-/*
-------------------------------------------------------------
- TOUCH / KEYBOARD SUPPORT
-------------------------------------------------------------
-*/
-
-terminal.addEventListener(
-    "click",
-    () => {
-
-        terminal.focus();
-    }
-);
-
-
-document.addEventListener(
-    "keydown",
-    event => {
-
-        if (!vmRunning) {
-
-            return;
-        }
-
-
-        /*
-         * Don't intercept browser shortcuts.
-         */
-
-        if (
-            event.ctrlKey ||
-            event.metaKey ||
-            event.altKey
-        ) {
-
-            return;
-        }
-
-
-        /*
-         * The exact keyboard bridge is supplied by the
-         * xterm/QEMU frontend in the final guest build.
-         *
-         * This listener exists so the page remains ready for
-         * that bridge without pretending normal DOM keyboard
-         * events are automatically QEMU scancodes.
-         */
-    }
-);
-
-
-/*
-------------------------------------------------------------
- BUTTONS
-------------------------------------------------------------
-*/
-
-startButton.addEventListener(
-    "click",
-    startVM
-);
-
-
-stopButton.addEventListener(
-    "click",
-    stopVM
-);
-
-
-/*
-------------------------------------------------------------
- INITIALISE
-------------------------------------------------------------
-*/
-
-(function initialise() {
-
-    const browserOK =
-        runBrowserChecks();
-
-
-    if (!browserOK) {
-
-        setStatus(
-            "Browser/hosting requirements not satisfied"
-        );
-
-
-        showError(
-
-            "This page requires the browser to expose " +
-            "SharedArrayBuffer and cross-origin isolation.\n\n" +
-
-            "For the current QEMU-Wasm x86-64 build, the server " +
-            "must send the appropriate COOP/COEP response headers.\n\n" +
-
-            "The HTML itself cannot manufacture those response " +
-            "headers after the page has already loaded."
-        );
-
-
-        return;
-    }
-
-
-    if (!CONFIG.RUNTIME_BASE) {
-
-        setStatus(
-            "Browser ready — QEMU runtime URL not configured"
-        );
-
-
-        showError(
-
-            "Browser requirements passed.\n\n" +
-
-            "The next required component is the actual QEMU-Wasm " +
-            "x86-64 runtime package.\n\n" +
-
-            "This HTML deliberately does not download an arbitrary " +
-            "third-party binary or pretend that the old v86 binary " +
-            "is x86-64."
-        );
-
-
-        return;
-    }
-
-
-    startButton.disabled =
-        false;
-
-
-    setStatus(
-        "Ready to start x86-64 VM"
-    );
-
-})();
 
 </script>
 
 </body>
 </html>
+```
