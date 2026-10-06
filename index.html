@@ -1510,10 +1510,30 @@ async function downloadWithProgress(filename) {
         );
     }
 
+    /*
+        Do not trust the upstream MIME type. GitHub Releases often
+        reports uploaded JavaScript as application/octet-stream.
+        Blob-backed module imports are strict about JavaScript MIME.
+    */
+    let blobType =
+        contentType ||
+        "";
+
+    if (filename.endsWith(".js") || filename.endsWith(".mjs")) {
+        blobType =
+            "application/javascript; charset=utf-8";
+    } else if (filename.endsWith(".css")) {
+        blobType =
+            "text/css; charset=utf-8";
+    } else if (filename.endsWith(".wasm")) {
+        blobType =
+            "application/wasm";
+    }
+
     const blob =
         new Blob(chunks, {
             type:
-                contentType ||
+                blobType ||
                 "application/octet-stream"
         });
 
@@ -2068,12 +2088,27 @@ async function bootQEMU() {
     const outURL =
         assetURL(FILES.out);
 
+    /*
+        Import the already-downloaded out.js Blob with an explicit
+        JavaScript MIME type. The Worker route is still the canonical
+        same-origin runtime URL for Emscripten worker resolution via
+        mainScriptUrlOrBlob.
+    */
+    const outBlobURL =
+        blobURL(FILES.out);
+
+    if (!outBlobURL) {
+        throw new Error(
+            "QEMU out.js was downloaded but its local Blob URL could not be created."
+        );
+    }
+
     Module.mainScriptUrlOrBlob =
         outURL;
 
     const qemuModule =
         await import(
-            outURL
+            outBlobURL
         );
 
 
