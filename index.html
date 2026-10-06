@@ -215,6 +215,29 @@ body {
     font-size: 11px;
 }
 
+#linuxBootSignal {
+    margin-top: 7px;
+    padding: 8px 9px;
+    border-radius: 7px;
+    background: #111821;
+    border: 1px solid #273442;
+    color: #9aa8b9;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+#linuxBootSignal.warn {
+    border-color: #765f2b;
+    background: #201b10;
+    color: #e4c978;
+}
+
+#linuxBootSignal.good {
+    border-color: #28583f;
+    background: #0e1d15;
+    color: #8ed2aa;
+}
+
 #linuxBootBarOuter {
     width: 100%;
     height: 10px;
@@ -551,6 +574,9 @@ button:active {
                 </div>
                 <div id="linuxBootTime">
                     Boot elapsed: 0s · QEMU is running
+                </div>
+                <div id="linuxBootSignal" aria-live="polite">
+                    Serial boot signal: waiting for QEMU/Linux output…
                 </div>
                 <div id="linuxBootBarOuter">
                     <div id="linuxBootBar"></div>
@@ -921,6 +947,21 @@ const linuxBootTime =
 
 let linuxBootTimer =
     null;
+
+let bootSignalWatchdog =
+    null;
+
+let bootSignalReceived =
+    false;
+
+let bootSignalBytes =
+    0;
+
+let bootSignalLastText =
+    "";
+
+const linuxBootSignal =
+    $("linuxBootSignal");
 
 const errorBox =
     $("errorBox");
@@ -2119,6 +2160,36 @@ async function createTerminal() {
     slavePTY =
         result.slave;
 
+    /*
+     * xterm-pty exposes the guest -> terminal data through
+     * slave.read().  Wrap that method so the VM boot watchdog
+     * can see real serial bytes without consuming or changing
+     * the PTY stream.
+     */
+    if (
+        slavePTY &&
+        typeof slavePTY.read === "function"
+    ) {
+        const originalSlaveRead =
+            slavePTY.read.bind(slavePTY);
+
+        slavePTY.read =
+            function (size) {
+                const data =
+                    originalSlaveRead(size);
+
+                if (
+                    data &&
+                    typeof data.length === "number" &&
+                    data.length > 0
+                ) {
+                    noteBootSignal(data);
+                }
+
+                return data;
+            };
+    }
+
     terminal.loadAddon(
         masterPTY
     );
@@ -2129,6 +2200,93 @@ async function createTerminal() {
 
     return result;
 }
+
+/* ============================================================
+   BOOT SIGNAL DIAGNOSTICS
+   ============================================================ */
+
+function noteBootSignal(data) {
+
+    if (!data)
+        return;
+
+    let length = 0;
+    let text = "";
+
+    if (typeof data === "string") {
+        text = data;
+        length = data.length;
+    } else if (
+        typeof data.length === "number"
+    ) {
+        length = data.length;
+
+        try {
+            text =
+                new TextDecoder()
+                    .decode(
+                        data instanceof Uint8Array
+                            ? data
+                            : new Uint8Array(data)
+                    );
+        } catch (_) {
+            text = "";
+        }
+    } else {
+        text = String(data);
+        length = text.length;
+    }
+
+    if (length <= 0)
+        return;
+
+    bootSignalReceived =
+        true;
+
+    bootSignalBytes +=
+        length;
+
+    const cleaned =
+        text
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ")
+            .replace(/\\x1B\\[[0-?]*[ -\\/]*[@-~]/g, "")
+            .replace(/\\s+/g, " ")
+            .trim();
+
+    if (cleaned) {
+        bootSignalLastText =
+            cleaned.slice(0, 90);
+    }
+
+    if (linuxBootSignal) {
+        linuxBootSignal.className =
+            "good";
+
+        linuxBootSignal.textContent =
+            "Serial boot signal: RECEIVED · " +
+            bootSignalBytes +
+            " byte(s)" +
+            (
+                bootSignalLastText
+                    ? " · " +
+                      bootSignalLastText
+                    : ""
+            );
+    }
+
+    if (linuxBootLabel) {
+        linuxBootLabel.textContent =
+            "Linux is producing serial output — QEMU ↔ PTY connection is alive.";
+    }
+
+    if (stageDetail) {
+        stageDetail.textContent =
+            "Received " +
+            bootSignalBytes +
+            " byte(s) from the guest serial console.";
+    }
+}
+
 
 /* ============================================================
    DOWNLOAD STAGE
@@ -2268,6 +2426,24 @@ async function bootQEMU() {
 
         pty:
             slavePTY,
+
+        /*
+         * Capture Emscripten/QEMU stdio diagnostics as well.
+         * This does not replace the PTY; it gives the startup
+         * screen a second way to prove that QEMU is alive.
+         */
+        print(text) {
+            noteBootSignal(
+                String(text || "")
+            );
+        },
+
+        printErr(text) {
+            noteBootSignal(
+                "QEMU stderr: " +
+                String(text || "")
+            );
+        },
 
         locateFile(
             path,
@@ -2423,24 +2599,38 @@ async function bootQEMU() {
 
     Module.arguments = [
 
-        "-nographic",
+        /*
+            Configure the console explicitly instead of relying on
+            -nographic's stdio multiplexing. This makes the intended
+            QEMU -> Emscripten PTY path unambiguous.
+        */
+        "-display",
+        "none",
+
+        "-monitor",
+        "none",
+
+        "-serial",
+        "stdio",
+
+        "-no-reboot",
 
         "-M",
         "pc",
 
         /*
-            Keep the initial guest small so the browser does not
-            reserve more memory than necessary just to reach the shell.
-            Minecraft can use a larger profile later.
+            Restore 512 MB while diagnosing the guest boot. The
+            previous 256 MB setting was an optimisation, but a larger
+            guest memory allowance removes low-memory initramfs pressure
+            from the diagnosis.
         */
         "-m",
-        "256M",
+        "512M",
 
         /*
-            500 MiB is unnecessarily large for a tiny Alpine boot and
-            creates a large TCG translation cache. QEMU documents
-            tb-size in MiB. A 64 MiB cache is a much lighter startup
-            footprint while retaining plenty of translated code.
+            Keep the multi-threaded TCG path, but retain the smaller
+            translation cache to avoid an unnecessarily large browser
+            allocation.
         */
         "-accel",
         "tcg,thread=multi,tb-size=64",
@@ -2492,6 +2682,20 @@ async function bootQEMU() {
     const bootStarted =
         performance.now();
 
+    bootSignalReceived =
+        false;
+
+    bootSignalBytes =
+        0;
+
+    bootSignalLastText =
+        "";
+
+    linuxBootSignal.className = "";
+
+    linuxBootSignal.textContent =
+        "Serial boot signal: waiting for QEMU/Linux output…";
+
     linuxBootTimer =
         setInterval(() => {
             const seconds =
@@ -2505,13 +2709,98 @@ async function bootQEMU() {
                 seconds +
                 "s · QEMU is running";
 
-            linuxBootLabel.textContent =
-                seconds < 15
-                    ? "Linux is booting — starting the kernel…"
-                    : seconds < 60
-                        ? "Linux is booting — starting Alpine…"
-                        : "Linux is still booting — the terminal will appear when the shell is ready.";
+            if (bootSignalReceived) {
+                linuxBootLabel.textContent =
+                    seconds < 60
+                        ? "Linux is producing serial output."
+                        : "Linux serial output is active — waiting for the Alpine shell.";
+
+                linuxBootSignal.className =
+                    "good";
+
+                linuxBootSignal.textContent =
+                    "Serial boot signal: RECEIVED · " +
+                    bootSignalBytes +
+                    " byte(s)" +
+                    (
+                        bootSignalLastText
+                            ? " · " +
+                              bootSignalLastText
+                            : ""
+                    );
+
+            } else if (seconds < 15) {
+
+                linuxBootLabel.textContent =
+                    "Linux is booting — starting the kernel…";
+
+                linuxBootSignal.className =
+                    "";
+
+                linuxBootSignal.textContent =
+                    "Serial boot signal: waiting for QEMU/Linux output…";
+
+            } else if (seconds < 60) {
+
+                linuxBootLabel.textContent =
+                    "QEMU is running, but no Linux serial output has arrived yet.";
+
+                linuxBootSignal.className =
+                    "warn";
+
+                linuxBootSignal.textContent =
+                    "No boot signal after " +
+                    seconds +
+                    "s. Checking the QEMU → PTY → serial path…";
+
+            } else if (seconds < 120) {
+
+                linuxBootLabel.textContent =
+                    "No Linux boot signal yet — this is probably a boot/console problem, not normal startup time.";
+
+                linuxBootSignal.className =
+                    "warn";
+
+                linuxBootSignal.textContent =
+                    "No serial output after " +
+                    seconds +
+                    "s. QEMU may be running while the guest is stuck before console output.";
+
+            } else {
+
+                linuxBootLabel.textContent =
+                    "No Linux boot signal after 120s.";
+
+                linuxBootSignal.className =
+                    "warn";
+
+                linuxBootSignal.textContent =
+                    "DIAGNOSTIC: QEMU has been running for " +
+                    seconds +
+                    "s with zero serial bytes observed. This strongly suggests a guest boot, QEMU stdio, or PTY connection problem.";
+
+                setStage(
+                    "linux",
+                    "error",
+                    "No boot signal"
+                );
+            }
         }, 1000);
+
+    if (bootSignalWatchdog) {
+        clearTimeout(bootSignalWatchdog);
+    }
+
+    bootSignalWatchdog =
+        setTimeout(() => {
+            if (!bootSignalReceived) {
+                linuxBootSignal.className =
+                    "warn";
+
+                linuxBootSignal.textContent =
+                    "DIAGNOSTIC: 15-second watchdog reached with zero serial output. QEMU did not produce a visible boot signal.";
+            }
+        }, 15000);
 
     /*
      * Show the terminal while keeping the stage/progress UI
@@ -2536,6 +2825,11 @@ async function bootQEMU() {
     if (linuxBootTimer) {
         clearInterval(linuxBootTimer);
         linuxBootTimer = null;
+    }
+
+    if (bootSignalWatchdog) {
+        clearTimeout(bootSignalWatchdog);
+        bootSignalWatchdog = null;
     }
 
     linuxBootLabel.textContent =
