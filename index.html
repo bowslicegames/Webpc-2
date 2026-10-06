@@ -2,28 +2,41 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport"
-      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+
+<meta
+    name="viewport"
+    content="width=device-width,
+             initial-scale=1,
+             maximum-scale=1,
+             user-scalable=no"
+>
 
 <title>WebPC 2 — Linux x86-64</title>
 
-<link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+<link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"
+>
 
 <style>
+
 * {
     box-sizing: border-box;
 }
 
 html,
 body {
-    margin: 0;
     width: 100%;
     height: 100%;
+    margin: 0;
     overflow: hidden;
     background: #050505;
-    color: #fff;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    color: white;
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
 }
 
 #app {
@@ -35,133 +48,215 @@ body {
 
 #topbar {
     height: 54px;
-    flex: 0 0 54px;
+    flex-shrink: 0;
+
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
+
+    gap: 12px;
+
+    padding:
+        8px
+        12px;
+
     background: #111;
-    border-bottom: 1px solid #292929;
+    border-bottom: 1px solid #2b2b2b;
 }
 
 #title {
-    font-weight: 700;
+    font-weight: 800;
+    font-size: 16px;
     white-space: nowrap;
 }
 
 #status {
     flex: 1;
     min-width: 0;
+
     color: #aaa;
+
     font-size: 13px;
+
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-button {
+#startButton {
     border: 0;
     border-radius: 8px;
-    padding: 9px 14px;
+
+    padding:
+        9px
+        15px;
+
     background: #2563eb;
     color: white;
+
     font-weight: 700;
+    font-size: 14px;
+
     cursor: pointer;
 }
 
-button:disabled {
-    opacity: .45;
-    cursor: default;
+#startButton:disabled {
+    opacity: .5;
 }
 
 #terminal {
     flex: 1;
     min-height: 0;
-    padding: 8px;
-    background: #000;
-}
 
-#log {
-    position: fixed;
-    left: 10px;
-    right: 10px;
-    bottom: 10px;
-    max-height: 35%;
-    overflow: auto;
-    padding: 10px;
-    background: rgba(0,0,0,.88);
-    border: 1px solid #333;
-    border-radius: 8px;
-    color: #ddd;
-    font: 12px/1.45 monospace;
-    white-space: pre-wrap;
-    z-index: 20;
-    display: none;
+    background: black;
+
+    padding: 8px;
 }
 
 #loading {
     position: fixed;
+    z-index: 100;
+
     inset: 0;
-    z-index: 50;
+
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #050505;
-    padding: 25px;
-}
 
-#loadingBox {
-    width: min(620px, 94vw);
-    background: #111;
-    border: 1px solid #333;
-    border-radius: 14px;
+    background: #050505;
+
     padding: 20px;
 }
 
+#loadingBox {
+    width: min(650px, 94vw);
+
+    padding: 22px;
+
+    background: #111;
+
+    border:
+        1px solid
+        #333;
+
+    border-radius: 14px;
+}
+
 #loadingTitle {
-    font-size: 20px;
+    font-size: 21px;
     font-weight: 800;
+
     margin-bottom: 10px;
 }
 
 #loadingText {
     color: #aaa;
+
     font-size: 14px;
+
     line-height: 1.5;
 }
 
 #progress {
-    margin-top: 15px;
+    width: 100%;
     height: 8px;
-    border-radius: 99px;
+
+    margin-top: 18px;
+
     background: #292929;
+
+    border-radius: 99px;
+
     overflow: hidden;
 }
 
 #progressBar {
     width: 0%;
     height: 100%;
+
     background: #2563eb;
-    transition: width .2s;
+
+    transition:
+        width .2s ease;
 }
 
 #error {
     display: none;
+
     margin-top: 15px;
+
     padding: 12px;
+
+    background: #2b1010;
+
+    border:
+        1px solid
+        #702020;
+
     border-radius: 8px;
-    background: #2a1010;
-    border: 1px solid #6b2020;
-    color: #ffb4b4;
-    font: 12px/1.5 monospace;
+
+    color: #ffb5b5;
+
+    font-family: monospace;
+    font-size: 12px;
+
+    line-height: 1.5;
+
     white-space: pre-wrap;
     word-break: break-word;
 }
 
-#startAgain {
+#retryButton {
     display: none;
+
     margin-top: 12px;
+
+    border: 0;
+    border-radius: 8px;
+
+    padding:
+        9px
+        15px;
+
+    background: #2563eb;
+    color: white;
+
+    font-weight: 700;
 }
+
+#debug {
+    position: fixed;
+
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+
+    max-height: 35vh;
+
+    overflow: auto;
+
+    display: none;
+
+    z-index: 200;
+
+    padding: 10px;
+
+    background:
+        rgba(0,0,0,.9);
+
+    border:
+        1px solid
+        #333;
+
+    border-radius: 8px;
+
+    color: #ddd;
+
+    font-family: monospace;
+    font-size: 11px;
+
+    white-space: pre-wrap;
+}
+
 </style>
 </head>
 
@@ -170,52 +265,99 @@ button:disabled {
 <div id="app">
 
     <div id="topbar">
-        <div id="title">WebPC 2</div>
-        <div id="status">Preparing Linux x86-64 VM…</div>
-        <button id="startButton">Start VM</button>
+
+        <div id="title">
+            WebPC 2
+        </div>
+
+        <div id="status">
+            Preparing VM…
+        </div>
+
+        <button
+            id="startButton"
+            disabled
+        >
+            Start VM
+        </button>
+
     </div>
 
     <div id="terminal"></div>
 
 </div>
 
+
 <div id="loading">
+
     <div id="loadingBox">
 
-        <div id="loadingTitle">WebPC 2</div>
+        <div id="loadingTitle">
+            WebPC 2
+        </div>
 
         <div id="loadingText">
-            Preparing the Linux x86-64 virtual machine…
+            Preparing Linux x86-64…
         </div>
 
         <div id="progress">
+
             <div id="progressBar"></div>
+
         </div>
 
         <div id="error"></div>
 
-        <button id="startAgain">
-            Try Again
+        <button id="retryButton">
+            Reload
         </button>
 
     </div>
+
 </div>
 
-<div id="log"></div>
 
-<script type="module">
+<div id="debug"></div>
+
+
+<!--
+============================================================
+IMPORTANT
+
+The upstream QEMU-Wasm demo uses these as classic scripts,
+not ES-module imports.
+
+That is important because xterm-pty exposes openpty()
+globally.
+============================================================
+-->
+
+<script
+    src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"
+></script>
+
+<script
+    src="https://unpkg.com/xterm-pty/index.js"
+></script>
+
+
+<script>
+
+"use strict";
+
 
 /*
 ============================================================
- WEBPC 2
- QEMU-WASM x86-64
- GitHub Release: bowslicegames/Webpc-2 V1
+WEBPC 2
+QEMU-WASM x86-64
 
- IMPORTANT:
- The large VM files are NOT stored on Cloudflare Pages.
- They are downloaded from the GitHub Release below.
+GitHub release:
+bowslicegames/Webpc-2
+release:
+V1
 ============================================================
 */
+
 
 const RELEASE =
     "https://github.com/bowslicegames/Webpc-2/releases/download/V1/";
@@ -223,218 +365,320 @@ const RELEASE =
 
 /*
 ============================================================
- FILE MAP
+FILES
 ============================================================
 */
 
 const FILES = {
 
     wasm:
-        RELEASE + "qemu-system-x86_64.wasm",
+        RELEASE +
+        "qemu-system-x86_64.wasm",
 
     worker:
-        RELEASE + "qemu-system-x86_64.worker.js",
+        RELEASE +
+        "qemu-system-x86_64.worker.js",
 
-    qemuJS:
-        RELEASE + "out.js",
+    out:
+        RELEASE +
+        "out.js",
 
     rootfsJS:
-        RELEASE + "load-rootfs.js",
+        RELEASE +
+        "load-rootfs.js",
 
     rootfsData:
-        RELEASE + "load-rootfs.data",
+        RELEASE +
+        "load-rootfs.data",
 
     kernelJS:
-        RELEASE + "load-kernel.js",
+        RELEASE +
+        "load-kernel.js",
 
     kernelData:
-        RELEASE + "load-kernel.data",
+        RELEASE +
+        "load-kernel.data",
 
     initramfsJS:
-        RELEASE + "load-initramfs.js",
+        RELEASE +
+        "load-initramfs.js",
 
     initramfsData:
-        RELEASE + "load-initramfs.data",
+        RELEASE +
+        "load-initramfs.data",
 
     romJS:
-        RELEASE + "load-rom.js",
+        RELEASE +
+        "load-rom.js",
 
     romData:
-        RELEASE + "load-rom.data",
+        RELEASE +
+        "load-rom.data",
 
-    proxy:
-        RELEASE + "c2w-net-proxy.wasm.gzip"
+    worker:
+        RELEASE +
+        "qemu-system-x86_64.worker.js"
 
 };
 
 
 /*
 ============================================================
- ELEMENTS
+ELEMENTS
 ============================================================
 */
 
-const statusEl =
-    document.getElementById("status");
+const statusElement =
+    document.getElementById(
+        "status"
+    );
 
 const startButton =
-    document.getElementById("startButton");
+    document.getElementById(
+        "startButton"
+    );
 
-const terminalEl =
-    document.getElementById("terminal");
+const terminalElement =
+    document.getElementById(
+        "terminal"
+    );
 
-const loading =
-    document.getElementById("loading");
+const loadingElement =
+    document.getElementById(
+        "loading"
+    );
 
 const loadingText =
-    document.getElementById("loadingText");
+    document.getElementById(
+        "loadingText"
+    );
 
 const progressBar =
-    document.getElementById("progressBar");
+    document.getElementById(
+        "progressBar"
+    );
 
-const errorEl =
-    document.getElementById("error");
+const errorElement =
+    document.getElementById(
+        "error"
+    );
 
-const startAgain =
-    document.getElementById("startAgain");
+const retryButton =
+    document.getElementById(
+        "retryButton"
+    );
 
-const logEl =
-    document.getElementById("log");
-
-
-/*
-============================================================
- LOGGING
-============================================================
-*/
-
-function log(message) {
-
-    console.log("[WebPC 2]", message);
-
-    logEl.style.display = "block";
-
-    logEl.textContent +=
-        message + "\n";
-
-}
-
-function setStatus(message) {
-
-    statusEl.textContent = message;
-    loadingText.textContent = message;
-
-    log(message);
-
-}
-
-function setProgress(value) {
-
-    progressBar.style.width =
-        Math.max(0, Math.min(100, value)) + "%";
-
-}
+const debugElement =
+    document.getElementById(
+        "debug"
+    );
 
 
 /*
 ============================================================
- ERROR HANDLING
+DEBUG
 ============================================================
 */
 
-function showError(error) {
+function debug(message) {
 
-    console.error(error);
+    console.log(
+        "[WebPC 2]",
+        message
+    );
 
-    const message =
-        error instanceof Error
-            ? error.stack || error.message
-            : String(error);
+    debugElement.style.display =
+        "block";
 
-    errorEl.style.display = "block";
+    debugElement.textContent +=
+        message +
+        "\n";
 
-    errorEl.textContent =
-        "VM STARTUP FAILED\n\n" +
+}
+
+
+function status(message) {
+
+    statusElement.textContent =
         message;
 
-    startAgain.style.display =
-        "inline-block";
+    loadingText.textContent =
+        message;
 
-    startButton.disabled = false;
+    debug(message);
 
-    setStatus("VM failed to start.");
+}
+
+
+function progress(value) {
+
+    progressBar.style.width =
+        Math.max(
+            0,
+            Math.min(
+                100,
+                value
+            )
+        ) +
+        "%";
 
 }
 
 
 /*
 ============================================================
- BROWSER REQUIREMENTS
+ERROR
+============================================================
+*/
+
+function fail(error) {
+
+    console.error(
+        "[WebPC 2]",
+        error
+    );
+
+    let message;
+
+    if (
+        error &&
+        error.stack
+    ) {
+
+        message =
+            error.stack;
+
+    } else if (
+        error &&
+        error.message
+    ) {
+
+        message =
+            error.message;
+
+    } else {
+
+        message =
+            String(error);
+
+    }
+
+    errorElement.style.display =
+        "block";
+
+    errorElement.textContent =
+        message;
+
+    retryButton.style.display =
+        "inline-block";
+
+    startButton.disabled =
+        false;
+
+    status(
+        "VM failed to start."
+    );
+
+}
+
+
+/*
+============================================================
+BROWSER CHECK
 ============================================================
 */
 
 function checkBrowser() {
 
-    setStatus("Checking browser requirements…");
+    status(
+        "Checking browser…"
+    );
 
-    if (!window.WebAssembly) {
+    if (
+        !window.WebAssembly
+    ) {
 
         throw new Error(
-            "WebAssembly is not supported by this browser."
+            "WebAssembly is not supported."
         );
 
     }
 
-    if (!window.SharedArrayBuffer) {
+    if (
+        !window.SharedArrayBuffer
+    ) {
 
         throw new Error(
             "SharedArrayBuffer is unavailable.\n\n" +
-            "Your Cloudflare Pages site must use " +
-            "Cross-Origin-Opener-Policy: same-origin " +
-            "and Cross-Origin-Embedder-Policy: require-corp."
+            "Make sure Cloudflare Pages is sending:\n\n" +
+            "Cross-Origin-Opener-Policy: same-origin\n" +
+            "Cross-Origin-Embedder-Policy: require-corp"
         );
 
     }
 
-    if (!window.crossOriginIsolated) {
+    if (
+        !window.crossOriginIsolated
+    ) {
 
         throw new Error(
-            "The page is not cross-origin isolated.\n\n" +
-            "Check your Cloudflare Pages _headers file."
+            "crossOriginIsolated is false.\n\n" +
+            "The Cloudflare Pages _headers configuration " +
+            "is not being applied."
         );
 
     }
 
-    log("WebAssembly: OK");
-    log("SharedArrayBuffer: OK");
-    log("crossOriginIsolated: OK");
+    debug(
+        "WebAssembly: OK"
+    );
+
+    debug(
+        "SharedArrayBuffer: OK"
+    );
+
+    debug(
+        "crossOriginIsolated: OK"
+    );
 
 }
 
 
 /*
 ============================================================
- DOWNLOAD HELPER
+VERIFY GITHUB RELEASE FILE
 ============================================================
 */
 
-async function downloadBinary(url, name) {
+async function checkFile(
+    url,
+    name
+) {
 
-    log("Downloading " + name);
+    status(
+        "Checking " +
+        name +
+        "…"
+    );
 
     const response =
-        await fetch(url, {
-            method: "GET",
-            mode: "cors",
-            credentials: "omit",
-            cache: "no-store"
-        });
+        await fetch(
+            url,
+            {
+                method: "GET",
+                mode: "cors",
+                credentials: "omit",
+                cache: "no-store"
+            }
+        );
 
-    if (!response.ok) {
+    if (
+        !response.ok
+    ) {
 
         throw new Error(
             name +
-            " download failed.\n\n" +
+            " failed to download.\n\n" +
             "HTTP " +
             response.status +
             " " +
@@ -448,7 +692,9 @@ async function downloadBinary(url, name) {
     const data =
         await response.arrayBuffer();
 
-    if (!data.byteLength) {
+    if (
+        data.byteLength === 0
+    ) {
 
         throw new Error(
             name +
@@ -457,10 +703,14 @@ async function downloadBinary(url, name) {
 
     }
 
-    log(
+    debug(
         name +
-        " downloaded: " +
-        (data.byteLength / 1024 / 1024).toFixed(2) +
+        ": " +
+        (
+            data.byteLength /
+            1024 /
+            1024
+        ).toFixed(2) +
         " MB"
     );
 
@@ -471,200 +721,558 @@ async function downloadBinary(url, name) {
 
 /*
 ============================================================
- CHECK QEMU WASM
+DOWNLOAD QEMU WASM
 ============================================================
 */
 
-async function loadWasm() {
+async function downloadWasm() {
 
-    setStatus(
+    status(
         "Downloading QEMU x86-64 WebAssembly…"
     );
 
-    setProgress(10);
+    progress(8);
 
-    const wasm =
-        await downloadBinary(
+    const data =
+        await checkFile(
             FILES.wasm,
-            "QEMU x86-64 WebAssembly"
+            "qemu-system-x86_64.wasm"
         );
 
-    /*
-     WebAssembly magic bytes:
-     00 61 73 6d
-    */
-
-    const bytes =
-        new Uint8Array(wasm, 0, 4);
+    const header =
+        new Uint8Array(
+            data.slice(
+                0,
+                4
+            )
+        );
 
     if (
-        bytes[0] !== 0x00 ||
-        bytes[1] !== 0x61 ||
-        bytes[2] !== 0x73 ||
-        bytes[3] !== 0x6d
+        header[0] !== 0x00 ||
+        header[1] !== 0x61 ||
+        header[2] !== 0x73 ||
+        header[3] !== 0x6d
     ) {
 
         throw new Error(
-            "The downloaded qemu-system-x86_64.wasm " +
-            "does not contain valid WebAssembly."
+            "qemu-system-x86_64.wasm " +
+            "does not contain a valid WebAssembly file."
         );
 
     }
 
-    log("QEMU WASM magic header: OK");
+    debug(
+        "WASM magic header: OK"
+    );
 
-    setProgress(25);
+    progress(25);
+
+    status(
+        "Compiling QEMU WebAssembly…"
+    );
+
+    try {
+
+        await WebAssembly.compile(
+            data
+        );
+
+    } catch (error) {
+
+        throw new Error(
+            "The QEMU WebAssembly file downloaded " +
+            "successfully but could not be compiled.\n\n" +
+            error
+        );
+
+    }
+
+    debug(
+        "WASM compilation: OK"
+    );
+
+    return data;
+
+}
+
+
+/*
+============================================================
+CREATE TERMINAL
+============================================================
+
+THIS IS THE IMPORTANT FIX.
+
+The upstream demo loads xterm-pty as a CLASSIC script,
+which creates the global openpty() function.
+
+We therefore use:
+
+    window.Terminal
+    window.openpty
+
+instead of trying to import openpty as an ES module.
+============================================================
+*/
+
+let terminal = null;
+let master = null;
+let slave = null;
+
+
+function createTerminal() {
+
+    status(
+        "Creating terminal…"
+    );
+
+
+    if (
+        typeof window.Terminal !==
+        "function"
+    ) {
+
+        throw new Error(
+            "xterm loaded, but window.Terminal " +
+            "was not found."
+        );
+
+    }
+
+
+    if (
+        typeof window.openpty !==
+        "function"
+    ) {
+
+        throw new Error(
+            "xterm-pty loaded, but openpty() " +
+            "was not found.\n\n" +
+
+            "The browser loaded xterm-pty but " +
+            "did not expose its PTY API."
+        );
+
+    }
+
+
+    terminal =
+        new window.Terminal({
+
+            cursorBlink:
+                true,
+
+            convertEol:
+                true,
+
+            scrollback:
+                5000,
+
+            fontSize:
+                14,
+
+            theme: {
+
+                background:
+                    "#000000",
+
+                foreground:
+                    "#ffffff",
+
+                cursor:
+                    "#ffffff"
+
+            }
+
+        });
+
+
+    terminal.open(
+        terminalElement
+    );
+
 
     /*
-     Compile before starting QEMU.
-     This gives us a useful error if the browser
-     cannot actually compile the binary.
+     EXACTLY the PTY arrangement used by
+     the upstream QEMU-Wasm demo.
+    */
+
+    const pty =
+        window.openpty();
+
+
+    master =
+        pty.master;
+
+    slave =
+        pty.slave;
+
+
+    terminal.loadAddon(
+        master
+    );
+
+
+    debug(
+        "PTY master created."
+    );
+
+    debug(
+        "PTY slave created."
+    );
+
+    debug(
+        "xterm connected to PTY."
+    );
+
+
+    /*
+     Resize the terminal.
     */
 
     try {
 
-        await WebAssembly.compile(wasm);
+        terminal.resize(
+            Math.max(
+                40,
+                Math.floor(
+                    terminalElement.clientWidth /
+                    8.5
+                )
+            ),
 
-        log("QEMU WASM compilation: OK");
-
-    } catch (e) {
-
-        throw new Error(
-            "The browser downloaded the QEMU WASM " +
-            "file but could not compile it.\n\n" +
-            e
+            Math.max(
+                10,
+                Math.floor(
+                    terminalElement.clientHeight /
+                    17
+                )
+            )
         );
 
-    }
+    } catch (_) {}
 
-    return wasm;
 
 }
 
 
 /*
 ============================================================
- LOAD XTERM
+GLOBAL MODULE
+============================================================
+
+This MUST exist before the Emscripten package loaders
+are executed.
 ============================================================
 */
 
-let Terminal;
-let openpty;
-
-async function loadTerminalLibraries() {
-
-    setStatus("Loading terminal…");
-
-    const xterm =
-        await import(
-            "https://cdn.jsdelivr.net/npm/xterm@5.3.0/+esm"
-        );
-
-    const pty =
-        await import(
-            "https://cdn.jsdelivr.net/npm/xterm-pty@0.9.4/+esm"
-        );
-
-    Terminal =
-        xterm.Terminal;
-
-    openpty =
-        pty.openpty;
-
-    log("xterm loaded");
-    log("xterm-pty loaded");
-
-}
-
-
-/*
-============================================================
- TERMINAL
-============================================================
-*/
-
-let terminal;
-let master;
-let slave;
-
-function createTerminal() {
-
-    terminal =
-        new Terminal({
-
-            cursorBlink: true,
-
-            convertEol: true,
-
-            fontSize:
-                Math.max(
-                    12,
-                    Math.min(
-                        18,
-                        window.innerWidth / 55
-                    )
-                ),
-
-            theme: {
-
-                background: "#000000",
-                foreground: "#ffffff",
-                cursor: "#ffffff"
-
-            },
-
-            scrollback: 5000
-
-        });
-
-    terminal.open(terminalEl);
+const Module = {
 
     /*
-     PTY pair used by the QEMU-Wasm build.
+     QEMU arguments copied from the upstream
+     Alpine x86-64 QEMU-Wasm configuration.
     */
 
-    const pair =
-        openpty();
+    arguments: [
 
-    master =
-        pair.master;
+        "-nographic",
 
-    slave =
-        pair.slave;
+        "-M",
+        "pc",
 
-    terminal.loadAddon(master);
+        "-m",
+        "512M",
 
-    log("PTY created");
+        "-accel",
+        "tcg,tb-size=500",
+
+        "-L",
+        "/pack-rom/",
+
+        "-nic",
+        "none",
+
+        "-kernel",
+        "/pack-kernel/vmlinuz-virt",
+
+        "-initrd",
+        "/pack-initramfs/initramfs-virt",
+
+        "-append",
+        "console=ttyS0 " +
+        "root=/dev/vda " +
+        "noautodetect " +
+        "hostname=webpc",
+
+        "-drive",
+        "id=test," +
+        "file=/pack-rootfs/disk-rootfs.img," +
+        "format=raw," +
+        "if=none",
+
+        "-device",
+        "virtio-blk-pci,drive=test"
+
+    ],
+
 
     /*
-     Resize terminal when browser size changes.
+     CRITICAL:
+
+     The generated package loaders call
+     Module.locateFile("load-rootfs.data", ...)
+     etc.
+
+     Therefore every generated data file is mapped
+     directly to your GitHub Release.
     */
 
-    window.addEventListener(
-        "resize",
-        () => {
+    locateFile:
+        function(
+            path,
+            prefix
+        ) {
 
-            if (!terminal)
-                return;
+            if (
+                path ===
+                "qemu-system-x86_64.wasm"
+            ) {
 
-            try {
+                return FILES.wasm;
 
-                terminal.resize(
-                    Math.max(
-                        40,
-                        Math.floor(
-                            terminalEl.clientWidth / 9
-                        )
-                    ),
-                    Math.max(
-                        10,
-                        Math.floor(
-                            terminalEl.clientHeight / 18
-                        )
-                    )
+            }
+
+
+            if (
+                path ===
+                "qemu-system-x86_64.worker.js"
+            ) {
+
+                return FILES.worker;
+
+            }
+
+
+            if (
+                path ===
+                "load-rootfs.data"
+            ) {
+
+                return FILES.rootfsData;
+
+            }
+
+
+            if (
+                path ===
+                "load-kernel.data"
+            ) {
+
+                return FILES.kernelData;
+
+            }
+
+
+            if (
+                path ===
+                "load-initramfs.data"
+            ) {
+
+                return FILES.initramfsData;
+
+            }
+
+
+            if (
+                path ===
+                "load-rom.data"
+            ) {
+
+                return FILES.romData;
+
+            }
+
+
+            return (
+                RELEASE +
+                path
+            );
+
+        },
+
+
+    /*
+     The upstream runtime uses this value when
+     locating its main script / pthread runtime.
+    */
+
+    mainScriptUrlOrBlob:
+        FILES.out,
+
+
+    /*
+     PTY supplied to QEMU.
+    */
+
+    pty:
+        null,
+
+
+    /*
+     We provide the WASM binary ourselves.
+    */
+
+    wasmBinary:
+        null,
+
+
+    /*
+     Diagnostics.
+    */
+
+    print:
+        function(text) {
+
+            console.log(
+                "[QEMU]",
+                text
+            );
+
+            if (
+                terminal
+            ) {
+
+                terminal.write(
+                    String(text) +
+                    "\r\n"
                 );
 
-            } catch (_) {}
+            }
+
+        },
+
+
+    printErr:
+        function(text) {
+
+            console.error(
+                "[QEMU ERROR]",
+                text
+            );
+
+            if (
+                terminal
+            ) {
+
+                terminal.write(
+                    "\r\n" +
+                    "\x1b[31m" +
+                    String(text) +
+                    "\x1b[0m\r\n"
+                );
+
+            }
+
+        },
+
+
+    onAbort:
+        function(reason) {
+
+            debug(
+                "QEMU ABORT: " +
+                String(reason)
+            );
+
+        },
+
+
+    onExit:
+        function(code) {
+
+            debug(
+                "QEMU EXIT: " +
+                String(code)
+            );
+
+        }
+
+};
+
+
+/*
+============================================================
+LOAD CLASSIC PACKAGE SCRIPT
+============================================================
+
+The generated load-*.js files are classic Emscripten
+file-package loaders.
+
+They need the global Module object.
+============================================================
+*/
+
+function loadClassicScript(
+    url,
+    name
+) {
+
+    return new Promise(
+        (
+            resolve,
+            reject
+        ) => {
+
+            status(
+                "Loading " +
+                name +
+                "…"
+            );
+
+            const script =
+                document.createElement(
+                    "script"
+                );
+
+
+            script.src =
+                url;
+
+
+            script.async =
+                false;
+
+
+            script.onload =
+                () => {
+
+                    debug(
+                        name +
+                        " loaded."
+                    );
+
+                    resolve();
+
+                };
+
+
+            script.onerror =
+                () => {
+
+                    reject(
+                        new Error(
+                            name +
+                            " failed to load.\n\n" +
+                            url
+                        )
+                    );
+
+                };
+
+
+            document.head.appendChild(
+                script
+            );
 
         }
     );
@@ -674,65 +1282,130 @@ function createTerminal() {
 
 /*
 ============================================================
- LOAD QEMU JS
+LOAD PACKAGE LOADERS
 ============================================================
 */
 
-async function loadQemuJS() {
+async function loadPackageScripts() {
 
-    setStatus(
+    /*
+     Module must already exist before these scripts run.
+    */
+
+    await loadClassicScript(
+        FILES.rootfsJS,
+        "root filesystem loader"
+    );
+
+    progress(35);
+
+
+    await loadClassicScript(
+        FILES.kernelJS,
+        "Linux kernel loader"
+    );
+
+    progress(45);
+
+
+    await loadClassicScript(
+        FILES.initramfsJS,
+        "initramfs loader"
+    );
+
+    progress(55);
+
+
+    await loadClassicScript(
+        FILES.romJS,
+        "ROM loader"
+    );
+
+    progress(65);
+
+
+    debug(
+        "All four Emscripten package loaders loaded."
+    );
+
+}
+
+
+/*
+============================================================
+LOAD out.js
+============================================================
+
+out.js is an ES module.
+
+We download it from your GitHub Release and create
+a Blob URL so that the browser can import it.
+
+The QEMU runtime itself is still told that its actual
+main script URL is the GitHub Release URL.
+============================================================
+*/
+
+async function loadQemuRuntime() {
+
+    status(
         "Downloading QEMU JavaScript runtime…"
     );
 
-    setProgress(35);
+    progress(70);
+
 
     const response =
         await fetch(
-            FILES.qemuJS,
+            FILES.out,
             {
+                method: "GET",
                 mode: "cors",
                 credentials: "omit",
                 cache: "no-store"
             }
         );
 
-    if (!response.ok) {
+
+    if (
+        !response.ok
+    ) {
 
         throw new Error(
             "out.js failed to download.\n\n" +
             "HTTP " +
             response.status +
+            " " +
+            response.statusText +
             "\n\n" +
-            FILES.qemuJS
+            FILES.out
         );
 
     }
 
+
     const source =
         await response.text();
 
+
     if (
-        !source.includes("WebAssembly") &&
-        !source.includes("wasm")
+        !source.includes(
+            "WebAssembly"
+        )
     ) {
 
         throw new Error(
-            "out.js was downloaded but does not " +
+            "The downloaded out.js does not " +
             "appear to be the QEMU Emscripten runtime."
         );
 
     }
 
-    log(
-        "out.js downloaded: " +
-        (source.length / 1024).toFixed(1) +
-        " KB"
+
+    debug(
+        "out.js downloaded successfully."
     );
 
-    /*
-     Blob URL makes import() possible while keeping
-     the release file on GitHub.
-    */
 
     const blob =
         new Blob(
@@ -743,415 +1416,343 @@ async function loadQemuJS() {
             }
         );
 
-    return URL.createObjectURL(blob);
+
+    return URL.createObjectURL(
+        blob
+    );
 
 }
 
 
 /*
 ============================================================
- LOAD PACKAGE DATA
-============================================================
-
-The QEMU image was produced with Emscripten's
-file_packager. The four loader JS files register
-the corresponding .data files with the Emscripten
-virtual filesystem.
+START QEMU
 ============================================================
 */
 
-async function loadPackageScript(url, name) {
+async function startQemu(
+    wasm,
+    runtimeURL
+) {
 
-    setStatus(
-        "Loading " + name + "…"
+    status(
+        "Starting x86-64 QEMU…"
     );
 
-    const response =
-        await fetch(
-            url,
-            {
-                mode: "cors",
-                credentials: "omit",
-                cache: "no-store"
-            }
-        );
-
-    if (!response.ok) {
-
-        throw new Error(
-            name +
-            " failed to download.\n\n" +
-            "HTTP " +
-            response.status +
-            "\n\n" +
-            url
-        );
-
-    }
-
-    const source =
-        await response.text();
-
-    log(
-        name +
-        " loaded (" +
-        (source.length / 1024).toFixed(1) +
-        " KB)"
-    );
-
-    const blob =
-        new Blob(
-            [source],
-            {
-                type: "text/javascript"
-            }
-        );
-
-    const blobURL =
-        URL.createObjectURL(blob);
-
-    await import(blobURL);
-
-    URL.revokeObjectURL(blobURL);
-
-}
-
-
-/*
-============================================================
- LOAD ALL PACKAGE FILES
-============================================================
-*/
-
-async function loadPackages() {
-
-    setProgress(45);
-
-    await loadPackageScript(
-        FILES.rootfsJS,
-        "root filesystem package"
-    );
-
-    setProgress(55);
-
-    await loadPackageScript(
-        FILES.kernelJS,
-        "Linux kernel package"
-    );
-
-    setProgress(65);
-
-    await loadPackageScript(
-        FILES.initramfsJS,
-        "initramfs package"
-    );
-
-    setProgress(72);
-
-    await loadPackageScript(
-        FILES.romJS,
-        "BIOS/ROM package"
-    );
-
-    setProgress(78);
-
-}
-
-
-/*
-============================================================
- START QEMU
-============================================================
-*/
-
-async function startQemu(wasm, qemuURL) {
-
-    setStatus(
-        "Starting x86-64 virtual machine…"
-    );
-
-    setProgress(82);
-
-    /*
-     These arguments follow the upstream
-     QEMU-Wasm Alpine x86-64 demo configuration.
-
-     Networking is intentionally disabled for now.
-     This makes the first VM boot simpler and avoids
-     depending on the separate network proxy.
-    */
-
-    const Module = {
-
-        arguments: [
-
-            "-nographic",
-
-            "-M",
-            "pc",
-
-            "-m",
-            "512M",
-
-            "-accel",
-            "tcg,tb-size=500",
-
-            "-L",
-            "/pack-rom/",
-
-            "-nic",
-            "none",
-
-            "-kernel",
-            "/pack-kernel/vmlinuz-virt",
-
-            "-initrd",
-            "/pack-initramfs/initramfs-virt",
-
-            "-append",
-            "console=ttyS0 root=/dev/vda " +
-            "noautodetect hostname=webpc",
-
-            "-drive",
-            "id=test,file=/pack-rootfs/disk-rootfs.img," +
-            "format=raw,if=none",
-
-            "-device",
-            "virtio-blk-pci,drive=test"
-
-        ],
-
-        /*
-         Critical:
-         Emscripten will use this for files such as
-         qemu-system-x86_64.wasm.
-        */
-
-        locateFile(path, prefix) {
-
-            /*
-             The WASM is supplied directly below through
-             wasmBinary, so this is mainly a fallback.
-            */
-
-            if (
-                path.endsWith(
-                    "qemu-system-x86_64.wasm"
-                )
-            ) {
-
-                return FILES.wasm;
-
-            }
-
-            if (
-                path.endsWith(
-                    "qemu-system-x86_64.worker.js"
-                )
-            ) {
-
-                return FILES.worker;
-
-            }
-
-            return prefix + path;
-
-        },
-
-        /*
-         Emscripten runtime.
-        */
-
-        wasmBinary: wasm,
-
-        pty: slave,
-
-        mainScriptUrlOrBlob:
-            qemuURL,
-
-        print(text) {
-
-            if (terminal) {
-
-                terminal.write(
-                    String(text)
-                        .replace(/\n/g, "\r\n") +
-                    "\r\n"
-                );
-
-            }
-
-            console.log(
-                "[QEMU]",
-                text
-            );
-
-        },
-
-        printErr(text) {
-
-            console.error(
-                "[QEMU ERROR]",
-                text
-            );
-
-            if (terminal) {
-
-                terminal.write(
-                    "\r\n\x1b[31m" +
-                    String(text) +
-                    "\x1b[0m\r\n"
-                );
-
-            }
-
-        },
-
-        onAbort(reason) {
-
-            log(
-                "QEMU ABORT: " +
-                reason
-            );
-
-        },
-
-        onExit(code) {
-
-            log(
-                "QEMU exited with code " +
-                code
-            );
-
-        }
-
-    };
+    progress(80);
 
 
     /*
-     Import the Emscripten ES module.
+     Give QEMU the already-downloaded WASM.
     */
 
-    setStatus(
-        "Launching QEMU x86-64…"
-    );
+    Module.wasmBinary =
+        wasm;
 
-    const qemuModule =
-        await import(qemuURL);
-
-    if (!qemuModule) {
-
-        throw new Error(
-            "Could not import QEMU out.js."
-        );
-
-    }
 
     /*
-     The generated out.js uses a default Emscripten
-     module factory.
+     Give QEMU its PTY.
     */
+
+    Module.pty =
+        slave;
+
+
+    /*
+     Import generated Emscripten runtime.
+    */
+
+    debug(
+        "Importing out.js…"
+    );
+
+
+    const imported =
+        await import(
+            runtimeURL
+        );
+
 
     const factory =
-        qemuModule.default ||
-        qemuModule;
+        imported.default ||
+        imported;
+
 
     if (
-        typeof factory !== "function"
+        typeof factory !==
+        "function"
     ) {
 
         throw new Error(
-            "out.js loaded, but its Emscripten " +
+            "out.js loaded, but the Emscripten " +
             "module factory was not found."
         );
 
     }
 
-    log(
-        "Calling QEMU Emscripten module…"
+
+    debug(
+        "Emscripten factory found."
     );
 
-    await factory(Module);
 
-    setProgress(100);
+    status(
+        "Launching Linux x86-64…"
+    );
 
-    setStatus(
+
+    progress(88);
+
+
+    /*
+     Start the VM.
+    */
+
+    const instance =
+        await factory(
+            Module
+        );
+
+
+    debug(
+        "QEMU Emscripten module started."
+    );
+
+
+    /*
+     The upstream demo replaces the default TTY poll
+     implementation with a PTY-aware implementation.
+
+     This prevents the terminal from getting stuck
+     waiting for normal browser TTY input.
+    */
+
+    try {
+
+        if (
+            Module.TTY &&
+            Module.TTY.stream_ops &&
+            Module.TTY.stream_ops.poll &&
+            Module.pty
+        ) {
+
+            const oldPoll =
+                Module
+                    .TTY
+                    .stream_ops
+                    .poll;
+
+
+            const pty =
+                Module.pty;
+
+
+            Module.TTY.stream_ops.poll =
+                function(
+                    stream,
+                    timeout
+                ) {
+
+                    if (
+                        !pty.readable
+                    ) {
+
+                        return (
+                            (pty.readable ? 1 : 0) |
+                            (pty.writable ? 4 : 0)
+                        );
+
+                    }
+
+
+                    return oldPoll.call(
+                        this,
+                        stream,
+                        timeout
+                    );
+
+                };
+
+        }
+
+    } catch (error) {
+
+        debug(
+            "TTY poll adjustment warning: " +
+            error
+        );
+
+    }
+
+
+    progress(100);
+
+
+    status(
         "Linux x86-64 VM running"
     );
 
-    loading.style.display =
+
+    loadingElement.style.display =
         "none";
+
+
+    startButton.disabled =
+        true;
+
+
+    return instance;
 
 }
 
 
 /*
 ============================================================
- MAIN
+BOOT
 ============================================================
 */
 
-let started = false;
+let started =
+    false;
+
 
 async function boot() {
 
-    if (started)
+    if (
+        started
+    ) {
+
         return;
 
-    started = true;
+    }
 
-    startButton.disabled = true;
-    errorEl.style.display = "none";
-    startAgain.style.display = "none";
-    logEl.textContent = "";
-    logEl.style.display = "none";
+
+    started =
+        true;
+
+
+    startButton.disabled =
+        true;
+
+
+    errorElement.style.display =
+        "none";
+
+
+    retryButton.style.display =
+        "none";
+
+
+    debugElement.textContent =
+        "";
+
 
     try {
 
-        setProgress(0);
+        progress(0);
+
+
+        /*
+         1. Browser requirements
+        */
 
         checkBrowser();
 
-        await loadTerminalLibraries();
+
+        /*
+         2. Verify the terminal libraries.
+        */
+
+        status(
+            "Checking terminal libraries…"
+        );
+
+
+        if (
+            typeof window.Terminal !==
+            "function"
+        ) {
+
+            throw new Error(
+                "xterm did not load correctly."
+            );
+
+        }
+
+
+        if (
+            typeof window.openpty !==
+            "function"
+        ) {
+
+            throw new Error(
+                "xterm-pty did not expose openpty()."
+            );
+
+        }
+
+
+        debug(
+            "Terminal libraries: OK"
+        );
+
+
+        /*
+         3. Create terminal/PTY.
+        */
 
         createTerminal();
 
-        setProgress(5);
+
+        progress(5);
+
 
         /*
-         Download and compile the 40+ MB QEMU WASM.
+         4. Download QEMU WASM.
         */
 
         const wasm =
-            await loadWasm();
+            await downloadWasm();
+
 
         /*
-         Download the Emscripten JS runtime.
+         5. Load Emscripten package loaders.
+
+         These then download:
+           load-rootfs.data
+           load-kernel.data
+           load-initramfs.data
+           load-rom.data
+
+         from your GitHub Release.
         */
 
-        const qemuURL =
-            await loadQemuJS();
+        await loadPackageScripts();
 
-        setProgress(40);
 
         /*
-         Load the kernel/rootfs/ROM packages.
+         6. Download QEMU out.js.
         */
 
-        await loadPackages();
+        const runtimeURL =
+            await loadQemuRuntime();
+
 
         /*
-         Start QEMU.
+         7. Start VM.
         */
 
         await startQemu(
             wasm,
-            qemuURL
+            runtimeURL
         );
+
 
     } catch (error) {
 
-        showError(error);
+        fail(
+            error
+        );
 
     }
 
@@ -1160,16 +1761,21 @@ async function boot() {
 
 /*
 ============================================================
- BUTTONS
+BUTTON
 ============================================================
 */
 
 startButton.addEventListener(
     "click",
-    boot
+    () => {
+
+        boot();
+
+    }
 );
 
-startAgain.addEventListener(
+
+retryButton.addEventListener(
     "click",
     () => {
 
@@ -1181,7 +1787,7 @@ startAgain.addEventListener(
 
 /*
 ============================================================
- AUTOMATIC START
+INITIALISE
 ============================================================
 */
 
@@ -1189,8 +1795,34 @@ window.addEventListener(
     "load",
     () => {
 
+        /*
+         Small delay lets the external terminal
+         scripts finish initialising.
+        */
+
         setTimeout(
-            boot,
+            () => {
+
+                try {
+
+                    checkBrowser();
+
+                    startButton.disabled =
+                        false;
+
+                    status(
+                        "Ready — start Linux x86-64."
+                    );
+
+                } catch (error) {
+
+                    fail(
+                        error
+                    );
+
+                }
+
+            },
             500
         );
 
