@@ -262,56 +262,11 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
     }
 
     /*
-     * If a Pages ASSETS binding exists, use it first.
-     * Add the isolation headers ourselves because this code also runs
-     * when deployed as a normal Worker.
-     */
-    if (
-      env &&
-      env.ASSETS &&
-      typeof env.ASSETS.fetch === "function"
-    ) {
-      const assetResponse = await env.ASSETS.fetch(request);
-
-      if (assetResponse.status !== 404) {
-        const headers = new Headers(assetResponse.headers);
-
-        if (
-          url.pathname === "/" ||
-          url.pathname === "/index.html"
-        ) {
-          headers.set(
-            "Cross-Origin-Opener-Policy",
-            "same-origin"
-          );
-          headers.set(
-            "Cross-Origin-Embedder-Policy",
-            "require-corp"
-          );
-          headers.set(
-            "Cross-Origin-Resource-Policy",
-            "same-origin"
-          );
-        }
-
-        headers.set(
-          "X-WebPC-Worker",
-          "active"
-        );
-
-        return new Response(
-          assetResponse.body,
-          {
-            status: assetResponse.status,
-            statusText: assetResponse.statusText,
-            headers
-          }
-        );
-      }
-    }
-
-    /*
-     * Fallback for a normal workers.dev Worker without an ASSETS binding.
+     * Always route the application files through this Worker first.
+     *
+     * A Pages ASSETS binding can contain an older index.html. If it
+     * wins this route, /worker-test can say ACTIVE while the browser
+     * still receives an old page stuck on "checking…".
      */
     let path = url.pathname.replace(/^\/+/, "");
 
