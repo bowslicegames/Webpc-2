@@ -420,8 +420,18 @@ button:active {
                     </div>
                 </div>
 
-                <div class="stage" id="stage-qemu">
+                <div class="stage" id="stage-preboot">
                     <div class="stageIcon">3</div>
+                    <div class="stageName">
+                        Pre-boot network & runtime check
+                    </div>
+                    <div class="stageStatus">
+                        Waiting
+                    </div>
+                </div>
+
+                <div class="stage" id="stage-qemu">
+                    <div class="stageIcon">4</div>
                     <div class="stageName">
                         QEMU WebAssembly
                     </div>
@@ -431,7 +441,7 @@ button:active {
                 </div>
 
                 <div class="stage" id="stage-rom">
-                    <div class="stageIcon">4</div>
+                    <div class="stageIcon">5</div>
                     <div class="stageName">
                         QEMU ROM
                     </div>
@@ -441,7 +451,7 @@ button:active {
                 </div>
 
                 <div class="stage" id="stage-kernel">
-                    <div class="stageIcon">5</div>
+                    <div class="stageIcon">6</div>
                     <div class="stageName">
                         Linux kernel
                     </div>
@@ -451,7 +461,7 @@ button:active {
                 </div>
 
                 <div class="stage" id="stage-initramfs">
-                    <div class="stageIcon">6</div>
+                    <div class="stageIcon">7</div>
                     <div class="stageName">
                         Linux initramfs
                     </div>
@@ -461,7 +471,7 @@ button:active {
                 </div>
 
                 <div class="stage" id="stage-rootfs">
-                    <div class="stageIcon">7</div>
+                    <div class="stageIcon">8</div>
                     <div class="stageName">
                         Alpine Linux root filesystem
                     </div>
@@ -471,7 +481,7 @@ button:active {
                 </div>
 
                 <div class="stage" id="stage-runtime">
-                    <div class="stageIcon">8</div>
+                    <div class="stageIcon">9</div>
                     <div class="stageName">
                         QEMU runtime
                     </div>
@@ -481,7 +491,7 @@ button:active {
                 </div>
 
                 <div class="stage" id="stage-linux">
-                    <div class="stageIcon">9</div>
+                    <div class="stageIcon">10</div>
                     <div class="stageName">
                         Booting Linux
                     </div>
@@ -888,13 +898,14 @@ function stageNumber(id) {
 
         browser: "1",
         terminal: "2",
-        qemu: "3",
-        rom: "4",
-        kernel: "5",
-        initramfs: "6",
-        rootfs: "7",
-        runtime: "8",
-        linux: "9"
+        preboot: "3",
+        qemu: "4",
+        rom: "5",
+        kernel: "6",
+        initramfs: "7",
+        rootfs: "8",
+        runtime: "9",
+        linux: "10"
     };
 
     return numbers[id] || "?";
@@ -910,6 +921,9 @@ function stageTitle(id) {
 
         terminal:
             "Preparing terminal / PTY…",
+
+        preboot:
+            "Pre-booting WebPC 2…",
 
         qemu:
             "Downloading QEMU WebAssembly…",
@@ -1029,6 +1043,216 @@ function finishStage(id) {
         "done",
         "Complete"
     );
+}
+
+/* ============================================================
+   PRE-BOOT CHECK
+   ============================================================ */
+
+/*
+ * This stage deliberately runs before any large download.
+ *
+ * It checks every runtime asset through the same-origin Worker,
+ * in parallel, with a hard timeout. That means a broken Worker
+ * route, missing release asset, bad status, or network failure
+ * is reported before QEMU starts and before the terminal appears
+ * to "hang".
+ */
+async function prebootCheck() {
+
+    beginStage(
+        "preboot",
+        "Checking the Worker and all QEMU/Linux assets before downloading the VM."
+    );
+
+    const files = [
+        FILES.qemu,
+        FILES.qemuWorker,
+        FILES.out,
+        FILES.romData,
+        FILES.romLoader,
+        FILES.kernelData,
+        FILES.kernelLoader,
+        FILES.initramfsData,
+        FILES.initramfsLoader,
+        FILES.rootfsData,
+        FILES.rootfsLoader,
+        FILES.stack,
+        FILES.stackWorker,
+        FILES.netProxy
+    ];
+
+    const total = files.length;
+    let completed = 0;
+    const started = performance.now();
+
+    /*
+     * The known sizes let the overall bar represent the real
+     * amount of data that will be downloaded immediately after
+     * this check. We therefore start with an honest 0 / ~146 MB
+     * estimate instead of leaving the user at 0%.
+     */
+    overallTotal = files.reduce(
+        (sum, filename) =>
+            sum + (KNOWN_SIZES[filename] || 0),
+        0
+    );
+    overallLoaded = 0;
+    updateOverall();
+
+    assetProgress.style.display = "block";
+    assetName.textContent = "Pre-boot asset verification";
+    assetBar.style.width = "0%";
+    assetNumbers.textContent =
+        "0 / " + total + " assets checked";
+
+    const checkOne = async filename => {
+
+        const controller =
+            typeof AbortController === "function"
+                ? new AbortController()
+                : null;
+
+        const timeout =
+            setTimeout(() => {
+                if (controller)
+                    controller.abort();
+            }, 10000);
+
+        try {
+
+            const response =
+                await fetch(
+                    assetURL(filename),
+                    {
+                        method: "HEAD",
+                        cache: "no-store",
+                        redirect: "follow",
+                        credentials: "omit",
+                        signal:
+                            controller
+                                ? controller.signal
+                                : undefined
+                    }
+                );
+
+            if (!response.ok) {
+                throw new Error(
+                    filename +
+                    " returned HTTP " +
+                    response.status +
+                    " " +
+                    response.statusText
+                );
+            }
+
+            /*
+             * Reject obvious HTML/error pages before the large
+             * download begins.
+             */
+            const type =
+                (
+                    response.headers.get(
+                        "Content-Type"
+                    ) || ""
+                ).toLowerCase();
+
+            if (
+                type.includes("text/html") &&
+                !filename.endsWith(".html")
+            ) {
+                throw new Error(
+                    filename +
+                    " returned text/html instead of its runtime asset."
+                );
+            }
+
+            return filename;
+
+        } catch (error) {
+
+            if (
+                error &&
+                error.name === "AbortError"
+            ) {
+                throw new Error(
+                    "Pre-boot check timed out after 10 seconds for " +
+                    filename +
+                    "."
+                );
+            }
+
+            throw new Error(
+                "Pre-boot check failed for " +
+                filename +
+                ".\n\n" +
+                (
+                    error &&
+                    error.message
+                        ? error.message
+                        : String(error)
+                )
+            );
+
+        } finally {
+
+            clearTimeout(timeout);
+
+            completed++;
+
+            const percent =
+                completed / total * 100;
+
+            assetBar.style.width =
+                percent.toFixed(1) + "%";
+
+            assetNumbers.textContent =
+                completed +
+                " / " +
+                total +
+                " assets checked";
+
+            stageDetail.textContent =
+                "Verified " +
+                completed +
+                " of " +
+                total +
+                " runtime assets…";
+
+            await new Promise(
+                resolve =>
+                    setTimeout(resolve, 0)
+            );
+        }
+    };
+
+    /*
+     * Promise.all means the small HEAD checks happen in parallel.
+     * The large VM files are NOT downloaded during this stage.
+     */
+    await Promise.all(
+        files.map(checkOne)
+    );
+
+    const seconds =
+        (
+            performance.now() -
+            started
+        ) / 1000;
+
+    assetBar.style.width = "100%";
+    assetNumbers.textContent =
+        total +
+        " / " +
+        total +
+        " assets verified · " +
+        seconds.toFixed(1) +
+        "s";
+
+    stageDetail.textContent =
+        "All runtime assets are reachable. Starting VM downloads…";
+
+    finishStage("preboot");
 }
 
 
@@ -2359,6 +2583,8 @@ async function main() {
         await checkBrowser();
 
         await createTerminal();
+
+        await prebootCheck();
 
         await bootQEMU();
 
