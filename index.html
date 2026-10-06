@@ -559,7 +559,62 @@ button:active {
    ============================================================ */
 
 const BASE =
-    "https://github.com/bowslicegames/Webpc-2/releases/download/V1/";
+    "https://api.github.com/repos/bowslicegames/Webpc-2/releases/assets/";
+
+const ASSET_IDS = {
+
+    "c2w-net-proxy.wasm.gzip":
+        615130792,
+
+    "load-initramfs.data":
+        615130902,
+
+    "load-initramfs.js":
+        615130826,
+
+    "load-kernel.data":
+        615128624,
+
+    "load-kernel.js":
+        615130836,
+
+    "load-rom.data":
+        615130884,
+
+    "load-rom.js":
+        615128942,
+
+    "load-rootfs.data":
+        615128959,
+
+    "load-rootfs.js":
+        615130849,
+
+    "out.js":
+        615130894,
+
+    "qemu-system-x86_64.wasm":
+        615142993,
+
+    "qemu-system-x86_64.worker.js":
+        615130877
+};
+
+function assetURL(filename) {
+
+    const id =
+        ASSET_IDS[filename];
+
+    if (!id) {
+
+        throw new Error(
+            "No GitHub Release asset ID is configured for " +
+            filename
+        );
+    }
+
+    return BASE + id;
+}
 
 const FILES = {
 
@@ -1017,7 +1072,7 @@ function updateOverall() {
 async function downloadWithProgress(filename) {
 
     const url =
-        BASE + encodeURIComponent(filename);
+        assetURL(filename);
 
     assetProgress.style.display =
         "block";
@@ -1064,7 +1119,13 @@ async function downloadWithProgress(filename) {
                     method: "GET",
                     cache: "no-store",
                     redirect: "follow",
-                    credentials: "omit"
+                    credentials: "omit",
+                    headers: {
+                        "Accept":
+                            "application/octet-stream",
+                        "X-GitHub-Api-Version":
+                            "2026-03-10"
+                    }
                 }
             );
 
