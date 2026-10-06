@@ -19,24 +19,26 @@ jobs:
       - name: Check Worker JavaScript syntax
         run: node --check _worker.js
 
-      - name: Extract and check browser module syntax
+      - name: Extract and check browser startup script
         run: |
           node <<'NODE'
           const fs = require("fs");
           const html = fs.readFileSync("index.html", "utf8");
-          const startMarker = '<script type="module">';
-          const endMarker = '</script>';
-          const start = html.indexOf(startMarker);
-          if (start < 0) throw new Error("Main module script not found");
-          const end = html.indexOf(endMarker, start + startMarker.length);
-          if (end < 0) throw new Error("Main module script terminator not found");
-          fs.writeFileSync("/tmp/webpc-main.mjs",
-            html.slice(start + startMarker.length, end));
+          const scripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)];
+          if (!scripts.length) throw new Error("No inline startup script found");
+
+          // The application startup script contains the main() call.
+          const match = scripts.find(m => /\\basync function main\\s*\\(/.test(m[1]) && /\\bmain\\s*\\(\\s*\\)\\s*;/.test(m[1]));
+          if (!match) throw new Error("WebPC startup script not found");
+
+          fs.writeFileSync("/tmp/webpc-main.js", match[1]);
           NODE
-          node --check /tmp/webpc-main.mjs
+          node --check /tmp/webpc-main.js
 
       - name: Verify Wrangler configuration
         run: |
           test -f wrangler.toml
           grep -Fx 'main = "_worker.js"' wrangler.toml
           grep -Fx 'name = "webpc"' wrangler.toml
+          grep -Fx 'directory = "."' wrangler.toml
+          grep -Fx 'run_worker_first = true' wrangler.toml
