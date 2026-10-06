@@ -1466,18 +1466,39 @@ async function createTerminal() {
     );
 
     /*
-        IMPORTANT:
-
-        These are now LOCAL files.
-
-        This avoids the previous COEP/CORS failure
-        caused by importing them from unpkg.com.
+        xterm.js 5.x is a UMD/browser build.
+        It exposes Terminal globally rather than
+        exporting Terminal as an ES module.
     */
 
-    const xterm =
-        await import(
-            "./xterm/xterm.js"
-        );
+    if (typeof window.Terminal !== "function") {
+
+        await new Promise((resolve, reject) => {
+
+            const script =
+                document.createElement("script");
+
+            script.src =
+                "./xterm/xterm.js";
+
+            script.async = false;
+
+            script.onload = () => resolve();
+
+            script.onerror = () => reject(
+                new Error(
+                    "Failed to load local xterm.js:\\n" +
+                    "./xterm/xterm.js"
+                )
+            );
+
+            document.head.appendChild(script);
+        });
+    }
+
+    /*
+        xterm-pty IS an ES module.
+    */
 
     const pty =
         await import(
@@ -1485,12 +1506,12 @@ async function createTerminal() {
         );
 
     if (
-        typeof xterm.Terminal !==
+        typeof window.Terminal !==
         "function"
     ) {
 
         throw new Error(
-            "Local xterm.js loaded, but Terminal was not exported."
+            "Local xterm.js loaded, but window.Terminal was not created."
         );
     }
 
@@ -1505,7 +1526,7 @@ async function createTerminal() {
     }
 
     terminal =
-        new xterm.Terminal({
+        new window.Terminal({
 
             cursorBlink: true,
 
@@ -1551,7 +1572,6 @@ async function createTerminal() {
 
     return result;
 }
-
 
 /* ============================================================
    DOWNLOAD STAGE
