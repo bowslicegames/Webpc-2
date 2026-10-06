@@ -39,12 +39,20 @@ const RELEASE_BASE =
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/main/";
 
-function corsHeaders(extra = {}) {
+function securityHeaders(extra = {}) {
   return {
     ...extra,
-    "Access-Control-Allow-Origin": "*",
-    "Cross-Origin-Resource-Policy": "cross-origin"
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+    "Cross-Origin-Resource-Policy": "same-origin"
   };
+}
+
+function corsHeaders(extra = {}) {
+  return securityHeaders({
+    ...extra,
+    "Access-Control-Allow-Origin": "*"
+  });
 }
 
 /*
@@ -200,6 +208,8 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         const headers = new Headers(upstream.headers);
         headers.set("Access-Control-Allow-Origin", "*");
         headers.set("Cross-Origin-Resource-Policy", "cross-origin");
+        headers.set("Cross-Origin-Opener-Policy", "same-origin");
+        headers.set("Cross-Origin-Embedder-Policy", "require-corp");
         headers.set("X-WebPC-Worker", "active");
         headers.set("X-WebPC-Asset", filename);
         headers.set(
