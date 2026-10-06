@@ -554,7 +554,114 @@ button:active {
 
 <script>
 /*
- * Tiny non-module bootstrap.
+ * WebPC startup bootstrap.
+ *
+ * This deliberately does not depend on ES modules. It proves that
+ * the deployed index.html itself is executing, then checks that the
+ * new Cloudflare Worker can answer before the VM loader starts.
+ */
+(function () {
+    var isolation = document.getElementById("diagIsolation");
+    var sab = document.getElementById("diagSAB");
+    var wasm = document.getElementById("diagWasm");
+    var memory = document.getElementById("diagMemory");
+    var detail = document.getElementById("stageDetail");
+    var message = document.getElementById("message");
+
+    if (isolation) {
+        isolation.textContent =
+            "crossOriginIsolated: " +
+            (window.crossOriginIsolated === true);
+    }
+
+    if (sab) {
+        sab.textContent =
+            "SharedArrayBuffer: " +
+            (typeof SharedArrayBuffer !== "undefined");
+    }
+
+    if (wasm) {
+        wasm.textContent =
+            "WebAssembly: " +
+            (typeof WebAssembly !== "undefined");
+    }
+
+    if (memory) {
+        memory.textContent =
+            "Device memory: " +
+            (navigator.deviceMemory
+                ? navigator.deviceMemory + " GB reported"
+                : "not reported");
+    }
+
+    if (detail) {
+        detail.textContent =
+            "index.html JavaScript is running. Checking the Cloudflare Worker…";
+    }
+
+    if (message) {
+        message.textContent =
+            "WebPC 2 is connected to the Cloudflare Worker. Loading the VM runtime…";
+    }
+
+    /*
+     * A failed Worker check must never leave the page waiting forever.
+     * Proceed with the normal startup even if the diagnostic request
+     * is unavailable.
+     */
+    var controller =
+        typeof AbortController === "function"
+            ? new AbortController()
+            : null;
+
+    var timer =
+        setTimeout(function () {
+            if (controller) controller.abort();
+
+            if (detail) {
+                detail.textContent =
+                    "Worker check timed out; continuing with WebPC startup.";
+            }
+        }, 5000);
+
+    fetch("/worker-test", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "same-origin",
+        signal: controller ? controller.signal : undefined
+    })
+        .then(function (response) {
+            if (!response.ok) {
+                throw new Error(
+                    "Cloudflare Worker returned HTTP " +
+                    response.status
+                );
+            }
+
+            if (detail) {
+                detail.textContent =
+                    "Cloudflare Worker is responding. Starting WebPC 2…";
+            }
+        })
+        .catch(function (error) {
+            console.warn(
+                "Worker diagnostic failed; continuing:",
+                error
+            );
+
+            if (detail) {
+                detail.textContent =
+                    "Worker diagnostic unavailable; starting WebPC 2 anyway.";
+            }
+        })
+        .finally(function () {
+            clearTimeout(timer);
+        });
+})();
+</script>
+
+<script>
+
  *
  * Keep the first diagnostics outside the ES-module loader so that
  * a module MIME/COEP/cache problem cannot leave the page silently
