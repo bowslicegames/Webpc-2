@@ -1014,15 +1014,10 @@ function updateOverall() {
    DOWNLOAD ASSET
    ============================================================ */
 
-async function downloadWithProgress(
-    filename
-) {
+async function downloadWithProgress(filename) {
 
     const url =
-        BASE +
-        encodeURIComponent(
-            filename
-        );
+        BASE + encodeURIComponent(filename);
 
     assetProgress.style.display =
         "block";
@@ -1051,14 +1046,53 @@ async function downloadWithProgress(
 
     updateOverall();
 
-    const response =
-        await fetch(
-            url,
-            {
-                method: "GET",
-                cache: "no-store"
-            }
+    /*
+        GitHub Release downloads can redirect to
+        GitHub's asset storage.  Keep redirect handling
+        explicit and expose the real browser/network
+        error instead of the unhelpful "Load failed".
+    */
+
+    let response;
+
+    try {
+
+        response =
+            await fetch(
+                url,
+                {
+                    method: "GET",
+                    cache: "no-store",
+                    redirect: "follow",
+                    credentials: "omit"
+                }
+            );
+
+    } catch (error) {
+
+        throw new Error(
+            "Network error while downloading " +
+            filename +
+            "\n\nURL:\n" +
+            url +
+            "\n\nBrowser error:\n" +
+            (
+                error &&
+                error.name
+                    ? error.name
+                    : "Error"
+            ) +
+            ": " +
+            (
+                error &&
+                error.message
+                    ? error.message
+                    : String(error)
+            ) +
+            "\n\nThe request was blocked or failed before a response was received. " +
+            "This is usually a cross-origin redirect/network problem or a device memory/network failure."
         );
+    }
 
     if (!response.ok) {
 
@@ -1071,6 +1105,49 @@ async function downloadWithProgress(
             response.statusText +
             "\n\nURL:\n" +
             url
+        );
+    }
+
+    if (response.type === "opaque") {
+
+        throw new Error(
+            "The browser returned an opaque response for " +
+            filename +
+            ".\n\n" +
+            "WebPC 2 needs a CORS-readable response for this asset.\n\n" +
+            "URL:\n" +
+            url
+        );
+    }
+
+    const contentType =
+        (
+            response.headers.get(
+                "Content-Type"
+            ) || ""
+        ).toLowerCase();
+
+    /*
+        A successful GitHub release asset should not
+        come back as an HTML page.  This catches cases
+        where a redirect/login/error page is returned
+        with HTTP 200.
+    */
+
+    if (
+        filename.endsWith(".wasm") &&
+        contentType &&
+        !contentType.includes("wasm") &&
+        !contentType.includes("octet-stream")
+    ) {
+
+        throw new Error(
+            "The QEMU WebAssembly URL returned an unexpected response.\n\n" +
+            "Content-Type: " +
+            contentType +
+            "\n\nURL:\n" +
+            url +
+            "\n\nExpected a WebAssembly/binary response."
         );
     }
 
@@ -1099,9 +1176,6 @@ async function downloadWithProgress(
                 contentLength;
         }
 
-    } else {
-
-        contentLength;
     }
 
     const reader =
@@ -1268,8 +1342,22 @@ async function downloadWithProgress(
         );
     }
 
+    if (received === 0) {
+
+        throw new Error(
+            "The server returned an empty response for " +
+            filename +
+            ".\n\nURL:\n" +
+            url
+        );
+    }
+
     const blob =
-        new Blob(chunks);
+        new Blob(chunks, {
+            type:
+                contentType ||
+                "application/octet-stream"
+        });
 
     if (
         currentAssetTotal === 0
@@ -1611,21 +1699,31 @@ async function bootQEMU() {
         QEMU WASM
     */
 
-    const qemuBlob =
-        await downloadAsset(
-            FILES.qemu,
-            "qemu",
-            "Downloading the 40.8 MB QEMU x86-64 WebAssembly binary."
-        );
-
-
     /*
-        Supply QEMU's WebAssembly binary
-        directly to Emscripten.
+        QEMU is the largest single allocation.
+        Convert it to the ArrayBuffer Emscripten
+        needs, then immediately release the Blob
+        retained by the download cache.  This avoids
+        keeping two full copies of the 40.8 MB binary.
     */
 
-    const qemuBinary =
-        await qemuBlob.arrayBuffer();
+    let qemuBinary;
+
+    {
+        const qemuBlob =
+            await downloadAsset(
+                FILES.qemu,
+                "qemu",
+                "Downloading the 40.8 MB QEMU x86-64 WebAssembly binary."
+            );
+
+        qemuBinary =
+            await qemuBlob.arrayBuffer();
+    }
+
+    downloaded.delete(
+        FILES.qemu
+    );
 
 
     /*
