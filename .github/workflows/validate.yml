@@ -1,0 +1,42 @@
+name: Validate WebPC
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check Worker JavaScript syntax
+        run: node --check _worker.js
+
+      - name: Extract and check browser module syntax
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const html = fs.readFileSync("index.html", "utf8");
+          const startMarker = '<script type="module">';
+          const endMarker = '</script>';
+          const start = html.indexOf(startMarker);
+          if (start < 0) throw new Error("Main module script not found");
+          const end = html.indexOf(endMarker, start + startMarker.length);
+          if (end < 0) throw new Error("Main module script terminator not found");
+          fs.writeFileSync("/tmp/webpc-main.mjs",
+            html.slice(start + startMarker.length, end));
+          NODE
+          node --check /tmp/webpc-main.mjs
+
+      - name: Verify Wrangler configuration
+        run: |
+          test -f wrangler.toml
+          grep -Fx 'main = "_worker.js"' wrangler.toml
+          grep -Fx 'name = "webpc"' wrangler.toml
