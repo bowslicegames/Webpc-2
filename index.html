@@ -2156,7 +2156,7 @@ async function bootQEMU() {
         "/pack-initramfs/initramfs-virt",
 
         "-append",
-        "console=ttyS0 root=/dev/vda noautodetect hostname=webpc2",
+        "earlyprintk=ttyS0 console=ttyS0 root=/dev/vda loglevel=7 hostname=webpc2",
 
         "-drive",
         "id=test,file=/pack-rootfs/disk-rootfs.img,format=raw,if=none",
