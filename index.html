@@ -3,649 +3,1094 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+
 <meta name="viewport"
-      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Browser Linux x86-64 VM</title>
+      content="width=device-width,
+               initial-scale=1,
+               maximum-scale=1,
+               user-scalable=no">
+
+<title>QEMU x86-64 Browser VM</title>
 
 <style>
-html,body {
-    margin:0;
-    width:100%;
-    height:100%;
-    overflow:hidden;
-    background:#080b10;
-    color:#e8eef7;
-    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #080b10;
+    color: #e8eef7;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont,
+                 "Segoe UI", sans-serif;
 }
 
 #app {
-    width:100%;
-    height:100%;
-    display:flex;
-    flex-direction:column;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
 }
 
-#top {
-    flex:0 0 auto;
-    padding:10px 14px;
-    background:#111722;
-    border-bottom:1px solid #283242;
+#header {
+    flex: 0 0 auto;
+    padding: 12px;
+    background: #111722;
+    border-bottom: 1px solid #293445;
 }
 
 #title {
-    font-weight:700;
-    font-size:16px;
+    font-weight: 700;
+    font-size: 16px;
 }
 
 #status {
-    margin-top:4px;
-    color:#9aa9bd;
-    font-size:13px;
-    white-space:pre-wrap;
+    margin-top: 5px;
+    color: #aebbd0;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+#log {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 12px;
+    box-sizing: border-box;
+    font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Monaco,
+        Consolas,
+        monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.ok {
+    color: #9be7a6;
+}
+
+.warn {
+    color: #ffd27a;
+}
+
+.bad {
+    color: #ff9b9b;
+}
+
+.info {
+    color: #b7c9e5;
 }
 
 #terminal {
-    flex:1 1 auto;
-    min-height:0;
-    padding:8px;
-    box-sizing:border-box;
-    overflow:hidden;
+    display: none;
+    flex: 1;
+    min-height: 0;
+    padding: 8px;
+    box-sizing: border-box;
 }
 
 #terminal .xterm {
-    height:100%;
-}
-
-#error {
-    display:none;
-    position:absolute;
-    left:10px;
-    right:10px;
-    bottom:10px;
-    max-height:55%;
-    overflow:auto;
-    box-sizing:border-box;
-    padding:14px;
-    border:1px solid #733;
-    border-radius:10px;
-    background:#210d0d;
-    color:#ffb9b9;
-    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-size:12px;
-    white-space:pre-wrap;
-    z-index:20;
-}
-
-button {
-    border:0;
-    border-radius:8px;
-    padding:9px 13px;
-    background:#273449;
-    color:white;
-    font-weight:600;
-    margin-top:8px;
-}
-
-button:active {
-    transform:scale(.98);
+    height: 100%;
 }
 </style>
 </head>
 
 <body>
+
 <div id="app">
 
-    <div id="top">
-        <div id="title">Linux x86-64 browser VM</div>
-        <div id="status">Starting…</div>
+    <div id="header">
+        <div id="title">
+            Linux x86-64 browser VM
+        </div>
+
+        <div id="status">
+            Initialising…
+        </div>
     </div>
+
+    <div id="log"></div>
 
     <div id="terminal"></div>
 
-    <div id="error"></div>
-
 </div>
+
 
 <script type="module">
 
 /*
-    IMPORTANT
+============================================================
+QEMU-WASM TEST
+============================================================
 
-    This VM is deliberately non-persistent.
+This page intentionally performs the startup in small stages.
 
-    Nothing is saved to IndexedDB/localStorage by this page.
-    When the page is closed/reloaded, the VM state disappears.
+If something fails, the exact stage is displayed.
 
-    The QEMU-Wasm files below come from the public generated image
-    repository used by the upstream QEMU-Wasm demo.
+The VM is NON-PERSISTENT.
+No IndexedDB or localStorage disk is created.
+
+============================================================
 */
+
 
 const BASE =
-    "https://raw.githubusercontent.com/ktock/qemu-wasm-demo-images/main/alpine-x86_64/";
+    "https://cdn.jsdelivr.net/gh/" +
+    "ktock/qemu-wasm-demo-images@main/alpine-x86_64/";
 
-const URLS = {
+
+const FILES = {
+
     wasm:
-        BASE + "qemu-system-x86_64.wasm",
+        BASE +
+        "qemu-system-x86_64.wasm",
 
     qemuJS:
-        BASE + "out.js",
+        BASE +
+        "out.js",
 
     worker:
-        BASE + "qemu-system-x86_64.worker.js",
+        BASE +
+        "qemu-system-x86_64.worker.js",
 
     kernel:
-        BASE + "load-kernel.js",
+        BASE +
+        "load-kernel.js",
 
     initramfs:
-        BASE + "load-initramfs.js",
+        BASE +
+        "load-initramfs.js",
 
     rootfs:
-        BASE + "load-rootfs.js",
+        BASE +
+        "load-rootfs.js",
 
     rom:
-        BASE + "load-rom.js"
+        BASE +
+        "load-rom.js"
 };
 
-const statusEl = document.getElementById("status");
-const errorEl = document.getElementById("error");
 
-function status(message) {
-    statusEl.textContent = message;
-    console.log("[VM]", message);
+const statusElement =
+    document.getElementById("status");
+
+const logElement =
+    document.getElementById("log");
+
+
+function setStatus(text) {
+    statusElement.textContent = text;
 }
 
-function fail(message, error = null) {
 
-    let details = message;
+function log(text, type = "info") {
 
-    if (error) {
-        details +=
-            "\n\n" +
-            (error.stack || error.message || String(error));
-    }
+    const line =
+        document.createElement("div");
 
-    console.error(details, error);
+    line.className = type;
 
-    errorEl.style.display = "block";
-    errorEl.textContent = details;
-    status("VM failed.");
+    line.textContent = text;
+
+    logElement.appendChild(line);
+
+    logElement.scrollTop =
+        logElement.scrollHeight;
+
+    console.log(text);
 }
+
+
+function success(text) {
+    log("✓ " + text, "ok");
+}
+
+
+function warning(text) {
+    log("⚠ " + text, "warn");
+}
+
+
+function failure(text) {
+    log("✗ " + text, "bad");
+}
+
 
 /*
-    Download a file explicitly.
-
-    We do NOT let Emscripten perform the initial WASM download.
-    The browser fetches it first so that:
-      - HTTP status is checked
-      - CORS is checked
-      - the actual downloaded byte count is known
-      - the resulting ArrayBuffer can be supplied directly
+============================================================
+FETCH TEST
+============================================================
 */
-async function download(url, label, expectedMinimum = 1) {
 
-    status("Downloading " + label + "…");
+async function fetchFile(
+    url,
+    name,
+    minimumBytes = 1
+) {
+
+    setStatus(
+        "Downloading:\n" +
+        name
+    );
+
+    log(
+        "\nDownloading " +
+        name +
+        "\n" +
+        url
+    );
 
     let response;
 
     try {
-        response = await fetch(url, {
-            method: "GET",
-            mode: "cors",
-            credentials: "omit",
-            cache: "no-store"
-        });
-    }
-    catch (e) {
-        throw new Error(
-            "Network/CORS failure while downloading:\n" +
-            label +
-            "\n\nURL:\n" +
-            url +
-            "\n\nBrowser error:\n" +
-            (e.message || e)
-        );
-    }
 
-    if (!response.ok) {
-        throw new Error(
-            "HTTP " +
-            response.status +
-            " " +
-            response.statusText +
-            " while downloading:\n" +
-            label +
-            "\n\nURL:\n" +
+        response = await fetch(
+            url,
+            {
+                method: "GET",
+                mode: "cors",
+                credentials: "omit",
+                cache: "no-store"
+            }
+        );
+
+    } catch (error) {
+
+        failure(
+            "FETCH FAILED: " +
+            name
+        );
+
+        failure(
+            "Browser error: " +
+            (
+                error &&
+                error.message
+                    ? error.message
+                    : String(error)
+            )
+        );
+
+        failure(
+            "URL:\n" +
             url
         );
+
+        throw error;
     }
 
-    const data = await response.arrayBuffer();
 
-    if (data.byteLength < expectedMinimum) {
+    log(
+        "HTTP status: " +
+        response.status +
+        " " +
+        response.statusText
+    );
+
+
+    if (!response.ok) {
+
+        const error =
+            new Error(
+                "HTTP " +
+                response.status +
+                " " +
+                response.statusText
+            );
+
+        failure(
+            "HTTP DOWNLOAD FAILED: " +
+            name
+        );
+
+        throw error;
+    }
+
+
+    const contentType =
+        response.headers.get(
+            "content-type"
+        );
+
+
+    if (contentType) {
+
+        log(
+            "Content-Type: " +
+            contentType
+        );
+
+    }
+
+
+    const buffer =
+        await response.arrayBuffer();
+
+
+    log(
+        "Downloaded: " +
+        buffer.byteLength.toLocaleString() +
+        " bytes"
+    );
+
+
+    if (
+        buffer.byteLength <
+        minimumBytes
+    ) {
+
         throw new Error(
-            "Downloaded file is unexpectedly small.\n\n" +
-            "File: " + label + "\n" +
-            "Bytes received: " + data.byteLength + "\n" +
-            "URL: " + url
+            name +
+            " is smaller than expected."
         );
     }
 
-    console.log(
-        "[VM] downloaded",
-        label,
-        data.byteLength.toLocaleString(),
-        "bytes"
+
+    success(
+        name +
+        " downloaded successfully."
     );
 
-    return data;
+
+    return buffer;
 }
 
 
 /*
-    Convert downloaded JavaScript into a same-origin Blob URL.
-
-    This is important for the pthread worker because the QEMU-Wasm
-    build contains a dedicated worker.
+============================================================
+WASM VALIDATION
+============================================================
 */
-async function downloadTextAsBlobURL(url, label) {
 
-    const bytes = await download(url, label, 50);
+async function testWasm() {
 
-    const text = new TextDecoder().decode(bytes);
-
-    if (!text.trim()) {
-        throw new Error(label + " downloaded as an empty file.");
-    }
-
-    return URL.createObjectURL(
-        new Blob(
-            [text],
-            { type:"text/javascript" }
-        )
-    );
-}
-
-
-/*
-    Execute one of the generated Emscripten file-package loaders.
-
-    These loaders populate QEMU's virtual filesystem with:
-      - Linux kernel
-      - initramfs
-      - root filesystem
-      - BIOS/ROM files
-*/
-async function loadPackageScript(url, label, Module) {
-
-    status("Loading " + label + "…");
-
-    const bytes = await download(url, label, 50);
-
-    const text = new TextDecoder().decode(bytes);
-
-    if (!text.includes("loadPackage")) {
-        console.warn(
-            "[VM] " + label +
-            " does not contain the expected file-package loader."
-        );
-    }
-
-    /*
-        The generated loaders are classic scripts and expect a
-        global Module variable.
-    */
-    window.Module = Module;
-
-    const blobURL = URL.createObjectURL(
-        new Blob(
-            [text],
-            { type:"text/javascript" }
-        )
-    );
-
-    try {
-        await new Promise((resolve, reject) => {
-
-            const script = document.createElement("script");
-
-            script.onload = () => {
-                script.remove();
-                URL.revokeObjectURL(blobURL);
-                resolve();
-            };
-
-            script.onerror = () => {
-                script.remove();
-                URL.revokeObjectURL(blobURL);
-                reject(
-                    new Error(
-                        "Could not execute " + label
-                    )
-                );
-            };
-
-            script.src = blobURL;
-
-            document.head.appendChild(script);
-        });
-    }
-    catch (e) {
-        throw e;
-    }
-}
-
-
-/*
-    Main boot routine.
-*/
-async function boot() {
-
-    let workerBlobURL = null;
-    let qemuBlobURL = null;
-
-    try {
-
-        status("Checking browser requirements…");
-
-        if (typeof WebAssembly === "undefined") {
-            throw new Error(
-                "WebAssembly is not available in this browser."
-            );
-        }
-
-        if (typeof SharedArrayBuffer === "undefined") {
-            throw new Error(
-                "SharedArrayBuffer is unavailable.\n\n" +
-                "QEMU-Wasm's pthread build requires cross-origin isolation.\n\n" +
-                "Make sure Cloudflare Pages is sending:\n\n" +
-                "Cross-Origin-Opener-Policy: same-origin\n" +
-                "Cross-Origin-Embedder-Policy: require-corp"
-            );
-        }
-
-        if (!crossOriginIsolated) {
-            throw new Error(
-                "The page is NOT cross-origin isolated.\n\n" +
-                "crossOriginIsolated = false\n\n" +
-                "Cloudflare Pages must send:\n\n" +
-                "Cross-Origin-Opener-Policy: same-origin\n" +
-                "Cross-Origin-Embedder-Policy: require-corp"
-            );
-        }
-
-        status("Browser requirements passed.");
-
-        /*
-            --------------------------------------------------------
-            1. Download QEMU WebAssembly
-            --------------------------------------------------------
-        */
-
-        const wasmBinary = await download(
-            URLS.wasm,
+    const buffer =
+        await fetchFile(
+            FILES.wasm,
             "QEMU x86-64 WebAssembly",
             1000000
         );
 
-        /*
-            Check the WebAssembly magic number.
 
-            A real WebAssembly binary begins with:
-                00 61 73 6d
-        */
+    /*
+        WebAssembly magic number:
 
-        const wasmBytes = new Uint8Array(wasmBinary);
+        00 61 73 6d
+    */
 
-        if (
-            wasmBytes[0] !== 0x00 ||
-            wasmBytes[1] !== 0x61 ||
-            wasmBytes[2] !== 0x73 ||
-            wasmBytes[3] !== 0x6d
-        ) {
-            throw new Error(
-                "The downloaded QEMU file is not a valid WebAssembly binary.\n\n" +
-                "The server may have returned HTML/error text instead of the .wasm file."
+    const bytes =
+        new Uint8Array(buffer);
+
+
+    if (
+        bytes[0] !== 0x00 ||
+        bytes[1] !== 0x61 ||
+        bytes[2] !== 0x73 ||
+        bytes[3] !== 0x6d
+    ) {
+
+        throw new Error(
+            "The downloaded file is NOT a WebAssembly binary.\n\n" +
+            "First bytes received:\n" +
+            Array
+                .from(bytes.slice(0, 16))
+                .map(
+                    x =>
+                        x
+                            .toString(16)
+                            .padStart(2, "0")
+                )
+                .join(" ")
+        );
+    }
+
+
+    success(
+        "WASM magic header is valid."
+    );
+
+
+    /*
+        Ask the browser whether it can compile
+        the downloaded module.
+    */
+
+    setStatus(
+        "Checking WebAssembly compatibility…"
+    );
+
+
+    let compiled;
+
+    try {
+
+        compiled =
+            await WebAssembly.compile(
+                buffer
             );
-        }
 
-        status(
-            "QEMU WebAssembly downloaded successfully (" +
-            wasmBinary.byteLength.toLocaleString() +
-            " bytes)."
+    } catch (error) {
+
+        failure(
+            "WebAssembly.compile() FAILED."
+        );
+
+        failure(
+            error.message ||
+            String(error)
+        );
+
+        throw error;
+    }
+
+
+    if (
+        !(compiled instanceof WebAssembly.Module)
+    ) {
+
+        throw new Error(
+            "Browser did not produce a WebAssembly.Module."
+        );
+    }
+
+
+    success(
+        "Browser successfully compiled QEMU WebAssembly."
+    );
+
+
+    return buffer;
+}
+
+
+/*
+============================================================
+BROWSER REQUIREMENTS
+============================================================
+*/
+
+function checkBrowser() {
+
+    setStatus(
+        "Checking browser requirements…"
+    );
+
+
+    if (
+        typeof WebAssembly ===
+        "undefined"
+    ) {
+
+        throw new Error(
+            "WebAssembly is unavailable."
+        );
+    }
+
+
+    success(
+        "WebAssembly is available."
+    );
+
+
+    if (
+        typeof SharedArrayBuffer ===
+        "undefined"
+    ) {
+
+        throw new Error(
+            "SharedArrayBuffer is unavailable.\n\n" +
+            "QEMU-Wasm's pthread build requires it.\n\n" +
+            "Cloudflare Pages needs the COOP/COEP headers."
+        );
+    }
+
+
+    success(
+        "SharedArrayBuffer is available."
+    );
+
+
+    if (
+        typeof crossOriginIsolated ===
+        "undefined"
+    ) {
+
+        throw new Error(
+            "crossOriginIsolated is unavailable."
+        );
+    }
+
+
+    log(
+        "crossOriginIsolated = " +
+        String(crossOriginIsolated)
+    );
+
+
+    if (!crossOriginIsolated) {
+
+        throw new Error(
+            "crossOriginIsolated is FALSE.\n\n" +
+            "The Cloudflare Pages _headers file is not being applied."
+        );
+    }
+
+
+    success(
+        "Cross-origin isolation is enabled."
+    );
+}
+
+
+/*
+============================================================
+DOWNLOAD JS FILE
+============================================================
+*/
+
+async function downloadText(
+    url,
+    name
+) {
+
+    const buffer =
+        await fetchFile(
+            url,
+            name,
+            50
+        );
+
+
+    const text =
+        new TextDecoder().decode(
+            buffer
+        );
+
+
+    if (!text.trim()) {
+
+        throw new Error(
+            name +
+            " is empty."
+        );
+    }
+
+
+    return text;
+}
+
+
+/*
+============================================================
+BLOB URL
+============================================================
+*/
+
+function makeScriptBlob(
+    text
+) {
+
+    return URL.createObjectURL(
+        new Blob(
+            [text],
+            {
+                type:
+                    "text/javascript"
+            }
+        )
+    );
+}
+
+
+/*
+============================================================
+MAIN
+============================================================
+*/
+
+async function main() {
+
+    try {
+
+        log(
+            "Starting QEMU-Wasm diagnostics…"
         );
 
 
         /*
-            --------------------------------------------------------
-            2. Download the pthread worker
-            --------------------------------------------------------
+        --------------------------------------------------------
+        STEP 1
+        --------------------------------------------------------
         */
 
-        workerBlobURL = await downloadTextAsBlobURL(
-            URLS.worker,
-            "QEMU pthread worker"
-        );
-
-        status("QEMU pthread worker prepared.");
+        checkBrowser();
 
 
         /*
-            --------------------------------------------------------
-            3. Download QEMU's generated JavaScript
-            --------------------------------------------------------
+        --------------------------------------------------------
+        STEP 2
+        --------------------------------------------------------
         */
 
-        qemuBlobURL = await downloadTextAsBlobURL(
-            URLS.qemuJS,
-            "QEMU JavaScript runtime"
-        );
-
-        status("QEMU JavaScript runtime prepared.");
+        const wasm =
+            await testWasm();
 
 
         /*
-            --------------------------------------------------------
-            4. Load xterm
-            --------------------------------------------------------
+        --------------------------------------------------------
+        STEP 3
+        --------------------------------------------------------
         */
 
-        status("Loading terminal…");
+        setStatus(
+            "QEMU WebAssembly works. " +
+            "Downloading runtime files…"
+        );
+
+
+        const qemuText =
+            await downloadText(
+                FILES.qemuJS,
+                "QEMU JavaScript runtime"
+            );
+
+
+        const workerText =
+            await downloadText(
+                FILES.worker,
+                "QEMU pthread worker"
+            );
+
+
+        success(
+            "QEMU JavaScript files downloaded."
+        );
+
+
+        /*
+        --------------------------------------------------------
+        STEP 4
+        --------------------------------------------------------
+        */
+
+        /*
+            We intentionally test the four generated package
+            scripts before trying to start QEMU.
+        */
+
+        await downloadText(
+            FILES.kernel,
+            "Linux kernel package"
+        );
+
+
+        await downloadText(
+            FILES.initramfs,
+            "Linux initramfs package"
+        );
+
+
+        await downloadText(
+            FILES.rootfs,
+            "Alpine root filesystem package"
+        );
+
+
+        await downloadText(
+            FILES.rom,
+            "QEMU ROM package"
+        );
+
+
+        success(
+            "All QEMU package scripts downloaded."
+        );
+
+
+        /*
+        --------------------------------------------------------
+        STEP 5
+        --------------------------------------------------------
+        */
+
+        setStatus(
+            "Loading terminal libraries…"
+        );
+
 
         const [
             xtermModule,
             ptyModule
-        ] = await Promise.all([
-            import(
-                "https://cdn.jsdelivr.net/npm/xterm@5.3.0/+esm"
-            ),
-            import(
-                "https://cdn.jsdelivr.net/npm/xterm-pty@0.9.0/+esm"
-            )
-        ]);
+        ] =
+            await Promise.all([
+                import(
+                    "https://cdn.jsdelivr.net/npm/xterm@5.3.0/+esm"
+                ),
+                import(
+                    "https://cdn.jsdelivr.net/npm/xterm-pty@0.9.0/+esm"
+                )
+            ]);
 
-        const Terminal = xtermModule.Terminal;
-        const { openpty } = ptyModule;
 
-        const terminal = new Terminal({
-            cursorBlink: true,
-            convertEol: true,
-            fontSize: 14,
-            scrollback: 5000,
-            theme: {
-                background: "#080b10",
-                foreground: "#e8eef7"
-            }
-        });
-
-        terminal.open(
-            document.getElementById("terminal")
+        success(
+            "Terminal libraries loaded."
         );
 
+
+        const Terminal =
+            xtermModule.Terminal;
+
+
+        const {
+            openpty
+        } = ptyModule;
+
+
         /*
-            xterm-pty gives QEMU the same kind of terminal connection
-            used by the upstream demo.
+        --------------------------------------------------------
+        STEP 6
+        --------------------------------------------------------
         */
+
+        const terminalElement =
+            document.getElementById(
+                "terminal"
+            );
+
+
+        terminalElement.style.display =
+            "block";
+
+
+        logElement.style.display =
+            "none";
+
+
+        const terminal =
+            new Terminal({
+                cursorBlink: true,
+                convertEol: true,
+                fontSize: 14,
+                scrollback: 5000,
+                theme: {
+                    background:
+                        "#080b10",
+                    foreground:
+                        "#e8eef7"
+                }
+            });
+
+
+        terminal.open(
+            terminalElement
+        );
+
+
         const {
             master,
             slave
-        } = openpty();
+        } =
+            openpty();
 
-        terminal.loadAddon(master);
+
+        terminal.loadAddon(
+            master
+        );
 
 
         /*
-            --------------------------------------------------------
-            5. Create Emscripten Module object
-            --------------------------------------------------------
+        --------------------------------------------------------
+        STEP 7
+        --------------------------------------------------------
+        */
+
+        const workerBlob =
+            makeScriptBlob(
+                workerText
+            );
+
+
+        const qemuBlob =
+            makeScriptBlob(
+                qemuText
+            );
+
+
+        /*
+        --------------------------------------------------------
+        STEP 8
+        --------------------------------------------------------
         */
 
         const Module = {
 
+            wasmBinary:
+                wasm,
+
+            pty:
+                slave,
+
             /*
-                Give Emscripten the WASM bytes directly.
-
-                This is the important change from the previous version.
+                IMPORTANT:
+                QEMU's pthread worker is supplied explicitly.
             */
-            wasmBinary: wasmBinary,
 
-            /*
-                QEMU's pthread worker.
-
-                Returning the Blob URL means the Worker itself is
-                created from the same origin as this page.
-            */
-            locateFile(path, prefix) {
+            locateFile(
+                path,
+                prefix
+            ) {
 
                 if (
-                    path === "qemu-system-x86_64.worker.js" ||
-                    path.endsWith(".worker.js")
+                    path.endsWith(
+                        ".worker.js"
+                    )
                 ) {
-                    return workerBlobURL;
+
+                    return workerBlob;
                 }
 
-                /*
-                    Emscripten may ask for the wasm file.
-                    wasmBinary above normally prevents another download,
-                    but this remains a safe fallback.
-                */
+
                 if (
-                    path === "qemu-system-x86_64.wasm" ||
-                    path.endsWith(".wasm")
+                    path.endsWith(
+                        ".wasm"
+                    )
                 ) {
-                    return URLS.wasm;
+
+                    return FILES.wasm;
                 }
 
-                /*
-                    Packaged filesystem data.
-                */
-                if (path.endsWith(".data")) {
-                    return BASE + path;
-                }
 
                 return BASE + path;
             },
 
-            /*
-                Used by the pthread worker when it imports the main
-                QEMU ES module.
-            */
-            mainScriptUrlOrBlob: qemuBlobURL,
 
             /*
-                Connect QEMU's terminal to xterm-pty.
+                QEMU pthread runtime uses this
+                when loading its module inside workers.
             */
-            pty: slave,
+
+            mainScriptUrlOrBlob:
+                qemuBlob,
+
 
             print(text) {
+
                 terminal.write(
-                    String(text).replace(/\n/g, "\r\n")
+                    String(text)
+                        .replace(
+                            /\n/g,
+                            "\r\n"
+                        )
                 );
             },
+
 
             printErr(text) {
+
                 terminal.write(
-                    "\r\n\x1b[31m" +
+                    "\r\n" +
                     String(text) +
-                    "\x1b[0m\r\n"
+                    "\r\n"
                 );
 
-                console.error("[QEMU]", text);
+
+                console.error(
+                    "[QEMU]",
+                    text
+                );
             },
+
 
             onAbort(reason) {
-                fail(
-                    "Emscripten/QEMU aborted:\n\n" +
-                    String(reason)
+
+                console.error(
+                    "QEMU ABORT:",
+                    reason
                 );
+
+
+                /*
+                    Do NOT overwrite the error with a
+                    generic message.
+                */
+
+                statusElement.textContent =
+                    "QEMU ABORT:\n" +
+                    String(reason);
             },
 
-            onExit(statusCode) {
+
+            onExit(code) {
+
                 console.log(
-                    "[QEMU] exited with status",
-                    statusCode
+                    "QEMU exited:",
+                    code
                 );
             }
         };
 
 
+        window.Module =
+            Module;
+
+
         /*
-            Make Module globally visible for the generated
-            file-package loaders.
+        --------------------------------------------------------
+        STEP 9
+        --------------------------------------------------------
+
+        Execute the generated package loaders.
+
+        These are loaded from downloaded text instead of
+        relying on the browser to resolve their relative
+        URLs from a foreign origin.
         */
-        window.Module = Module;
+
+        async function executePackage(
+            text,
+            name
+        ) {
+
+            setStatus(
+                "Installing " +
+                name +
+                "…"
+            );
+
+
+            const blob =
+                makeScriptBlob(
+                    text
+                );
+
+
+            await new Promise(
+                (resolve, reject) => {
+
+                    const script =
+                        document.createElement(
+                            "script"
+                        );
+
+
+                    script.onload =
+                        () => {
+
+                            script.remove();
+
+                            URL.revokeObjectURL(
+                                blob
+                            );
+
+                            resolve();
+                        };
+
+
+                    script.onerror =
+                        () => {
+
+                            script.remove();
+
+                            URL.revokeObjectURL(
+                                blob
+                            );
+
+                            reject(
+                                new Error(
+                                    "Could not execute " +
+                                    name
+                                )
+                            );
+                        };
+
+
+                    script.src =
+                        blob;
+
+
+                    document.head.appendChild(
+                        script
+                    );
+                }
+            );
+        }
 
 
         /*
-            --------------------------------------------------------
-            6. Load the four generated filesystem packages
-            --------------------------------------------------------
+            Re-download package contents so that their text
+            can be executed.
         */
 
-        await loadPackageScript(
-            URLS.kernel,
-            "Linux kernel package",
-            Module
+        const kernelText =
+            await downloadText(
+                FILES.kernel,
+                "Linux kernel package"
+            );
+
+
+        const initramfsText =
+            await downloadText(
+                FILES.initramfs,
+                "Linux initramfs package"
+            );
+
+
+        const rootfsText =
+            await downloadText(
+                FILES.rootfs,
+                "Alpine root filesystem package"
+            );
+
+
+        const romText =
+            await downloadText(
+                FILES.rom,
+                "QEMU ROM package"
+            );
+
+
+        await executePackage(
+            kernelText,
+            "Linux kernel"
         );
 
-        await loadPackageScript(
-            URLS.initramfs,
-            "Linux initramfs package",
-            Module
+
+        await executePackage(
+            initramfsText,
+            "Linux initramfs"
         );
 
-        await loadPackageScript(
-            URLS.rootfs,
-            "Alpine root filesystem package",
-            Module
+
+        await executePackage(
+            rootfsText,
+            "Alpine root filesystem"
         );
 
-        await loadPackageScript(
-            URLS.rom,
-            "QEMU ROM package",
-            Module
+
+        await executePackage(
+            romText,
+            "QEMU ROM"
+        );
+
+
+        success(
+            "Virtual filesystem packages installed."
         );
 
 
         /*
-            --------------------------------------------------------
-            7. QEMU command line
-            --------------------------------------------------------
-
-            This mirrors the upstream Alpine x86-64 demonstration:
-
-              - 512 MB RAM
-              - x86 PC machine
-              - TCG acceleration
-              - kernel
-              - initramfs
-              - packaged root filesystem
-              - virtio disk
-
-            Networking is deliberately disabled for this first boot.
-            That removes another independent failure point.
+        --------------------------------------------------------
+        STEP 10
+        --------------------------------------------------------
         */
 
         Module.arguments = [
+
             "-nographic",
 
             "-M",
@@ -681,60 +1126,92 @@ async function boot() {
 
 
         /*
-            --------------------------------------------------------
-            8. Start QEMU
-            --------------------------------------------------------
+        --------------------------------------------------------
+        STEP 11
+        --------------------------------------------------------
         */
 
-        status("Starting x86-64 QEMU…");
+        setStatus(
+            "Starting QEMU x86-64…"
+        );
 
-        /*
-            Import the generated ES module from the same-origin
-            Blob URL.
-        */
-        const qemuModule =
-            await import(qemuBlobURL);
+
+        const qemu =
+            await import(
+                qemuBlob
+            );
+
 
         if (
-            !qemuModule ||
-            typeof qemuModule.default !== "function"
+            !qemu ||
+            typeof qemu.default !==
+            "function"
         ) {
+
             throw new Error(
-                "The downloaded QEMU JavaScript did not expose " +
-                "the expected Emscripten module factory."
+                "QEMU JavaScript did not expose " +
+                "the expected Emscripten module."
             );
         }
 
-        /*
-            Emscripten's default export returns its initialization
-            promise.
-        */
-        await qemuModule.default(Module);
 
-        status(
-            "Linux x86-64 VM started. " +
-            "The terminal is live."
+        /*
+            Start the actual VM.
+        */
+
+        await qemu.default(
+            Module
         );
 
-    }
-    catch (error) {
 
-        fail(
-            "VM startup failed.\n\n" +
-            "The failure occurred while downloading or starting " +
-            "the QEMU-Wasm x86-64 runtime.",
+        setStatus(
+            "Linux x86-64 VM running."
+        );
+
+
+    } catch (error) {
+
+        /*
+            This is deliberately verbose.
+
+            The next failure should tell us EXACTLY which
+            stage is broken.
+        */
+
+        console.error(
+            "FULL VM ERROR:",
             error
         );
 
+
+        setStatus(
+            "VM failed — see diagnostic output below."
+        );
+
+
+        failure(
+            "\nFINAL ERROR"
+        );
+
+
+        failure(
+            error &&
+            error.stack
+                ? error.stack
+                : (
+                    error &&
+                    error.message
+                        ? error.message
+                        : String(error)
+                )
+        );
     }
 }
 
 
-/*
-    Start only after the page has loaded.
-*/
-boot();
+main();
 
 </script>
+
 </body>
 </html>
