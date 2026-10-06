@@ -233,12 +233,16 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
          * Preserve the upstream Content-Length when GitHub supplies it.
          * The browser can then show accurate download progress.
          */
-        if (!headers.has("Content-Type")) {
-          headers.set(
-            "Content-Type",
-            contentType(filename)
-          );
-        }
+        /*
+         * GitHub Releases commonly labels uploaded .js files as
+         * application/octet-stream. Browsers will refuse to import
+         * such a response as an ES module, so always set the correct
+         * JavaScript MIME type for JavaScript runtime assets.
+         */
+        headers.set(
+          "Content-Type",
+          contentType(filename)
+        );
 
         return new Response(upstream.body, {
           status: upstream.status,
