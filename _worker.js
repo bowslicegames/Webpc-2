@@ -277,30 +277,55 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
     if (STATIC_FILES.has(path)) {
       try {
         /*
-         * Static application files are deployed with this Worker.
-         * Fetch them through the ASSETS binding so index.html is
-         * exactly the version included in the Cloudflare deployment.
-         * This avoids a second GitHub Raw cache path.
+         * index.html comes from the deployed Cloudflare Assets bundle.
+         *
+         * xterm.js and xterm-pty are deliberately fetched from the
+         * pinned GitHub commit below. They are small static files and
+         * keeping them on this explicit Worker route avoids differences
+         * between Pages/Workers asset-binding behaviour.
          */
-        if (!env.ASSETS) {
-          throw new Error(
-            "Cloudflare ASSETS binding is missing. " +
-            "Check wrangler.toml [assets] configuration."
+        let upstream;
+
+        if (
+          path === "xterm/xterm.js" ||
+          path === "xterm/xterm.css" ||
+          path === "xterm-pty/index.mjs"
+        ) {
+          upstream = await fetch(
+            RAW_BASE + path,
+            {
+              method:
+                request.method === "HEAD"
+                  ? "HEAD"
+                  : "GET",
+              redirect: "follow",
+              cf: {
+                cacheTtl: 0,
+                cacheEverything: false
+              }
+            }
           );
-        }
-
-        const assetRequest = new Request(
-          new URL("/" + path, url.origin),
-          {
-            method: request.method === "HEAD"
-              ? "HEAD"
-              : "GET",
-            headers: request.headers
+        } else {
+          if (!env.ASSETS) {
+            throw new Error(
+              "Cloudflare ASSETS binding is missing. " +
+              "Check wrangler.toml [assets] configuration."
+            );
           }
-        );
 
-        const upstream =
-          await env.ASSETS.fetch(assetRequest);
+          const assetRequest = new Request(
+            new URL("/" + path, url.origin),
+            {
+              method: request.method === "HEAD"
+                ? "HEAD"
+                : "GET",
+              headers: request.headers
+            }
+          );
+
+          upstream =
+            await env.ASSETS.fetch(assetRequest);
+        }
 
         if (!upstream.ok) {
           return new Response(
