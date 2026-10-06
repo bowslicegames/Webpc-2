@@ -36,8 +36,20 @@ const STATIC_FILES = new Set([
 const RELEASE_BASE =
   "https://github.com/bowslicegames/Webpc-2/releases/download/V1/";
 
+/*
+ * Pin the small application files to a known Git commit.
+ *
+ * Using /main/ through a CDN can briefly serve an older index.html
+ * after a GitHub update. That is particularly confusing for WebPC
+ * because the browser can then show an old startup screen while the
+ * Worker itself is already new.
+ */
+const STATIC_COMMIT =
+  "d34010ceac9b762a19f6a8768a2c6e8b4d07c7fa";
+
 const RAW_BASE =
-  "https://raw.githubusercontent.com/bowslicegames/Webpc-2/main/";
+  "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
+  STATIC_COMMIT + "/";
 
 function securityHeaders(extra = {}) {
   return {
