@@ -5,8 +5,6 @@
  *   /assets/<release filename>
  *
  * The Worker fetches the public GitHub Release asset server-side.
- * GitHub redirects are therefore followed by Cloudflare rather than
- * by the cross-origin-isolated iPad page.
  */
 
 const ALLOWED_ASSETS = new Set([
@@ -47,6 +45,28 @@ export default {
 
     const url = new URL(request.url);
 
+    /*
+     * Diagnostic endpoint.
+     *
+     * If /worker-test returns this response, the Cloudflare
+     * Pages deployment is definitely executing this _worker.js.
+     */
+    if (url.pathname === "/worker-test") {
+      return new Response(
+        "WebPC 2 Worker is ACTIVE\n" +
+        "Asset proxy: ACTIVE\n" +
+        "Release: V1\n" +
+        "QEMU asset: ALLOWED\n",
+        {
+          status: 200,
+          headers: corsHeaders({
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-store"
+          })
+        }
+      );
+    }
+
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -64,13 +84,19 @@ export default {
           url.pathname.slice("/assets/".length)
         );
 
+      /*
+       * Diagnostic response for unknown filenames. This makes it
+       * obvious that the Worker itself handled the request.
+       */
       if (!ALLOWED_ASSETS.has(filename)) {
         return new Response(
-          "Unknown WebPC 2 asset",
+          "WebPC 2 Worker ACTIVE\n" +
+          "Unknown asset: " + filename + "\n",
           {
             status: 404,
             headers: corsHeaders({
-              "Content-Type": "text/plain; charset=utf-8"
+              "Content-Type": "text/plain; charset=utf-8",
+              "Cache-Control": "no-store"
             })
           }
         );
@@ -98,15 +124,18 @@ export default {
         if (!upstream.ok) {
 
           return new Response(
-            "GitHub Release asset request failed: " +
-            upstream.status +
-            " " +
-            upstream.statusText,
+            "WebPC 2 Worker ACTIVE\n" +
+            "Asset: " + filename + "\n" +
+            "GitHub Release request failed: " +
+            upstream.status + " " +
+            upstream.statusText + "\n" +
+            "Upstream URL: " + upstreamURL,
             {
               status: 502,
               headers: corsHeaders({
                 "Content-Type":
-                  "text/plain; charset=utf-8"
+                  "text/plain; charset=utf-8",
+                "Cache-Control": "no-store"
               })
             }
           );
@@ -141,7 +170,9 @@ export default {
       } catch (error) {
 
         return new Response(
-          "WebPC 2 asset proxy error: " +
+          "WebPC 2 Worker ACTIVE\n" +
+          "Asset: " + filename + "\n" +
+          "Proxy error: " +
           (
             error &&
             error.message
@@ -152,7 +183,8 @@ export default {
             status: 502,
             headers: corsHeaders({
               "Content-Type":
-                "text/plain; charset=utf-8"
+                "text/plain; charset=utf-8",
+              "Cache-Control": "no-store"
             })
           }
         );
@@ -172,7 +204,7 @@ export default {
     }
 
     return new Response(
-      "WebPC 2 Worker asset proxy is running, but the static ASSETS binding is not configured.",
+      "WebPC 2 Worker is ACTIVE, but the static ASSETS binding is not configured.",
       {
         status: 500,
         headers: corsHeaders({
