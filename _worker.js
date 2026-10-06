@@ -1,8 +1,12 @@
 /*
  * WebPC 2 Cloudflare Worker.
  *
- * This version works both with a Pages ASSETS binding and as a normal
- * Worker deployment. Release assets are always proxied same-origin.
+ * Normal Wrangler Worker deployment:
+ *   wrangler.toml -> main = "_worker.js"
+ *
+ * The Worker serves the small application files and proxies the large
+ * QEMU/Linux release assets from GitHub Releases, keeping every browser
+ * request same-origin.
  */
 
 const ALLOWED_ASSETS = new Set([
@@ -43,6 +47,21 @@ function corsHeaders(extra = {}) {
   };
 }
 
+/*
+ * These two headers are REQUIRED on the actual document response.
+ * The old _headers file does not reliably apply to a normal Wrangler
+ * Worker deployment, so set them here as well.
+ */
+function documentHeaders(extra = {}) {
+  return {
+    ...extra,
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "X-WebPC-Worker": "active"
+  };
+}
+
 function isAssetRequest(url) {
   return url.pathname.startsWith("/assets/");
 }
@@ -55,14 +74,18 @@ function contentType(path) {
   return "application/octet-stream";
 }
 
+function errorText(error) {
+  return error && error.message
+    ? error.message
+    : String(error);
+}
+
 export default {
   async fetch(request, env, ctx) {
-
     const url = new URL(request.url);
 
     /*
-     * Large, visible diagnostic page.
-     * This deliberately uses HTML so it is obvious in Safari/Chrome.
+     * Explicit diagnostic page.
      */
     if (url.pathname === "/worker-test") {
       return new Response(
@@ -86,16 +109,15 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
 <p><strong>Asset proxy:</strong> active</p>
 <p><strong>Release:</strong> V1</p>
 <p><strong>QEMU asset:</strong> allowed</p>
-<p><strong>Deployment commit:</strong> cdd303c0cb6de1d85262117a6412ee152b842c3e or newer</p>
+<p><strong>Cross-origin isolation:</strong> enabled</p>
 </main>
 </body>
 </html>`,
         {
           status: 200,
-          headers: corsHeaders({
+          headers: documentHeaders({
             "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": "no-store",
-            "X-WebPC-Worker": "active"
+            "Cache-Control": "no-store"
           })
         }
       );
@@ -112,16 +134,27 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
     }
 
     /*
-     * Same-origin proxy for the large QEMU/runtime assets.
+     * Same-origin proxy for large QEMU/runtime assets.
      */
     if (isAssetRequest(url)) {
+      let filename;
 
-      const filename =
-        decodeURIComponent(
+      try {
+        filename = decodeURIComponent(
           url.pathname.slice("/assets/".length)
         );
+      } catch {
+        filename = "";
+      }
 
-      if (!ALLOWED_ASSETS.has(filename)) {
+      /*
+       * Do not allow path traversal or arbitrary GitHub proxying.
+       */
+      if (
+        !filename ||
+        filename.includes("/") ||
+        !ALLOWED_ASSETS.has(filename)
+      ) {
         return new Response(
           "WebPC 2 Worker ACTIVE\nUnknown asset: " + filename,
           {
@@ -174,17 +207,26 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
           "public, max-age=31536000, immutable"
         );
 
+        /*
+         * Preserve the upstream Content-Length when GitHub supplies it.
+         * The browser can then show accurate download progress.
+         */
+        if (!headers.has("Content-Type")) {
+          headers.set(
+            "Content-Type",
+            contentType(filename)
+          );
+        }
+
         return new Response(upstream.body, {
           status: upstream.status,
           headers
         });
-
       } catch (error) {
         return new Response(
           "WebPC 2 Worker ACTIVE\n" +
           "Asset: " + filename + "\n" +
-          "Proxy error: " +
-          (error && error.message ? error.message : String(error)),
+          "Proxy error: " + errorText(error),
           {
             status: 502,
             headers: corsHeaders({
@@ -199,6 +241,8 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
 
     /*
      * If a Pages ASSETS binding exists, use it first.
+     * Add the isolation headers ourselves because this code also runs
+     * when deployed as a normal Worker.
      */
     if (
       env &&
@@ -208,13 +252,44 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
       const assetResponse = await env.ASSETS.fetch(request);
 
       if (assetResponse.status !== 404) {
-        return assetResponse;
+        const headers = new Headers(assetResponse.headers);
+
+        if (
+          url.pathname === "/" ||
+          url.pathname === "/index.html"
+        ) {
+          headers.set(
+            "Cross-Origin-Opener-Policy",
+            "same-origin"
+          );
+          headers.set(
+            "Cross-Origin-Embedder-Policy",
+            "require-corp"
+          );
+          headers.set(
+            "Cross-Origin-Resource-Policy",
+            "same-origin"
+          );
+        }
+
+        headers.set(
+          "X-WebPC-Worker",
+          "active"
+        );
+
+        return new Response(
+          assetResponse.body,
+          {
+            status: assetResponse.status,
+            statusText: assetResponse.statusText,
+            headers
+          }
+        );
       }
     }
 
     /*
-     * Fallback for a normal workers.dev Worker without an ASSETS
-     * binding. This keeps the small application files same-origin too.
+     * Fallback for a normal workers.dev Worker without an ASSETS binding.
      */
     let path = url.pathname.replace(/^\/+/, "");
 
@@ -224,44 +299,93 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
 
     if (STATIC_FILES.has(path)) {
       try {
-        const upstream = await fetch(RAW_BASE + path, {
-          method: request.method === "HEAD" ? "HEAD" : "GET",
-          redirect: "follow"
-        });
+        const upstream = await fetch(
+          RAW_BASE + path,
+          {
+            method:
+              request.method === "HEAD"
+                ? "HEAD"
+                : "GET",
+            redirect: "follow"
+          }
+        );
 
         if (!upstream.ok) {
           return new Response(
             "WebPC 2 Worker could not load static file: " +
-            path + " (" + upstream.status + ")",
+            path +
+            " (" +
+            upstream.status +
+            ")",
             {
               status: 502,
               headers: corsHeaders({
-                "Content-Type": "text/plain; charset=utf-8",
+                "Content-Type":
+                  "text/plain; charset=utf-8",
+                "Cache-Control": "no-store",
                 "X-WebPC-Worker": "active"
               })
             }
           );
         }
 
-        const headers = new Headers(upstream.headers);
-        headers.set("Content-Type", contentType(path));
-        headers.set("Cross-Origin-Resource-Policy", "same-origin");
-        headers.set("Cache-Control", "no-cache");
-        headers.set("X-WebPC-Worker", "active");
+        const headers =
+          new Headers(upstream.headers);
 
-        return new Response(upstream.body, {
-          status: upstream.status,
-          headers
-        });
+        headers.set(
+          "Content-Type",
+          contentType(path)
+        );
 
+        headers.set(
+          "Cache-Control",
+          path === "index.html"
+            ? "no-cache"
+            : "public, max-age=3600"
+        );
+
+        headers.set(
+          "X-WebPC-Worker",
+          "active"
+        );
+
+        if (path === "index.html") {
+          headers.set(
+            "Cross-Origin-Opener-Policy",
+            "same-origin"
+          );
+          headers.set(
+            "Cross-Origin-Embedder-Policy",
+            "require-corp"
+          );
+          headers.set(
+            "Cross-Origin-Resource-Policy",
+            "same-origin"
+          );
+        } else {
+          headers.set(
+            "Cross-Origin-Resource-Policy",
+            "same-origin"
+          );
+        }
+
+        return new Response(
+          upstream.body,
+          {
+            status: upstream.status,
+            headers
+          }
+        );
       } catch (error) {
         return new Response(
           "WebPC 2 Worker static-file proxy error: " +
-          (error && error.message ? error.message : String(error)),
+          errorText(error),
           {
             status: 502,
             headers: corsHeaders({
-              "Content-Type": "text/plain; charset=utf-8",
+              "Content-Type":
+                "text/plain; charset=utf-8",
+              "Cache-Control": "no-store",
               "X-WebPC-Worker": "active"
             })
           }
@@ -270,11 +394,13 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
     }
 
     return new Response(
-      "WebPC 2 Worker ACTIVE\nNo route for: " + url.pathname,
+      "WebPC 2 Worker ACTIVE\nNo route for: " +
+      url.pathname,
       {
         status: 404,
         headers: corsHeaders({
-          "Content-Type": "text/plain; charset=utf-8",
+          "Content-Type":
+            "text/plain; charset=utf-8",
           "Cache-Control": "no-store",
           "X-WebPC-Worker": "active"
         })
