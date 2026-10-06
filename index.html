@@ -1,145 +1,151 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+
 <meta
   name="viewport"
-  content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"
-/>
+  content="width=device-width,
+           initial-scale=1,
+           maximum-scale=1,
+           user-scalable=no"
+>
 
 <title>WebPC 2 — Alpine Linux x86-64</title>
 
 <style>
-  * {
-    box-sizing: border-box;
-  }
+* {
+  box-sizing: border-box;
+}
 
-  html,
-  body {
-    margin: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    background: #050505;
-    color: #eee;
-    font-family: monospace;
-  }
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+  font-family: monospace;
+}
 
-  #app {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
+#app {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
 
-  #topbar {
-    height: 48px;
-    flex: 0 0 48px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 0 12px;
-    background: #111;
-    border-bottom: 1px solid #333;
-    font-family: system-ui, sans-serif;
-  }
+#topbar {
+  height: 48px;
+  min-height: 48px;
 
-  #title {
-    font-weight: 700;
-    white-space: nowrap;
-  }
+  display: flex;
+  align-items: center;
 
-  #status {
-    font-size: 13px;
-    color: #aaa;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  gap: 12px;
+  padding: 0 12px;
 
-  #terminalWrap {
-    position: relative;
-    flex: 1;
-    min-height: 0;
-    background: #000;
-    overflow: hidden;
-  }
+  background: #111;
+  border-bottom: 1px solid #333;
 
-  #terminal {
-    position: absolute;
-    inset: 0;
-    padding: 10px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-size: 14px;
-    line-height: 1.25;
-    -webkit-user-select: text;
-    user-select: text;
-  }
+  font-family: system-ui, sans-serif;
+}
 
-  #input {
-    position: absolute;
-    left: 10px;
-    right: 10px;
-    bottom: 10px;
-    height: 42px;
-    border: 1px solid #555;
-    border-radius: 7px;
-    background: #111;
-    color: #fff;
-    outline: none;
-    padding: 0 12px;
-    font: 14px monospace;
-  }
+#title {
+  font-weight: 700;
+  white-space: nowrap;
+}
 
-  #input:focus {
-    border-color: #aaa;
-  }
+#status {
+  color: #aaa;
+  font-size: 13px;
 
-  #controls {
-    height: 50px;
-    flex: 0 0 50px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px;
-    background: #111;
-    border-top: 1px solid #333;
-  }
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-  button {
-    height: 36px;
-    padding: 0 14px;
-    border: 1px solid #555;
-    border-radius: 6px;
-    background: #222;
-    color: #fff;
-    font-weight: 600;
-  }
+#terminal {
+  flex: 1;
+  min-height: 0;
 
-  button:active {
-    background: #444;
-  }
+  overflow-y: auto;
+  overflow-x: hidden;
 
-  #boot {
-    display: none;
-  }
+  padding: 12px;
 
-  #error {
-    color: #ff7777;
-    white-space: pre-wrap;
-  }
+  background: #000;
 
-  .muted {
-    color: #777;
-  }
+  white-space: pre-wrap;
+  word-break: break-word;
 
-  .ok {
-    color: #8f8;
-  }
+  font-size: 14px;
+  line-height: 1.3;
+
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+#error {
+  color: #ff6666;
+}
+
+#bottom {
+  height: 58px;
+  min-height: 58px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 8px;
+  padding: 7px;
+
+  background: #111;
+  border-top: 1px solid #333;
+}
+
+#command {
+  flex: 1;
+  min-width: 0;
+
+  height: 42px;
+
+  border: 1px solid #555;
+  border-radius: 7px;
+
+  background: #080808;
+  color: #fff;
+
+  padding: 0 12px;
+
+  outline: none;
+
+  font: 14px monospace;
+}
+
+#command:focus {
+  border-color: #aaa;
+}
+
+button {
+  height: 42px;
+
+  padding: 0 14px;
+
+  border-radius: 7px;
+
+  border: 1px solid #555;
+
+  background: #222;
+  color: #fff;
+
+  font-weight: 700;
+}
+
+button:active {
+  background: #444;
+}
 </style>
 </head>
 
@@ -148,472 +154,385 @@
 <div id="app">
 
   <div id="topbar">
-    <div id="title">WebPC 2</div>
-    <div id="status">Starting Alpine Linux x86-64…</div>
+
+    <div id="title">
+      WebPC 2
+    </div>
+
+    <div id="status">
+      Preparing Alpine Linux x86-64…
+    </div>
+
   </div>
 
-  <div id="terminalWrap">
-    <div id="terminal"></div>
+
+  <div id="terminal"></div>
+
+
+  <div id="bottom">
 
     <input
-      id="input"
+      id="command"
       autocomplete="off"
       autocorrect="off"
       autocapitalize="off"
       spellcheck="false"
-      placeholder="Type Linux commands here…"
-    />
-  </div>
+      placeholder="Linux command…"
+    >
 
-  <div id="controls">
-    <button id="boot">Boot</button>
-    <button id="ctrlc">Ctrl+C</button>
-    <button id="clear">Clear</button>
+    <button id="send">
+      Send
+    </button>
+
+    <button id="ctrlc">
+      Ctrl+C
+    </button>
+
+    <button id="clear">
+      Clear
+    </button>
+
   </div>
 
 </div>
+
 
 <script type="module">
 
 /*
 ===========================================================
- WebPC 2
- Alpine Linux x86-64
+ WEBPC 2
+ ALPINE LINUX x86-64
 ===========================================================
 
- This page deliberately does NOT attempt Minecraft.
+The WebPC Pages site remains wherever your GitHub repository
+currently publishes it.
 
- The QEMU binary and Alpine image come from:
+Large QEMU files are downloaded through the NEW Worker:
 
- https://github.com/bowslicegames/Webpc-2/releases/tag/V1
+https://webpcproxy.bowslicegames.workers.dev/
 
+The Worker then retrieves the files from:
+
+GitHub:
+bowslicegames/Webpc-2
+Release:
+V1
+
+Minecraft is NOT attempted in this version.
+
+Current goal:
+
+Browser
+   ↓
+Cloudflare Pages
+   ↓
+Cloudflare Worker
+   ↓
+GitHub Release
+   ↓
+QEMU x86-64
+   ↓
+Alpine Linux
 ===========================================================
 */
 
-const RELEASE =
-  "https://github.com/bowslicegames/Webpc-2/releases/download/V1/";
+
+/*
+-----------------------------------------------------------
+ NEW WORKER
+-----------------------------------------------------------
+*/
+
+const WORKER =
+  "https://webpcproxy.bowslicegames.workers.dev/";
+
+
+/*
+-----------------------------------------------------------
+ Worker file helper
+-----------------------------------------------------------
+*/
+
+function file(name) {
+
+  return (
+    WORKER +
+    "?file=" +
+    encodeURIComponent(name)
+  );
+
+}
+
+
+/*
+-----------------------------------------------------------
+ QEMU RELEASE FILES
+-----------------------------------------------------------
+*/
 
 const FILES = {
-  out:
-    RELEASE + "out.js",
 
   wasm:
-    RELEASE + "qemu-system-x86_64.wasm",
+    file("qemu-system-x86_64.wasm"),
 
   worker:
-    RELEASE + "qemu-system-x86_64.worker.js",
+    file("qemu-system-x86_64.worker.js"),
 
-  stack:
-    RELEASE + "stack.js",
-
-  stackWorker:
-    RELEASE + "stack-worker.js",
+  out:
+    file("out.js"),
 
   rom:
-    RELEASE + "load-rom.js",
+    file("load-rom.js"),
 
   kernel:
-    RELEASE + "load-kernel.js",
+    file("load-kernel.js"),
 
   initramfs:
-    RELEASE + "load-initramfs.js",
+    file("load-initramfs.js"),
 
   rootfs:
-    RELEASE + "load-rootfs.js"
+    file("load-rootfs.js"),
+
+  stack:
+    file("stack.js"),
+
+  stackWorker:
+    file("stack-worker.js")
+
 };
+
+
+/*
+-----------------------------------------------------------
+ DOM
+-----------------------------------------------------------
+*/
 
 const terminal =
   document.getElementById("terminal");
 
-const input =
-  document.getElementById("input");
-
 const status =
   document.getElementById("status");
 
-const ctrlC =
+const command =
+  document.getElementById("command");
+
+const send =
+  document.getElementById("send");
+
+const ctrlc =
   document.getElementById("ctrlc");
 
 const clearButton =
   document.getElementById("clear");
 
-let booted = false;
-let slave = null;
-let master = null;
-let qemuModule = null;
-
 
 /*
 -----------------------------------------------------------
- Terminal rendering
+ STATE
 -----------------------------------------------------------
 */
 
-function scrollBottom() {
-  terminal.scrollTop = terminal.scrollHeight;
-}
+let started = false;
 
-function print(text) {
+let qemu = null;
 
-  if (text === undefined || text === null)
-    return;
-
-  terminal.appendChild(
-    document.createTextNode(String(text))
-  );
-
-  scrollBottom();
-}
-
-function printLine(text = "") {
-  print(text + "\n");
-}
-
-function setStatus(text) {
-  status.textContent = text;
-}
+let pty = null;
 
 
 /*
 -----------------------------------------------------------
- Minimal ANSI handling
------------------------------------------------------------
-
- Alpine/QEMU will produce ANSI escape sequences.
-
- We don't need a complete terminal emulator for the first
- boot test. We remove the most common cursor/control
- sequences while preserving readable Linux output.
+ OUTPUT
 -----------------------------------------------------------
 */
 
 function cleanANSI(text) {
 
   return String(text)
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
-    .replace(/\x1b[()][0-2]/g, "")
-    .replace(/\x1b[@-_]/g, "");
+
+    .replace(
+      /\x1b\[[0-?]*[ -/]*[@-~]/g,
+      ""
+    )
+
+    .replace(
+      /\x1b\][^\x07]*(?:\x07|\x1b\\)/g,
+      ""
+    )
+
+    .replace(
+      /\x1b[()][0-2]/g,
+      ""
+    )
+
+    .replace(
+      /\x1b[@-_]/g,
+      ""
+    );
+
+}
+
+
+function output(text) {
+
+  if (
+    text === undefined ||
+    text === null
+  ) {
+    return;
+  }
+
+  terminal.appendChild(
+    document.createTextNode(
+      cleanANSI(text)
+    )
+  );
+
+  terminal.scrollTop =
+    terminal.scrollHeight;
+
+}
+
+
+function line(text = "") {
+
+  output(text + "\n");
+
+}
+
+
+function setStatus(text) {
+
+  status.textContent = text;
+
 }
 
 
 /*
 -----------------------------------------------------------
- Try to connect to the PTY without xterm.js.
-
- IMPORTANT:
- The QEMU build contains the xterm-pty Emscripten
- integration. We therefore still provide the PTY object
- expected by QEMU, but we don't load the visual xterm
- library.
+ BROWSER CHECK
 -----------------------------------------------------------
 */
 
-function createBasicPTY() {
+function browserCheck() {
 
-  /*
-   * This is intentionally a small PTY bridge.
-   *
-   * The QEMU build's Module.pty is supplied below.
-   *
-   * If the generated build requires the full xterm-pty
-   * JavaScript object, the diagnostic output will tell us
-   * exactly that rather than silently pretending that Linux
-   * booted.
-   */
+  line("WebPC 2 — Alpine Linux x86-64");
+  line("QEMU-Wasm browser VM");
+  line("");
 
-  const readableCallbacks = [];
+  line("Browser diagnostics");
+  line("-------------------");
 
-  const inputQueue = [];
-
-  const pty = {
-
-    cols: 100,
-    rows: 30,
-
-    write(data) {
-      print(cleanANSI(data));
-    },
-
-    onReadable(callback) {
-      readableCallbacks.push(callback);
-    },
-
-    read() {
-      const data = inputQueue.splice(
-        0,
-        inputQueue.length
-      );
-
-      return data;
-    },
-
-    pushInput(data) {
-
-      for (const byte of
-        new TextEncoder().encode(data)) {
-
-        inputQueue.push(byte);
-      }
-
-      for (const callback of readableCallbacks) {
-
-        try {
-          callback();
-        } catch (e) {
-          console.error(e);
-        }
-
-      }
-    },
-
-    resize(cols, rows) {
-      this.cols = cols;
-      this.rows = rows;
-    }
-  };
-
-  return pty;
-}
-
-
-/*
------------------------------------------------------------
- Keyboard input
------------------------------------------------------------
-*/
-
-input.addEventListener("keydown", event => {
-
-  if (!slave)
-    return;
-
-  if (event.key === "Enter") {
-
-    const command =
-      input.value + "\n";
-
-    input.value = "";
-
-    sendInput(command);
-
-    event.preventDefault();
-
-    return;
-  }
-
-  if (event.key === "Backspace") {
-
-    sendInput("\x7f");
-
-    event.preventDefault();
-
-    return;
-  }
-
-  if (event.key === "Tab") {
-
-    sendInput("\t");
-
-    event.preventDefault();
-
-    return;
-  }
-
-  if (event.key === "ArrowUp") {
-
-    sendInput("\x1b[A");
-
-    event.preventDefault();
-
-    return;
-  }
-
-  if (event.key === "ArrowDown") {
-
-    sendInput("\x1b[B");
-
-    event.preventDefault();
-
-    return;
-  }
-
-  if (event.key === "ArrowLeft") {
-
-    sendInput("\x1b[D");
-
-    event.preventDefault();
-
-    return;
-  }
-
-  if (event.key === "ArrowRight") {
-
-    sendInput("\x1b[C");
-
-    event.preventDefault();
-
-    return;
-  }
-
-  if (event.key === "c" && event.ctrlKey) {
-
-    sendInput("\x03");
-
-    event.preventDefault();
-
-    return;
-  }
-
-});
-
-
-function sendInput(text) {
-
-  if (!slave)
-    return;
-
-  try {
-
-    if (typeof slave.write === "function") {
-
-      slave.write(text);
-      return;
-    }
-
-  } catch (e) {
-
-    console.error(e);
-
-  }
-
-  try {
-
-    if (typeof master?.write === "function") {
-
-      master.write(text);
-    }
-
-  } catch (e) {
-
-    console.error(e);
-
-  }
-}
-
-
-/*
------------------------------------------------------------
- Ctrl+C
------------------------------------------------------------
-*/
-
-ctrlC.addEventListener("click", () => {
-
-  sendInput("\x03");
-
-  input.focus();
-
-});
-
-
-/*
------------------------------------------------------------
- Clear screen
------------------------------------------------------------
-*/
-
-clearButton.addEventListener("click", () => {
-
-  terminal.textContent = "";
-
-  printLine("WebPC 2 — Alpine Linux x86-64");
-  printLine("");
-
-});
-
-
-/*
------------------------------------------------------------
- Browser diagnostics
------------------------------------------------------------
-*/
-
-function diagnostics() {
-
-  printLine("");
-  printLine("Browser diagnostics");
-  printLine("-------------------");
-
-  printLine(
+  line(
     "crossOriginIsolated: " +
     String(window.crossOriginIsolated)
   );
 
-  printLine(
+  line(
     "SharedArrayBuffer: " +
-    String(typeof SharedArrayBuffer !== "undefined")
+    String(
+      typeof SharedArrayBuffer !==
+      "undefined"
+    )
   );
 
-  printLine(
+  line(
     "WebAssembly: " +
-    String(typeof WebAssembly !== "undefined")
+    String(
+      typeof WebAssembly !==
+      "undefined"
+    )
   );
 
-  printLine("");
+  line("");
+
+  if (!window.crossOriginIsolated) {
+
+    throw new Error(
+      "crossOriginIsolated is false.\n\n" +
+      "Your _headers file must contain:\n\n" +
+      "Cross-Origin-Opener-Policy: same-origin\n" +
+      "Cross-Origin-Embedder-Policy: require-corp"
+    );
+
+  }
 
 }
 
 
 /*
 -----------------------------------------------------------
- Load a generated Emscripten package loader
+ TEST THE NEW WORKER
 -----------------------------------------------------------
 */
 
-async function loadScript(url) {
+async function testWorker() {
 
-  return new Promise((resolve, reject) => {
+  setStatus(
+    "Testing new QEMU file proxy…"
+  );
 
-    const script =
-      document.createElement("script");
+  line(
+    "Testing new Worker:"
+  );
 
-    script.src = url;
+  line(
+    WORKER
+  );
 
-    script.async = false;
+  line("");
 
-    script.onload = () => resolve();
+  const response =
+    await fetch(
+      FILES.wasm,
+      {
+        method: "GET"
+      }
+    );
 
-    script.onerror = () => {
+  if (!response.ok) {
 
-      reject(
-        new Error(
-          "Could not load:\n" + url
-        )
-      );
+    throw new Error(
+      "The new Worker returned HTTP " +
+      response.status +
+      "."
+    );
 
-    };
+  }
 
-    document.head.appendChild(script);
+  const contentType =
+    response.headers.get(
+      "content-type"
+    );
 
-  });
+  line(
+    "Worker response: OK"
+  );
+
+  line(
+    "Content-Type: " +
+    String(contentType)
+  );
+
+  line("");
 
 }
 
 
 /*
 -----------------------------------------------------------
- Fetch QEMU WASM
-
- We explicitly fetch it first so failures are visible.
+ DOWNLOAD QEMU WASM
 -----------------------------------------------------------
 */
 
-async function loadWasm() {
+async function downloadWasm() {
 
-  setStatus("Downloading QEMU WebAssembly…");
+  setStatus(
+    "Downloading QEMU x86-64…"
+  );
 
-  printLine(
+  line(
     "Downloading qemu-system-x86_64.wasm…"
   );
 
@@ -623,9 +542,8 @@ async function loadWasm() {
   if (!response.ok) {
 
     throw new Error(
-      "HTTP " +
-      response.status +
-      " while downloading QEMU WASM."
+      "QEMU WASM returned HTTP " +
+      response.status
     );
 
   }
@@ -633,61 +551,279 @@ async function loadWasm() {
   const buffer =
     await response.arrayBuffer();
 
-  printLine(
+  line(
     "QEMU WASM downloaded: " +
-    Math.round(buffer.byteLength / 1024 / 1024) +
+    (
+      buffer.byteLength /
+      1024 /
+      1024
+    ).toFixed(1) +
     " MiB"
   );
 
+  line("");
+
   return buffer;
+
 }
 
 
 /*
 -----------------------------------------------------------
- QEMU startup
+ LOAD GENERATED EMSCRIPTEN SCRIPT
+-----------------------------------------------------------
+*/
+
+function loadScript(url) {
+
+  return new Promise(
+    (resolve, reject) => {
+
+      const script =
+        document.createElement(
+          "script"
+        );
+
+      script.src = url;
+
+      script.async = false;
+
+      script.onload =
+        () => resolve();
+
+      script.onerror =
+        () => reject(
+          new Error(
+            "Could not load:\n" +
+            url
+          )
+        );
+
+      document.head.appendChild(
+        script
+      );
+
+    }
+  );
+
+}
+
+
+/*
+-----------------------------------------------------------
+ PTY
+-----------------------------------------------------------
+*/
+
+function createPTY() {
+
+  return {
+
+    cols: 100,
+
+    rows: 30,
+
+    write(data) {
+
+      output(data);
+
+    },
+
+    resize(cols, rows) {
+
+      this.cols = cols;
+      this.rows = rows;
+
+    }
+
+  };
+
+}
+
+
+/*
+-----------------------------------------------------------
+ INPUT
+-----------------------------------------------------------
+*/
+
+function sendInput(text) {
+
+  if (!pty)
+    return;
+
+  /*
+   * The existing QEMU build uses its PTY integration.
+   *
+   * Keep a number of possible input methods available
+   * rather than assuming one implementation.
+   */
+
+  try {
+
+    if (
+      typeof pty.writeInput ===
+      "function"
+    ) {
+
+      pty.writeInput(text);
+
+      return;
+
+    }
+
+  } catch (e) {
+
+    console.error(e);
+
+  }
+
+  try {
+
+    if (
+      typeof pty.write ===
+      "function"
+    ) {
+
+      pty.write(text);
+
+    }
+
+  } catch (e) {
+
+    console.error(e);
+
+  }
+
+}
+
+
+/*
+-----------------------------------------------------------
+ COMMAND INPUT
+-----------------------------------------------------------
+*/
+
+function submitCommand() {
+
+  const value =
+    command.value;
+
+  if (!value)
+    return;
+
+  sendInput(
+    value + "\n"
+  );
+
+  command.value = "";
+
+  command.focus();
+
+}
+
+
+send.addEventListener(
+  "click",
+  submitCommand
+);
+
+
+command.addEventListener(
+  "keydown",
+  event => {
+
+    if (
+      event.key === "Enter"
+    ) {
+
+      submitCommand();
+
+      event.preventDefault();
+
+    }
+
+  }
+);
+
+
+/*
+-----------------------------------------------------------
+ CTRL+C
+-----------------------------------------------------------
+*/
+
+ctrlc.addEventListener(
+  "click",
+  () => {
+
+    sendInput("\x03");
+
+    command.focus();
+
+  }
+);
+
+
+/*
+-----------------------------------------------------------
+ CLEAR
+-----------------------------------------------------------
+*/
+
+clearButton.addEventListener(
+  "click",
+  () => {
+
+    terminal.textContent = "";
+
+  }
+);
+
+
+/*
+-----------------------------------------------------------
+ START QEMU
 -----------------------------------------------------------
 */
 
 async function boot() {
 
-  if (booted)
+  if (started)
     return;
 
-  booted = true;
+  started = true;
 
   try {
 
-    diagnostics();
+    browserCheck();
 
-    if (!window.crossOriginIsolated) {
-
-      throw new Error(
-        "The page is NOT cross-origin isolated.\n\n" +
-        "Cloudflare Pages must send:\n" +
-        "Cross-Origin-Opener-Policy: same-origin\n" +
-        "Cross-Origin-Embedder-Policy: require-corp\n\n" +
-        "Check your _headers file."
-      );
-
-    }
 
     /*
-     * Create the PTY expected by the existing
-     * Emscripten QEMU build.
+     * First prove that the new Worker works.
      */
 
-    const pty =
-      createBasicPTY();
-
-    slave = pty;
+    await testWorker();
 
 
     /*
-     * QEMU configuration.
-     *
-     * This is deliberately still the Alpine serial-console
-     * configuration. No Minecraft and no graphical VM yet.
+     * Download QEMU WASM.
+     */
+
+    const wasm =
+      await downloadWasm();
+
+
+    /*
+     * Create PTY.
+     */
+
+    pty =
+      createPTY();
+
+
+    /*
+     * QEMU Module
      */
 
     window.Module = {
@@ -725,187 +861,209 @@ async function boot() {
 
         "-device",
         "virtio-blk-pci,drive=test"
+
       ],
 
-      /*
-       * The PTY is supplied to the Emscripten
-       * xterm-pty integration.
-       */
-      pty: slave,
 
       /*
-       * The generated Emscripten module must know where
-       * its main script lives because pthread workers are
-       * used by this QEMU build.
+       * Existing QEMU PTY interface.
        */
-      mainScriptUrlOrBlob: FILES.out,
 
-      locateFile(path, prefix) {
+      pty: pty,
 
-        /*
-         * QEMU's generated JS asks for:
-         *
-         * qemu-system-x86_64.wasm
-         * worker JS
-         * package assets
-         *
-         * Everything is stored in the V1 GitHub release.
-         */
 
-        if (
-          path === "qemu-system-x86_64.wasm" ||
-          path.endsWith(".wasm")
-        ) {
+      /*
+       * We already downloaded the WASM.
+       */
 
-          return FILES.wasm;
-        }
+      wasmBinary: wasm,
 
-        if (
-          path === "qemu-system-x86_64.worker.js"
-        ) {
 
-          return FILES.worker;
-        }
+      /*
+       * Required by the pthread build.
+       */
 
-        return RELEASE + path;
+      mainScriptUrlOrBlob:
+        FILES.out,
+
+
+      /*
+       * IMPORTANT:
+       *
+       * Every QEMU asset now goes through
+       * the new Worker.
+       */
+
+      locateFile(path) {
+
+        return file(path);
+
       },
+
 
       print(text) {
-        print(cleanANSI(text));
+
+        output(text);
+
       },
 
+
       printErr(text) {
-        print(
+
+        output(
           "\n[QEMU] " +
-          cleanANSI(text) +
+          text +
           "\n"
         );
+
       },
+
 
       onAbort(reason) {
 
-        setStatus("QEMU aborted");
+        setStatus(
+          "QEMU aborted"
+        );
 
-        printLine("");
-        printLine("QEMU ABORTED:");
-        printLine(String(reason));
+        line("");
+
+        line(
+          "QEMU ABORT:"
+        );
+
+        line(
+          String(reason)
+        );
 
       }
+
     };
 
 
     /*
-     * Make the Module visible globally before loading
-     * the generated Emscripten program.
+     * Load the packaged ROM/kernel/initramfs/rootfs.
      */
 
-    window.Module =
-      window.Module;
-
-
-    /*
-     * Fetch WASM first.
-     */
-
-    const wasm =
-      await loadWasm();
-
-    window.Module.wasmBinary =
-      wasm;
-
-
-    /*
-     * Load the package filesystem scripts.
-     */
-
-    setStatus("Loading Alpine Linux image…");
-
-    printLine(
-      "Loading Alpine filesystem packages…"
+    setStatus(
+      "Loading Alpine Linux files…"
     );
 
-    await loadScript(FILES.rom);
-    await loadScript(FILES.kernel);
-    await loadScript(FILES.initramfs);
-    await loadScript(FILES.rootfs);
+    line(
+      "Loading Alpine Linux package files…"
+    );
+
+
+    await loadScript(
+      FILES.rom
+    );
+
+    await loadScript(
+      FILES.kernel
+    );
+
+    await loadScript(
+      FILES.initramfs
+    );
+
+    await loadScript(
+      FILES.rootfs
+    );
 
 
     /*
-     * Load QEMU itself.
-     *
-     * out.js is an ES module in this release.
+     * Start QEMU.
      */
 
-    setStatus("Starting QEMU x86-64…");
-
-    printLine(
-      "Starting QEMU system emulator…"
+    setStatus(
+      "Starting QEMU x86-64…"
     );
 
-    const qemu =
-      await import(FILES.out);
+    line(
+      "Starting QEMU x86-64…"
+    );
 
-    if (!qemu || typeof qemu.default !== "function") {
+    line("");
+
+
+    const qemuModule =
+      await import(
+        FILES.out
+      );
+
+
+    if (
+      !qemuModule ||
+      typeof qemuModule.default !==
+      "function"
+    ) {
 
       throw new Error(
-        "QEMU out.js loaded, but its Emscripten factory " +
-        "was not found."
+        "QEMU out.js loaded, but its " +
+        "Emscripten factory was not found."
       );
 
     }
 
-    qemuModule =
-      await qemu.default(window.Module);
+
+    qemu =
+      await qemuModule.default(
+        window.Module
+      );
 
 
-    booted = true;
+    setStatus(
+      "Alpine Linux running"
+    );
 
-    setStatus("Alpine Linux running");
 
-    printLine("");
-    printLine(
+    line("");
+    line(
       "========================================"
     );
-
-    printLine(
-      " Alpine Linux x86-64 is starting."
+    line(
+      " Alpine Linux x86-64"
     );
-
-    printLine(
+    line(
+      " QEMU-Wasm"
+    );
+    line(
       "========================================"
     );
+    line("");
 
-    printLine("");
 
-    input.focus();
+    command.focus();
+
 
   } catch (error) {
 
-    booted = false;
+    started = false;
 
-    setStatus("Failed to start");
+    setStatus(
+      "Startup failed"
+    );
 
-    printLine("");
-    printLine(
+    line("");
+
+    line(
       "========================================"
     );
 
-    printLine("WEBPC 2 STARTUP ERROR");
-    printLine(
+    line(
+      " WEBPC 2 STARTUP ERROR"
+    );
+
+    line(
       "========================================"
     );
 
-    printLine(
+    line(
       error?.stack ||
       error?.message ||
       String(error)
     );
 
-    printLine("");
-
-    printLine(
-      "Open Chrome DevTools → Console for the full error."
-    );
+    line("");
 
   }
 
@@ -914,27 +1072,13 @@ async function boot() {
 
 /*
 -----------------------------------------------------------
- Start
+ START AUTOMATICALLY
 -----------------------------------------------------------
 */
 
 window.addEventListener(
   "load",
   () => {
-
-    printLine(
-      "WebPC 2 — Alpine Linux x86-64"
-    );
-
-    printLine(
-      "QEMU-Wasm browser VM"
-    );
-
-    printLine("");
-
-    printLine(
-      "Preparing Linux…"
-    );
 
     boot();
 
