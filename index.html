@@ -2137,11 +2137,22 @@ async function bootQEMU() {
         "-M",
         "pc",
 
+        /*
+            Keep the initial guest small so the browser does not
+            reserve more memory than necessary just to reach the shell.
+            Minecraft can use a larger profile later.
+        */
         "-m",
-        "512M",
+        "256M",
 
+        /*
+            500 MiB is unnecessarily large for a tiny Alpine boot and
+            creates a large TCG translation cache. QEMU documents
+            tb-size in MiB. A 64 MiB cache is a much lighter startup
+            footprint while retaining plenty of translated code.
+        */
         "-accel",
-        "tcg,tb-size=500",
+        "tcg,thread=multi,tb-size=64",
 
         "-L",
         "/pack-rom/",
