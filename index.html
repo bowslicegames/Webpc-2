@@ -1833,29 +1833,26 @@ async function bootQEMU() {
             }
 
             /*
-                Otherwise fall back to the public
-                GitHub release.
+                Otherwise use the same-origin Worker asset
+                endpoint. Normalize the filename first so a
+                relative path such as ./stack.js cannot turn
+                into a broken %2F URL.
             */
 
-            return (
-                BASE +
-                encodeURIComponent(path)
+            return assetURL(
+                normalizedPath
             );
         },
 
         /*
-            IMPORTANT:
-
-            Use the in-memory out.js Blob URL.
-
-            This keeps the generated Emscripten
-            runtime and its worker loading on the
-            same page-origin-controlled path rather
-            than relying on a cross-origin script.
+            Emscripten's worker/runtime paths are resolved
+            from the generated module's script URL.
+            The module is imported from /assets/out.js,
+            so relative worker URLs stay same-origin.
         */
 
         mainScriptUrlOrBlob:
-            null,
+            assetURL(FILES.out),
 
         noInitialRun:
             false
