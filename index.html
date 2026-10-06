@@ -1820,11 +1820,16 @@ async function bootQEMU() {
                 object URL.
             */
 
+            const normalizedPath =
+                String(path || "")
+                    .split("/")
+                    .pop();
+
             if (
-                downloaded.has(path)
+                downloaded.has(normalizedPath)
             ) {
 
-                return blobURL(path);
+                return blobURL(normalizedPath);
             }
 
             /*
@@ -1901,26 +1906,24 @@ async function bootQEMU() {
         Import generated QEMU Emscripten module.
     */
 
-    const outURL =
-        blobURL(
-            FILES.out
-        );
-
-    if (!outURL) {
-
-        throw new Error(
-            "QEMU out.js was not downloaded."
-        );
-    }
-
     /*
-        Give Emscripten the actual generated
-        script location.
+        IMPORTANT:
+        Import the generated Emscripten module from
+        its same-origin Worker URL rather than a Blob URL.
+
+        Blob URLs can make pthread/worker-relative
+        resource resolution fail because import.meta.url
+        becomes blob:... instead of /assets/out.js.
+
+        The file was already downloaded above, so this
+        final import is only a small runtime-script fetch.
     */
+
+    const outURL =
+        assetURL(FILES.out);
 
     Module.mainScriptUrlOrBlob =
         outURL;
-
 
     const qemuModule =
         await import(
