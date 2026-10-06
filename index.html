@@ -552,7 +552,49 @@ button:active {
 </div>
 
 
-<script type="module">
+<script>
+/*
+ * Tiny non-module bootstrap.
+ *
+ * Keep the first diagnostics outside the ES-module loader so that
+ * a module MIME/COEP/cache problem cannot leave the page silently
+ * displaying "checking…" forever.
+ */
+(function () {
+    var isolation = document.getElementById("diagIsolation");
+    var sab = document.getElementById("diagSAB");
+    var wasm = document.getElementById("diagWasm");
+    var memory = document.getElementById("diagMemory");
+
+    if (isolation) {
+        isolation.textContent =
+            "crossOriginIsolated: " +
+            (window.crossOriginIsolated === true);
+    }
+
+    if (sab) {
+        sab.textContent =
+            "SharedArrayBuffer: " +
+            (typeof SharedArrayBuffer !== "undefined");
+    }
+
+    if (wasm) {
+        wasm.textContent =
+            "WebAssembly: " +
+            (typeof WebAssembly !== "undefined");
+    }
+
+    if (memory) {
+        memory.textContent =
+            "Device memory: " +
+            (navigator.deviceMemory
+                ? navigator.deviceMemory + " GB reported"
+                : "not reported");
+    }
+})();
+</script>
+
+<script>
 
 /* ============================================================
    WEBPC 2 CONFIGURATION
