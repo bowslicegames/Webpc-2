@@ -194,6 +194,49 @@ body {
     color: white;
 }
 
+#linuxBootProgress {
+    display: none;
+    margin-top: 18px;
+    padding: 12px;
+    background: #0b1017;
+    border: 1px solid #252f3b;
+    border-radius: 10px;
+}
+
+#linuxBootLabel {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#linuxBootTime {
+    margin-top: 5px;
+    color: #8996a8;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+}
+
+#linuxBootBarOuter {
+    width: 100%;
+    height: 10px;
+    margin-top: 8px;
+    background: #202733;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+#linuxBootBar {
+    width: 28%;
+    height: 100%;
+    background: #61b4ff;
+    border-radius: inherit;
+    animation: linuxBootPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes linuxBootPulse {
+    0% { transform: translateX(-120%); }
+    100% { transform: translateX(430%); }
+}
+
 #assetProgress {
     display: none;
     margin-top: 18px;
@@ -500,6 +543,18 @@ button:active {
                     </div>
                 </div>
 
+            </div>
+
+            <div id="linuxBootProgress">
+                <div id="linuxBootLabel">
+                    Linux is booting — waiting for the Alpine shell…
+                </div>
+                <div id="linuxBootTime">
+                    Boot elapsed: 0s · QEMU is running
+                </div>
+                <div id="linuxBootBarOuter">
+                    <div id="linuxBootBar"></div>
+                </div>
             </div>
 
             <div id="diagnostics">
@@ -854,6 +909,18 @@ const assetNumbers =
 
 const assetBar =
     $("assetBar");
+
+const linuxBootProgress =
+    $("linuxBootProgress");
+
+const linuxBootLabel =
+    $("linuxBootLabel");
+
+const linuxBootTime =
+    $("linuxBootTime");
+
+let linuxBootTimer =
+    null;
 
 const errorBox =
     $("errorBox");
@@ -2410,29 +2477,75 @@ async function bootQEMU() {
         "Starting the x86-64 virtual machine and waiting for Alpine Linux."
     );
 
+    /*
+     * Do NOT hide the startup screen here. QEMU's Emscripten
+     * factory can remain running for the entire lifetime of the
+     * VM, so waiting for factory() to return is not a valid
+     * indication that Linux has booted.
+     *
+     * Keep the stage screen visible and show an honest
+     * indeterminate boot bar instead.
+     */
+    linuxBootProgress.style.display =
+        "block";
+
+    const bootStarted =
+        performance.now();
+
+    linuxBootTimer =
+        setInterval(() => {
+            const seconds =
+                Math.floor(
+                    (performance.now() -
+                        bootStarted) / 1000
+                );
+
+            linuxBootTime.textContent =
+                "Boot elapsed: " +
+                seconds +
+                "s · QEMU is running";
+
+            linuxBootLabel.textContent =
+                seconds < 15
+                    ? "Linux is booting — starting the kernel…"
+                    : seconds < 60
+                        ? "Linux is booting — starting Alpine…"
+                        : "Linux is still booting — the terminal will appear when the shell is ready.";
+        }, 1000);
 
     /*
-        Show terminal.
-    */
-
+     * Show the terminal while keeping the stage/progress UI
+     * visible above it. This lets us see actual serial output
+     * if the kernel produces any.
+     */
     terminalWrap.style.display =
         "block";
 
     controls.style.display =
         "block";
 
-    $("startup").style.display =
-        "none";
-
-
     /*
-        Start Emscripten/QEMU.
-    */
+     * Keep #startup visible instead of switching to the terminal
+     * page. The terminal is already part of the page below it.
+     */
 
     await factory(
         Module
     );
 
+    if (linuxBootTimer) {
+        clearInterval(linuxBootTimer);
+        linuxBootTimer = null;
+    }
+
+    linuxBootLabel.textContent =
+        "QEMU runtime returned — Linux VM stopped.";
+
+    linuxBootTime.textContent =
+        "The VM process ended.";
+
+    linuxBootProgress.style.display =
+        "block";
 
     finishStage(
         "linux"
