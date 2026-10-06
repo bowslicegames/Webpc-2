@@ -276,20 +276,35 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
 
     if (STATIC_FILES.has(path)) {
       try {
-        const upstream = await fetch(
-          RAW_BASE + path,
+        /*
+         * Static application files are deployed with this Worker.
+         * Fetch them through the ASSETS binding so index.html is
+         * exactly the version included in the Cloudflare deployment.
+         * This avoids a second GitHub Raw cache path.
+         */
+        if (!env.ASSETS) {
+          throw new Error(
+            "Cloudflare ASSETS binding is missing. " +
+            "Check wrangler.toml [assets] configuration."
+          );
+        }
+
+        const assetRequest = new Request(
+          new URL("/" + path, url.origin),
           {
-            method:
-              request.method === "HEAD"
-                ? "HEAD"
-                : "GET",
-            redirect: "follow"
+            method: request.method === "HEAD"
+              ? "HEAD"
+              : "GET",
+            headers: request.headers
           }
         );
 
+        const upstream =
+          await env.ASSETS.fetch(assetRequest);
+
         if (!upstream.ok) {
           return new Response(
-            "WebPC 2 Worker could not load static file: " +
+            "WebPC 2 Worker could not load deployed static file: " +
             path +
             " (" +
             upstream.status +
@@ -317,13 +332,18 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         headers.set(
           "Cache-Control",
           path === "index.html"
-            ? "no-cache"
+            ? "no-store"
             : "public, max-age=3600"
         );
 
         headers.set(
           "X-WebPC-Worker",
           "active"
+        );
+
+        headers.set(
+          "X-WebPC-Static-Source",
+          "cloudflare-assets"
         );
 
         if (path === "index.html") {
@@ -355,7 +375,7 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         );
       } catch (error) {
         return new Response(
-          "WebPC 2 Worker static-file proxy error: " +
+          "WebPC 2 Worker static-file error: " +
           errorText(error),
           {
             status: 502,
