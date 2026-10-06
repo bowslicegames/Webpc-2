@@ -1,46 +1,98 @@
-# Debian i386 Browser VM
+# WebPC 2 — Linux x86-64 browser VM
 
-A browser-based Debian i386 virtual machine using v86.
+WebPC 2 is a browser-based x86-64 Linux virtual machine using QEMU WebAssembly, xterm.js, xterm-pty and an Alpine Linux x86-64 runtime.
 
-The project is designed to run from GitHub Pages.
+## Current deployment
 
-## Current architecture
+The production site is intended to run as a **Cloudflare Worker**:
 
-The VM uses:
+- Worker entrypoint: `_worker.js`
+- Wrangler config: `wrangler.toml`
+- Worker name: `webpc`
+- Large QEMU/Linux assets: GitHub Release `V1`
+- Browser-side asset path: `/assets/<filename>`
+- No persistent browser storage is used by the VM.
 
-- v86
-- WebAssembly
-- SeaBIOS
-- VGA BIOS
-- Debian i386
-- browser-based rendering
-- iPad-compatible controls
+The Worker proxies release assets through the same origin so the browser does not have to fetch the large QEMU files directly from GitHub.
 
-No Node.js server is required for the webpage itself.
+## Cloudflare settings
 
-## Important 10 GB disk note
+Because this repository uses Wrangler Worker deployment, use:
 
-The intended virtual disk size is:
+- **Build command:** `npx wrangler deploy`
+- **Root directory:** `/`
 
-10 GiB
+Do not switch this project to a static Pages-only deployment. The Worker is responsible for the `/assets/*` proxy and for sending the cross-origin-isolation headers required by QEMU-Wasm.
 
-However, GitHub Pages is static hosting.
+## Important test URLs
 
-A webpage cannot create a normal writable 10 GB file on the GitHub server.
+After deployment:
 
-Therefore a persistent 10 GB disk needs one of these approaches:
+- `/worker-test` should display **WebPC 2 Worker is ACTIVE**
+- `/assets/qemu-system-x86_64.wasm` should return HTTP 200
+- The main page should report:
+  - `crossOriginIsolated: true`
+  - `SharedArrayBuffer: true`
+  - `WebAssembly: true`
 
-1. v86 split disk-image chunks
-2. IndexedDB-backed block storage
-3. A separate server
+If `/worker-test` is blank or the QEMU asset returns a plain 404, the deployed Worker is not the Worker from this repository.
 
-The v86 project supports split disk images specifically for static hosting.
+## Architecture
 
-The final persistent version should therefore use:
+The Worker serves these small files from the repository:
+
+- `index.html`
+- `xterm/xterm.css`
+- `xterm/xterm.js`
+- `xterm-pty/index.mjs`
+
+It proxies the following release assets:
+
+- `qemu-system-x86_64.wasm`
+- `qemu-system-x86_64.worker.js`
+- `out.js`
+- `stack.js`
+- `stack-worker.js`
+- QEMU ROM/kernel/initramfs/rootfs data and loader files
+- `c2w-net-proxy.wasm.gzip`
+
+The browser downloads these into memory at startup. The project does not intentionally persist the VM disk or user login data.
+
+## Cross-origin isolation
+
+The Worker explicitly sends:
 
 ```text
-index.html
-disk/
-    0-1048575.img
-    1048576-2097151.img
-    ...
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+Release assets are served with:
+
+```text
+Cross-Origin-Resource-Policy: cross-origin
+Access-Control-Allow-Origin: *
+```
+
+This is deliberate: the HTML document needs cross-origin isolation for SharedArrayBuffer, while the proxied binary resources must remain embeddable by the isolated page.
+
+The repository also contains `_headers` for deployments that process that file, but the Worker sets the critical headers itself because Worker-generated responses are not covered by `_headers`.
+
+## QEMU module loading
+
+The generated Emscripten `out.js` is imported from the same-origin Worker URL rather than a `blob:` URL. This avoids a common pthread/worker failure where relative worker files are resolved against a Blob URL instead of the actual `/assets/` path.
+
+## Automated validation
+
+GitHub Actions checks:
+
+1. `_worker.js` JavaScript syntax.
+2. The inline JavaScript module inside `index.html`.
+3. The required Wrangler configuration.
+
+This does not emulate an iPad or execute QEMU; final browser testing still needs a real browser/device.
+
+## Release
+
+The runtime binaries are kept in GitHub Release `V1` because Cloudflare's individual static-asset limits make committing the large QEMU/Linux binaries directly to the repository unsuitable.
+
