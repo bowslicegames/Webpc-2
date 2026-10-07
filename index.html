@@ -2727,18 +2727,51 @@ async function bootQEMU() {
         "Starting the browser network stack and x86-64 virtual machine."
     );
 
-    const stackModule =
-        await import(
-            assetURL(FILES.stack)
+    /*
+        The upstream networking bundle is built with webpack's
+        library type "var", so it must be loaded as a classic
+        script. ES-module import() creates an isolated module
+        scope and does not expose window.Stack.
+    */
+    if (
+        !window.Stack ||
+        typeof window.Stack.Start !==
+        "function"
+    ) {
+        await new Promise(
+            (resolve, reject) => {
+                const script =
+                    document.createElement("script");
+
+                script.src =
+                    assetURL(FILES.stack) +
+                    "?v=20261007-1";
+
+                script.async = false;
+
+                script.onload =
+                    () => resolve();
+
+                script.onerror =
+                    () =>
+                        reject(
+                            new Error(
+                                "Failed to load the browser network stack script."
+                            )
+                        );
+
+                document.head.appendChild(script);
+            }
         );
+    }
 
     if (
-        !stackModule ||
-        typeof stackModule.Start !==
+        !window.Stack ||
+        typeof window.Stack.Start !==
         "function"
     ) {
         throw new Error(
-            "The browser network stack loaded, but Stack.Start() was not available."
+            "The browser network stack loaded, but window.Stack.Start() was not available."
         );
     }
 
@@ -2763,7 +2796,7 @@ async function bootQEMU() {
                     n
                         .toString(16)
                         .padStart(2, "0")
-                )
+            )
             .join(":");
 
     Module.websocket = {
@@ -2780,7 +2813,7 @@ async function bootQEMU() {
 
             try {
 
-                stackModule.Start(
+                window.Stack.Start(
                     stackAddress,
                     stackWorkerURL,
                     stackImageURL,
@@ -2811,9 +2844,6 @@ async function bootQEMU() {
                                     /*
                                         This info file follows the
                                         upstream container2wasm format.
-                                        If this Alpine image uses the
-                                        c2w init path, it enables DHCP
-                                        and the browser HTTP/S proxy.
                                     */
                                     mod.FS.writeFile(
                                         "/pack/info",
