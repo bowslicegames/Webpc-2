@@ -2161,33 +2161,20 @@ async function createTerminal() {
         result.slave;
 
     /*
-     * xterm-pty exposes the guest -> terminal data through
-     * slave.read().  Wrap that method so the VM boot watchdog
-     * can see real serial bytes without consuming or changing
-     * the PTY stream.
+     * xterm-pty's master.onWrite event is the actual PTY output
+     * path used by the terminal addon.  Observe that event for
+     * diagnostics; do not wrap slave.read(), because that is the
+     * input/read side and is not the guest's display output.
      */
     if (
-        slavePTY &&
-        typeof slavePTY.read === "function"
+        masterPTY &&
+        typeof masterPTY.onWrite === "function"
     ) {
-        const originalSlaveRead =
-            slavePTY.read.bind(slavePTY);
-
-        slavePTY.read =
-            function (size) {
-                const data =
-                    originalSlaveRead(size);
-
-                if (
-                    data &&
-                    typeof data.length === "number" &&
-                    data.length > 0
-                ) {
-                    noteBootSignal(data);
-                }
-
-                return data;
-            };
+        masterPTY.onWrite(
+            data => {
+                noteBootSignal(data);
+            }
+        );
     }
 
     terminal.loadAddon(
@@ -2461,18 +2448,31 @@ async function bootQEMU() {
                     .split("/")
                     .pop();
 
+            /*
+                Worker/runtime scripts MUST remain real same-origin
+                URLs.  Turning them into blob: URLs changes the
+                worker's base URL and can make Emscripten's pthread
+                worker fail before QEMU ever reaches the guest.
+            */
+            if (
+                normalizedPath.endsWith(".worker.js") ||
+                normalizedPath === "qemu-system-x86_64.worker.js" ||
+                normalizedPath === "stack-worker.js" ||
+                normalizedPath === "stack.js"
+            ) {
+                return assetURL(
+                    normalizedPath
+                );
+            }
+
             if (
                 downloaded.has(normalizedPath)
             ) {
-
                 return blobURL(normalizedPath);
             }
 
             /*
-                Otherwise use the same-origin Worker asset
-                endpoint. Normalize the filename first so a
-                relative path such as ./stack.js cannot turn
-                into a broken %2F URL.
+                Otherwise use the same-origin Worker asset endpoint.
             */
 
             return assetURL(
@@ -2483,8 +2483,8 @@ async function bootQEMU() {
         /*
             Emscripten's worker/runtime paths are resolved
             from the generated module's script URL.
-            The module is imported from /assets/out.js,
-            so relative worker URLs stay same-origin.
+            Both this value and the actual import below are
+            same-origin /assets/ URLs, never blob: URLs.
         */
 
         mainScriptUrlOrBlob:
@@ -2541,41 +2541,24 @@ async function bootQEMU() {
 
     /*
         IMPORTANT:
-        Import the generated Emscripten module from
-        its same-origin Worker URL rather than a Blob URL.
+        Import the generated Emscripten module directly from its
+        same-origin /assets/ URL.
 
-        Blob URLs can make pthread/worker-relative
-        resource resolution fail because import.meta.url
-        becomes blob:... instead of /assets/out.js.
-
-        The file was already downloaded above, so this
-        final import is only a small runtime-script fetch.
+        Do NOT import out.js from a blob: URL.  Emscripten's worker
+        machinery uses the generated module URL as part of its
+        worker/resource resolution.  A blob: base is the likely
+        source of the worker error currently visible in the UI.
     */
 
     const outURL =
         assetURL(FILES.out);
-
-    /*
-        Import the already-downloaded out.js Blob with an explicit
-        JavaScript MIME type. The Worker route is still the canonical
-        same-origin runtime URL for Emscripten worker resolution via
-        mainScriptUrlOrBlob.
-    */
-    const outBlobURL =
-        blobURL(FILES.out);
-
-    if (!outBlobURL) {
-        throw new Error(
-            "QEMU out.js was downloaded but its local Blob URL could not be created."
-        );
-    }
 
     Module.mainScriptUrlOrBlob =
         outURL;
 
     const qemuModule =
         await import(
-            outBlobURL
+            outURL
         );
 
 
