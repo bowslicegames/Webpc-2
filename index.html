@@ -2842,15 +2842,6 @@ async function bootQEMU() {
                         }
                     });
 
-                /*
-                    Give the network stack a moment to install its
-                    localhost WebSocket mock before QEMU connects.
-                */
-                setTimeout(
-                    () => resolve(),
-                    100
-                );
-
             } catch (error) {
                 reject(error);
             }
