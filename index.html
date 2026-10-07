@@ -2491,7 +2491,15 @@ async function bootQEMU() {
             assetURL(FILES.out),
 
         noInitialRun:
-            false
+            false,
+
+        /*
+            The browser network stack uses Stack.Start() to provide
+            a WebSocket-compatible endpoint at localhost:9999.
+            QEMU's socket netdev connects to that endpoint.
+        */
+        preRun:
+            []
     };
 
 
@@ -2684,23 +2692,264 @@ async function bootQEMU() {
         "/pack-initramfs/initramfs-virt",
 
         "-append",
-        "earlyprintk=ttyS0 console=ttyS0 root=/dev/vda loglevel=7 hostname=webpc2",
+        "earlyprintk=ttyS0 console=ttyS0 root=/dev/vda loglevel=7 hostname=webpc2 ip=dhcp",
 
         "-drive",
         "id=test,file=/pack-rootfs/disk-rootfs.img,format=raw,if=none",
 
         "-device",
-        "virtio-blk-pci,drive=test"
+        "virtio-blk-pci,drive=test",
+
+        /*
+            Browser networking:
+            c2w-net-proxy/stack.js provides a mock WebSocket endpoint
+            at localhost:9999. QEMU's socket netdev connects to it,
+            and virtio-net presents the resulting network adapter to
+            Alpine as eth0.
+        */
+        "-netdev",
+        "socket,id=vmnic,connect=127.0.0.1:9999",
+
+        "-device",
+        "virtio-net-pci,netdev=vmnic"
     ];
 
 
     /*
-        Start Linux.
+        Start the browser-side c2w networking stack before QEMU.
+        This is the same architecture used by the upstream
+        QEMU-Wasm/container2wasm browser example:
+          browser Fetch API <-> c2w-net-proxy <-> socket netdev <-> virtio-net
     */
 
     beginStage(
         "linux",
-        "Starting the x86-64 virtual machine and waiting for Alpine Linux."
+        "Starting the browser network stack and x86-64 virtual machine."
+    );
+
+    const stackModule =
+        await import(
+            assetURL(FILES.stack)
+        );
+
+    if (
+        !stackModule ||
+        typeof stackModule.Start !==
+        "function"
+    ) {
+        throw new Error(
+            "The browser network stack loaded, but Stack.Start() was not available."
+        );
+    }
+
+    const stackAddress =
+        "http://localhost:9999/";
+
+    const stackWorkerURL =
+        assetURL(FILES.stackWorker);
+
+    const stackImageURL =
+        assetURL(FILES.netProxy);
+
+    const networkMAC =
+        "02:" +
+        Array.from(
+            crypto.getRandomValues(
+                new Uint8Array(5)
+            )
+        )
+            .map(
+                n =>
+                    n
+                        .toString(16)
+                        .padStart(2, "0")
+                )
+            .join(":");
+
+    Module.websocket = {
+        url:
+            stackAddress
+    };
+
+    /*
+        Stack.Start() asynchronously obtains the proxy certificate.
+        Do not start QEMU until that callback fires.
+    */
+    await new Promise(
+        (resolve, reject) => {
+
+            try {
+
+                stackModule.Start(
+                    stackAddress,
+                    stackWorkerURL,
+                    stackImageURL,
+                    cert => {
+
+                        try {
+
+                            Module.preRun.push(
+                                mod => {
+
+                                    try {
+                                        mod.FS.mkdir(
+                                            "/.wasmenv"
+                                        );
+                                    } catch (_) {}
+
+                                    mod.FS.writeFile(
+                                        "/.wasmenv/proxy.crt",
+                                        cert
+                                    );
+
+                                    try {
+                                        mod.FS.mkdir(
+                                            "/pack"
+                                        );
+                                    } catch (_) {}
+
+                                    /*
+                                        This info file follows the
+                                        upstream container2wasm format.
+                                        If this Alpine image uses the
+                                        c2w init path, it enables DHCP
+                                        and the browser HTTP/S proxy.
+                                    */
+                                    mod.FS.writeFile(
+                                        "/pack/info",
+                                        "t:" +
+                                        Math.round(
+                                            Date.now() / 1000
+                                        ) +
+                                        "\n" +
+                                        "n:" +
+                                        networkMAC +
+                                        "\n" +
+                                        "m: .wasmenv\n" +
+                                        "env: SSL_CERT_FILE=/.wasmenv/proxy.crt\n" +
+                                        "env: https_proxy=http://192.168.127.253:80\n" +
+                                        "env: http_proxy=http://192.168.127.253:80\n" +
+                                        "env: HTTPS_PROXY=http://192.168.127.253:80\n" +
+                                        "env: HTTP_PROXY=http://192.168.127.253:80"
+                                    );
+                                }
+                            );
+
+                            resolve();
+
+                        } catch (error) {
+                            reject(error);
+                        }
+                    });
+
+                /*
+                    Give the network stack a moment to install its
+                    localhost WebSocket mock before QEMU connects.
+                */
+                setTimeout(
+                    () => resolve(),
+                    100
+                );
+
+            } catch (error) {
+                reject(error);
+            }
+        }
+    );
+
+    /*
+        Use the exact PTY polling pattern from the upstream
+        browser example. It wakes Emscripten when the PTY receives
+        input instead of busy-polling.
+    */
+    const readableCallbacks = [];
+
+    if (
+        slavePTY &&
+        typeof slavePTY.onReadable ===
+        "function"
+    ) {
+        slavePTY.onReadable(
+            () => {
+
+                while (
+                    readableCallbacks.length
+                ) {
+                    const callback =
+                        readableCallbacks.shift();
+
+                    try {
+                        callback();
+                    } catch (_) {}
+                }
+            }
+        );
+    }
+
+    Module.preRun.push(
+        mod => {
+
+            if (
+                mod.TTY &&
+                mod.TTY.stream_ops
+            ) {
+
+                mod.TTY.stream_ops.poll =
+                    (
+                        stream,
+                        timeout,
+                        notifyCallback
+                    ) => {
+
+                        if (
+                            mod.pty &&
+                            mod.pty.readable
+                        ) {
+                            return 1;
+                        }
+
+                        if (
+                            notifyCallback
+                        ) {
+
+                            if (
+                                typeof notifyCallback.registerCleanupFunc ===
+                                "function"
+                            ) {
+                                notifyCallback.registerCleanupFunc(
+                                    () => {
+
+                                        const index =
+                                            readableCallbacks.indexOf(
+                                                notifyCallback
+                                            );
+
+                                        if (
+                                            index !== -1
+                                        ) {
+                                            readableCallbacks.splice(
+                                                index,
+                                                1
+                                            );
+                                        }
+                                    }
+                                );
+                            }
+
+                            readableCallbacks.push(
+                                notifyCallback
+                            );
+                        }
+
+                        return 0;
+                    };
+            }
+        }
+    );
+
+    beginStage(
+        "linux",
+        "Browser network stack is ready; starting Alpine Linux."
     );
 
     /*
