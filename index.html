@@ -2551,7 +2551,8 @@ async function bootQEMU() {
     */
 
     const outURL =
-        assetURL(FILES.out);
+        assetURL(FILES.out) +
+        "?v=20261005-3";
 
     Module.mainScriptUrlOrBlob =
         outURL;
