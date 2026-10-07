@@ -226,7 +226,9 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         headers.set("X-WebPC-Asset", filename);
         headers.set(
           "Cache-Control",
-          "public, max-age=31536000, immutable"
+          filename.endsWith(".js") || filename.endsWith(".mjs")
+            ? "no-store"
+            : "public, max-age=31536000, immutable"
         );
 
         /*
