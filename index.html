@@ -2579,6 +2579,61 @@ async function bootQEMU() {
         );
 
 
+    /*
+        The QEMU-Wasm browser sample keeps Emscripten's TTY poll
+        non-blocking.  Install the hook as soon as the generated
+        runtime exposes TTY; on builds where TTY appears during
+        runtime initialisation, onRuntimeInitialized applies it
+        at the correct time.
+    */
+    function installTTYPollHook(module) {
+        if (
+            module &&
+            module.TTY &&
+            module.TTY.stream_ops &&
+            typeof module.TTY.stream_ops.poll === "function" &&
+            !module.__webpcTTYPollPatched
+        ) {
+            const oldPoll =
+                module.TTY.stream_ops.poll;
+
+            module.TTY.stream_ops.poll =
+                function (stream, timeout) {
+                    return oldPoll.call(
+                        this,
+                        stream,
+                        0
+                    );
+                };
+
+            module.__webpcTTYPollPatched =
+                true;
+        }
+    }
+
+    const previousRuntimeInit =
+        Module.onRuntimeInitialized;
+
+    Module.onRuntimeInitialized =
+        function () {
+            if (
+                typeof previousRuntimeInit ===
+                "function"
+            ) {
+                previousRuntimeInit();
+            }
+
+            installTTYPollHook(Module);
+        };
+
+    if (
+        typeof Module.TTY !==
+        "undefined"
+    ) {
+        installTTYPollHook(Module);
+    }
+
+
     const factory =
         qemuModule.default;
 
@@ -2604,36 +2659,33 @@ async function bootQEMU() {
             -nographic's stdio multiplexing. This makes the intended
             QEMU -> Emscripten PTY path unambiguous.
         */
-        "-display",
-        "none",
-
-        "-monitor",
-        "none",
-
-        "-serial",
-        "stdio",
-
-        "-no-reboot",
+        /*
+            Use the same console configuration as the upstream
+            QEMU-Wasm browser example.  -nographic sends QEMU's
+            serial console through the Emscripten PTY integration.
+            Explicit -serial stdio / -display none is intentionally
+            avoided here because this build already has its stdio
+            wired to xterm-pty.
+        */
+        "-nographic",
 
         "-M",
         "pc",
 
         /*
-            Restore 512 MB while diagnosing the guest boot. The
-            previous 256 MB setting was an optimisation, but a larger
-            guest memory allowance removes low-memory initramfs pressure
-            from the diagnosis.
+            Keep the guest at the upstream browser-example size.
         */
         "-m",
         "512M",
 
         /*
-            Keep the multi-threaded TCG path, but retain the smaller
-            translation cache to avoid an unnecessarily large browser
-            allocation.
+            Use single-threaded TCG for browser compatibility.
+            The Emscripten build itself already uses a worker for
+            its pthread/proxy runtime; adding MTTCG creates further
+            worker activity and is particularly fragile on iPad/WebKit.
         */
         "-accel",
-        "tcg,thread=multi,tb-size=64",
+        "tcg,tb-size=500",
 
         "-L",
         "/pack-rom/",
