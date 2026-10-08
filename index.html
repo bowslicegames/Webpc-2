@@ -3073,40 +3073,19 @@ async function bootQEMU() {
         "Starting the browser network stack and x86-64 virtual machine."
     );
 
-    /*
-        The upstream networking bundle is built with webpack's
-        library type "var", so it must be loaded as a classic
-        script. ES-module import() creates an isolated module
-        scope and does not expose window.Stack.
-    */
     if (
         !window.Stack ||
         typeof window.Stack.Start !==
         "function"
     ) {
-        try {
-            /*
-             * container2wasm's stack.js is an ES module and exports
-             * Start(). Loading it as a classic <script> executes it
-             * successfully but does NOT create window.Stack.
-             * Import the module explicitly and expose its namespace
-             * through the existing WebPC 2 boot interface.
-             */
-            const stackModule =
-                await import(
-                    assetURL(FILES.stack) +
-                    "?v=20261008-stack-module"
-                );
-
-            window.Stack = stackModule;
-        } catch (error) {
-            throw new Error(
-                "Failed to import the browser network stack module: " +
-                (error && error.message
-                    ? error.message
-                    : String(error))
-            );
-        }
+        await new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = assetURL(FILES.stack) + "?v=20261008-classic-stack";
+            script.async = false;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error("Failed to load the browser network stack script."));
+            document.head.appendChild(script);
+        });
     }
 
     if (
@@ -3115,7 +3094,7 @@ async function bootQEMU() {
         "function"
     ) {
         throw new Error(
-            "The browser network stack loaded, but its ES-module Start() export was not available."
+            "The browser network stack loaded, but window.Stack.Start() was not available."
         );
     }
 
