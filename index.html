@@ -818,6 +818,8 @@ button:active {
             <button id="send">Send</button>
             <button id="ctrlc">Ctrl+C</button>
             <button id="clear">Clear</button>
+            <button id="webtest" disabled>Web Test</button>
+            <button id="java" disabled>Java</button>
         </div>
 
     </div>
@@ -1173,6 +1175,10 @@ let currentAssetLoaded = 0;
 let masterPTY = null;
 let slavePTY = null;
 let terminal = null;
+
+let shellReady = false;
+let webSetupStarted = false;
+let shellOutputBuffer = "";
 
 const downloaded = new Map();
 const objectURLs = new Map();
@@ -2377,6 +2383,93 @@ async function createTerminal() {
 }
 
 /* ============================================================
+   GUEST WEB / JAVA SETUP
+   ============================================================ */
+
+function enableGuestWebControls() {
+    const webButton = $("webtest");
+    const javaButton = $("java");
+
+    if (webButton) webButton.disabled = false;
+    if (javaButton) javaButton.disabled = false;
+}
+
+function sendGuestCommand(command) {
+    if (
+        !masterPTY ||
+        typeof masterPTY.write !== "function" ||
+        !shellReady
+    ) return false;
+
+    masterPTY.write(command + "\r");
+    return true;
+}
+
+function webTestCommand() {
+    return [
+        "echo '[WebPC] HTTPS web test: https://example.com'",
+        "if command -v wget >/dev/null 2>&1; then",
+        "if wget -q -T 10 -O /dev/null https://example.com; then",
+        "echo '[WebPC] HTTPS OK'",
+        "else",
+        "echo '[WebPC] HTTPS FAILED'",
+        "fi",
+        "else",
+        "echo '[WebPC] wget is not installed'",
+        "fi"
+    ].join("; ");
+}
+
+function javaSetupCommand() {
+    return [
+        "if command -v java >/dev/null 2>&1; then",
+        "echo '[WebPC] Java already installed'; java -version",
+        "else",
+        "echo '[WebPC] Java missing; downloading OpenJDK 21...'",
+        "apk add --no-cache openjdk21-jre",
+        "if command -v java >/dev/null 2>&1; then",
+        "echo '[WebPC] OpenJDK 21 installed'; java -version",
+        "else",
+        "echo '[WebPC] OpenJDK 21 installation failed'",
+        "fi",
+        "fi"
+    ].join("; ");
+}
+
+function webSetupCommand() {
+    return [
+        "echo '[WebPC] Testing HTTPS web access...'",
+        "if ! command -v wget >/dev/null 2>&1; then",
+        "echo '[WebPC] Installing wget...'; apk add --no-cache wget",
+        "fi",
+        "if command -v wget >/dev/null 2>&1; then",
+        "wget -q -T 10 -O /dev/null https://example.com && echo '[WebPC] HTTPS OK' || echo '[WebPC] HTTPS FAILED'",
+        "fi",
+        javaSetupCommand()
+    ].join("; ");
+}
+
+function onShellReady() {
+    if (shellReady) return;
+
+    shellReady = true;
+    enableGuestWebControls();
+
+    if (stageDetail) {
+        stageDetail.textContent =
+            "Alpine shell detected. Testing web access and Java.";
+    }
+
+    if (!webSetupStarted) {
+        webSetupStarted = true;
+        setTimeout(() => {
+            sendGuestCommand(webSetupCommand());
+        }, 250);
+    }
+}
+
+
+/* ============================================================
    BOOT SIGNAL DIAGNOSTICS
    ============================================================ */
 
@@ -2459,6 +2552,30 @@ function noteBootSignal(data) {
             "Received " +
             bootSignalBytes +
             " byte(s) from the guest serial console.";
+    }
+
+    shellOutputBuffer =
+        (
+            shellOutputBuffer +
+            text
+        ).slice(-4096);
+
+    const lines =
+        shellOutputBuffer.split(/\r?\n/);
+
+    const lastLine =
+        lines.length
+            ? lines[lines.length - 1].trimEnd()
+            : "";
+
+    if (
+        bootSignalReceived &&
+        (
+            /[^\n]{0,70}#\s*$/.test(lastLine) ||
+            /[^\n]{0,70}\$\s*$/.test(lastLine)
+        )
+    ) {
+        onShellReady();
     }
 }
 
@@ -3384,6 +3501,20 @@ function setupControls() {
     $("send").addEventListener(
         "click",
         sendCommand
+    );
+
+    $("webtest").addEventListener(
+        "click",
+        () => {
+            sendGuestCommand(webTestCommand());
+        }
+    );
+
+    $("java").addEventListener(
+        "click",
+        () => {
+            sendGuestCommand(javaSetupCommand());
+        }
     );
 
     $("command").addEventListener(
