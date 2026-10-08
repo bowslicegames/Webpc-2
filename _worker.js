@@ -143,6 +143,67 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
       );
     }
 
+    if (url.pathname === "/net-proxy") {
+      const target = request.headers.get("X-WebPC-Proxy-Target");
+      if (!target) return new Response("Missing X-WebPC-Proxy-Target",{status:400,headers:corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"})});
+
+      let targetURL;
+      try { targetURL = new URL(target); }
+      catch { return new Response("Invalid proxy target",{status:400,headers:corsHeaders({"Content-Type":"text/plain; charset=utf-8"})}); }
+
+      if (targetURL.protocol !== "http:" && targetURL.protocol !== "https:") {
+        return new Response("Only HTTP(S) targets are allowed",{status:400,headers:corsHeaders({"Content-Type":"text/plain; charset=utf-8"})});
+      }
+
+      const host = targetURL.hostname.toLowerCase();
+      const allowed =
+        host === "example.com" ||
+        host === "httpbin.org" ||
+        host === "api.adoptium.net" ||
+        host === "dl-cdn.alpinelinux.org" ||
+        host === "dl-3.alpinelinux.org" ||
+        host.endsWith(".alpinelinux.org") ||
+        host === "github.com" ||
+        host === "raw.githubusercontent.com" ||
+        host === "objects.githubusercontent.com" ||
+        host === "release-assets.githubusercontent.com";
+
+      if (!allowed) {
+        return new Response("Proxy target not allowlisted: " + host,{status:403,headers:corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"})});
+      }
+
+      try {
+        const outboundHeaders = new Headers(request.headers);
+        for (const h of ["X-WebPC-Proxy-Target","Origin","Referer","Host","Content-Length","Connection"]) {
+          outboundHeaders.delete(h);
+        }
+
+        const init = {
+          method: request.method,
+          headers: outboundHeaders,
+          redirect: "follow"
+        };
+        if (request.method !== "GET" && request.method !== "HEAD") {
+          init.body = request.body;
+        }
+
+        const upstream = await fetch(targetURL.toString(), init);
+        const headers = new Headers(upstream.headers);
+        headers.set("Access-Control-Allow-Origin", "*");
+        headers.set("Access-Control-Allow-Methods","GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
+        headers.set("Access-Control-Allow-Headers","*");
+        headers.set("X-WebPC-Worker","active");
+        headers.set("X-WebPC-Proxy","server-fetch");
+        headers.set("X-WebPC-Proxy-URL",upstream.url || targetURL.toString());
+        headers.delete("content-length");
+        headers.delete("content-encoding");
+
+        return new Response(upstream.body,{status:upstream.status,statusText:upstream.statusText,headers});
+      } catch (error) {
+        return new Response("WebPC network relay error: " + errorText(error),{status:502,headers:corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store","X-WebPC-Worker":"active"})});
+      }
+    }
+
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
