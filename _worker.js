@@ -188,6 +188,22 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         }
 
         const upstream = await fetch(targetURL.toString(), init);
+        if (filename === "stack.js") {
+          let source = await upstream.text();
+          source = source.replace(
+            'fetch(connObj.address, connObj.request).then((resp) => {',
+            'fetch("/net-proxy", {method: connObj.request.method, headers: Object.assign({}, connObj.request.headers || {}, {"X-WebPC-Proxy-Target": connObj.address}), body: connObj.request.body}).then((resp) => {'
+          );
+          const stackHeaders = new Headers();
+          stackHeaders.set("Content-Type", "application/javascript; charset=utf-8");
+          stackHeaders.set("Cache-Control", "no-store");
+          stackHeaders.set("Cross-Origin-Resource-Policy", "same-origin");
+          stackHeaders.set("Access-Control-Allow-Origin", "*");
+          stackHeaders.set("X-WebPC-Worker", "active");
+          stackHeaders.set("X-WebPC-Stack-Proxy", "enabled");
+          return new Response(source, {status: 200, headers: stackHeaders});
+        }
+
         const headers = new Headers(upstream.headers);
         headers.set("Access-Control-Allow-Origin", "*");
         headers.set("Access-Control-Allow-Methods","GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
