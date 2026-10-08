@@ -395,10 +395,14 @@ button:active {
     transform: scale(.98);
 }
 
-@media (max-width: 500px) {
+@media (max-width: 700px) {
 
     #startup {
-        padding: 10px;
+        padding:
+            10px
+            max(10px, env(safe-area-inset-right))
+            max(10px, env(safe-area-inset-bottom))
+            max(10px, env(safe-area-inset-left));
     }
 
     #startupCard {
@@ -448,6 +452,18 @@ button:active {
 }
 
 #startup {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50px;
+    bottom: 0;
+    z-index: 100;
+    overflow-y: auto;
+    padding: 18px;
+    background: #080b10;
+}
+
+#startup.hidden {
     display: none !important;
 }
 
@@ -466,7 +482,7 @@ button:active {
 }
 
 #controls {
-    display: flex !important;
+    display: none;
     flex: 0 0 auto;
     align-items: center;
     gap: 7px;
@@ -1694,9 +1710,15 @@ async function downloadWithProgress(filename) {
     currentAssetTotal =
         expected;
 
-    overallTotal += expected;
+    /*
+     * prebootCheck() already seeded overallTotal with the known
+     * sizes of every runtime asset. Do not add the same known
+     * size a second time or the bar would stop around 50%.
+     *
+     * If an asset has no known size, the response/blob path below
+     * will add its actual size when it becomes available.
+     */
 
-    updateOverall();
 
     /*
         GitHub Release downloads can redirect to
@@ -2437,6 +2459,48 @@ function noteBootSignal(data) {
             "Received " +
             bootSignalBytes +
             " byte(s) from the guest serial console.";
+    }
+}
+
+
+/* ============================================================
+   PRE-TERMINAL -> TERMINAL TRANSITION
+   ============================================================ */
+
+function showTerminalUI() {
+
+    const startup = $("startup");
+    const app = $("app");
+
+    if (startup) {
+        startup.classList.add("hidden");
+    }
+
+    if (app) {
+        app.classList.add("vm-ready");
+    }
+
+    /*
+     * Keep the existing terminal instance and controls exactly as
+     * they are. The loading screen is only an overlay, so xterm
+     * has already been laid out at the correct size underneath it.
+     */
+    terminalWrap.style.display =
+        "flex";
+
+    controls.style.display =
+        "flex";
+
+    if (
+        terminal &&
+        typeof terminal.refresh === "function"
+    ) {
+        try {
+            terminal.refresh(
+                0,
+                Math.max(0, terminal.rows - 1)
+            );
+        } catch (_) {}
     }
 }
 
@@ -3275,20 +3339,12 @@ async function bootQEMU() {
         }, 15000);
 
     /*
-     * Show the terminal while keeping the stage/progress UI
-     * visible above it. This lets us see actual serial output
-     * if the kernel produces any.
+     * All large runtime assets are now downloaded and the browser
+     * network stack is ready. This is the point where the startup
+     * loading screen has finished its job and the working terminal
+     * UI is revealed.
      */
-    terminalWrap.style.display =
-        "block";
-
-    controls.style.display =
-        "block";
-
-    /*
-     * Keep #startup visible instead of switching to the terminal
-     * page. The terminal is already part of the page below it.
-     */
+    showTerminalUI();
 
     await factory(
         Module
@@ -3544,9 +3600,14 @@ main();
         }
     }
 
-    setTimeout(function () {
-        if (bootLog) bootLog.classList.add("hidden");
-    }, 3500);
+    /*
+     * The boot log belongs to the terminal UI. Keep it hidden while
+     * the pre-terminal loading screen is active; it will be shown
+     * naturally when the terminal UI is revealed.
+     */
+    if (bootLog) {
+        bootLog.classList.add("hidden");
+    }
 })();
 </script>
 
