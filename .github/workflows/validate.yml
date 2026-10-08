@@ -24,11 +24,14 @@ jobs:
           node <<'NODE'
           const fs = require("fs");
           const html = fs.readFileSync("index.html", "utf8");
-          const scripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)];
+          const scriptPattern = new RegExp("<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>", "gi");
+          const scripts = [...html.matchAll(scriptPattern)];
           if (!scripts.length) throw new Error("No inline startup script found");
 
           // The application startup script contains the main() call.
-          const match = scripts.find(m => /\\basync function main\\s*\\(/.test(m[1]) && /\\bmain\\s*\\(\\s*\\)\\s*;/.test(m[1]));
+          const mainPattern = new RegExp("\\basync function main\\s*\\(");
+          const mainCallPattern = new RegExp("\\bmain\\s*\\(\\s*\\)\\s*;");
+          const match = scripts.find(m => mainPattern.test(m[1]) && mainCallPattern.test(m[1]));
           if (!match) throw new Error("WebPC startup script not found");
 
           fs.writeFileSync("/tmp/webpc-main.js", match[1]);
