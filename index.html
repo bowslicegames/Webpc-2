@@ -3084,31 +3084,29 @@ async function bootQEMU() {
         typeof window.Stack.Start !==
         "function"
     ) {
-        await new Promise(
-            (resolve, reject) => {
-                const script =
-                    document.createElement("script");
-
-                script.src =
+        try {
+            /*
+             * container2wasm's stack.js is an ES module and exports
+             * Start(). Loading it as a classic <script> executes it
+             * successfully but does NOT create window.Stack.
+             * Import the module explicitly and expose its namespace
+             * through the existing WebPC 2 boot interface.
+             */
+            const stackModule =
+                await import(
                     assetURL(FILES.stack) +
-                    "?v=20261007-1";
+                    "?v=20261008-stack-module"
+                );
 
-                script.async = false;
-
-                script.onload =
-                    () => resolve();
-
-                script.onerror =
-                    () =>
-                        reject(
-                            new Error(
-                                "Failed to load the browser network stack script."
-                            )
-                        );
-
-                document.head.appendChild(script);
-            }
-        );
+            window.Stack = stackModule;
+        } catch (error) {
+            throw new Error(
+                "Failed to import the browser network stack module: " +
+                (error && error.message
+                    ? error.message
+                    : String(error))
+            );
+        }
     }
 
     if (
@@ -3117,7 +3115,7 @@ async function bootQEMU() {
         "function"
     ) {
         throw new Error(
-            "The browser network stack loaded, but window.Stack.Start() was not available."
+            "The browser network stack loaded, but its ES-module Start() export was not available."
         );
     }
 
