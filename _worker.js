@@ -293,6 +293,28 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         );
 
         /*
+         * stack.js is part of the release asset set, so this branch is
+         * reached before STATIC_FILES. Patch its browser Fetch call here.
+         * Otherwise the /net-proxy relay below is never used and a Fetch
+         * rejection is converted by c2w into the guest-visible 503.
+         */
+        if (filename === "stack.js") {
+          let source = await upstream.text();
+          const needle = 'fetch(connObj.address, connObj.request).then((resp) => {';
+          const replacement = 'fetch("/net-proxy", Object.assign({}, connObj.request, {headers: Object.assign({}, connObj.request.headers || {}, {"X-WebPC-Proxy-Target": connObj.address})})).then((resp) => {';
+          source = source.split(needle).join(replacement);
+
+          const stackHeaders = new Headers();
+          stackHeaders.set("Content-Type", "application/javascript; charset=utf-8");
+          stackHeaders.set("Cache-Control", "no-store");
+          stackHeaders.set("Cross-Origin-Resource-Policy", "same-origin");
+          stackHeaders.set("X-WebPC-Worker", "active");
+          stackHeaders.set("X-WebPC-Stack-Proxy", source.includes(replacement) ? "enabled" : "pattern-not-found");
+
+          return new Response(source, { status: 200, headers: stackHeaders });
+        }
+
+        /*
          * Preserve the upstream Content-Length when GitHub supplies it.
          * The browser can then show accurate download progress.
          */
