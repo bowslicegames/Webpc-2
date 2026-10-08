@@ -292,12 +292,37 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
             : "public, max-age=31536000, immutable"
         );
 
-        /*
-         * stack.js is part of the release asset set, so this branch is
-         * reached before STATIC_FILES. Patch its browser Fetch call here.
-         * Otherwise the /net-proxy relay below is never used and a Fetch
-         * rejection is converted by c2w into the guest-visible 503.
-         */
+        if (filename === "stack.js") {
+          let source = await upstream.text();
+          const oldFetch = "fetch(connObj.address, connObj.request).then((resp) => {";
+          const newFetch = 'fetch("/net-proxy", Object.assign({}, connObj.request, {headers: Object.assign({}, connObj.request.headers || {}, {"X-WebPC-Proxy-Target": connObj.address})})).then((resp) => {';
+
+          if (!source.includes(oldFetch)) {
+            return new Response(
+              "WebPC 2 Worker ACTIVE\\nstack.js proxy patch target not found",
+              {
+                status: 502,
+                headers: corsHeaders({
+                  "Content-Type": "text/plain; charset=utf-8",
+                  "Cache-Control": "no-store",
+                  "X-WebPC-Worker": "active"
+                })
+              }
+            );
+          }
+
+          source = source.replace(oldFetch, newFetch);
+
+          const stackHeaders = new Headers();
+          stackHeaders.set("Content-Type", "application/javascript; charset=utf-8");
+          stackHeaders.set("Cache-Control", "no-store");
+          stackHeaders.set("Cross-Origin-Resource-Policy", "same-origin");
+          stackHeaders.set("X-WebPC-Worker", "active");
+          stackHeaders.set("X-WebPC-Stack-Proxy", "enabled");
+
+          return new Response(source, {status: 200, headers: stackHeaders});
+        }
+
         /*
          * Preserve the upstream Content-Length when GitHub supplies it.
          * The browser can then show accurate download progress.
@@ -417,36 +442,6 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
               })
             }
           );
-        }
-
-        if (path === "stack.js") {
-          let source = await upstream.text();
-
-          source = source.replace(
-            'fetch(connObj.address, connObj.request).then((resp) => {',
-            'fetch("/net-proxy", {method: connObj.request.method, headers: Object.assign({}, connObj.request.headers || {}, {"X-WebPC-Proxy-Target": connObj.address}), body: connObj.request.body}).then((resp) => {'
-          );
-
-          const stackHeaders = new Headers();
-          stackHeaders.set(
-            "Content-Type",
-            "application/javascript; charset=utf-8"
-          );
-          stackHeaders.set("Cache-Control", "no-store");
-          stackHeaders.set(
-            "Cross-Origin-Resource-Policy",
-            "same-origin"
-          );
-          stackHeaders.set("X-WebPC-Worker", "active");
-          stackHeaders.set(
-            "X-WebPC-Stack-Proxy",
-            "enabled"
-          );
-
-          return new Response(source, {
-            status: 200,
-            headers: stackHeaders
-          });
         }
 
         const headers =
