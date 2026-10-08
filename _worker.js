@@ -144,7 +144,7 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
     }
 
     if (url.pathname === "/net-proxy") {
-      const target = request.headers.get("X-WebPC-Proxy-Target");
+      const target = request.headers.get("X-WebPC-Proxy-Target") || new URL(request.url).searchParams.get("target");
       if (!target) return new Response("Missing X-WebPC-Proxy-Target",{status:400,headers:corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"})});
 
       let targetURL;
@@ -301,7 +301,7 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         if (filename === "stack.js") {
           let source = await upstream.text();
           const needle = 'fetch(connObj.address, connObj.request).then((resp) => {';
-          const replacement = 'fetch("/net-proxy", Object.assign({}, connObj.request, {headers: Object.assign({}, connObj.request.headers || {}, {"X-WebPC-Proxy-Target": connObj.address})})).then((resp) => {';
+          const replacement = `fetch("/net-proxy?target=" + encodeURIComponent(connObj.address), connObj.request).then((resp) => {`;
           source = source.split(needle).join(replacement);
 
           const stackHeaders = new Headers();
