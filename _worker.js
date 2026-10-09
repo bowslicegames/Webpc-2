@@ -293,6 +293,25 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         );
 
         if (filename === "stack.js") {
+          /*
+           * The startup pre-boot checker uses HEAD to verify that the
+           * asset exists. HEAD responses have no body, so do not try to
+           * patch/match stack.js source for that request. Return the
+           * same successful headers that a patched GET response uses.
+           */
+          if (request.method === "HEAD") {
+            return new Response(null, {
+              status: 200,
+              headers: {
+                "Content-Type": "application/javascript; charset=utf-8",
+                "Cache-Control": "no-store",
+                "Cross-Origin-Resource-Policy": "same-origin",
+                "X-WebPC-Worker": "active",
+                "X-WebPC-Stack-Proxy": "enabled"
+              }
+            });
+          }
+
           let source = await upstream.text();
           const fetchPattern =
             /fetch\(\s*connObj\.address\s*,\s*connObj\.request\s*\)/;
