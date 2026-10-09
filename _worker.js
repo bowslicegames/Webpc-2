@@ -45,7 +45,7 @@ const RELEASE_BASE =
  * Worker itself is already new.
  */
 const STATIC_COMMIT =
-  "d34010ceac9b762a19f6a8768a2c6e8b4d07c7fa";
+  "b20d4b19505543cd05cc8362ebab18aab7e487d1";
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
@@ -247,6 +247,55 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
             })
           }
         );
+      }
+
+      /*
+       * stack.js must be an ES module with a named Start() export.
+       * The old release upload does not reliably match that contract,
+       * so serve the checked-in upstream module pinned by STATIC_COMMIT.
+       */
+      if (filename === "stack.js") {
+        try {
+          const stackModule = await fetch(RAW_BASE + "stack.js", {
+            method: request.method === "HEAD" ? "HEAD" : "GET",
+            redirect: "follow",
+            cf: { cacheTtl: 0, cacheEverything: false }
+          });
+
+          if (!stackModule.ok) {
+            return new Response(
+              "Unable to load WebPC stack module: " + stackModule.status,
+              {
+                status: 502,
+                headers: {
+                  "Content-Type": "text/plain; charset=utf-8",
+                  "Cache-Control": "no-store",
+                  "X-WebPC-Worker": "active"
+                }
+              }
+            );
+          }
+
+          return new Response(request.method === "HEAD" ? null : stackModule.body, {
+            status: 200,
+            headers: {
+              "Content-Type": "application/javascript; charset=utf-8",
+              "Cache-Control": "no-store",
+              "Cross-Origin-Resource-Policy": "same-origin",
+              "X-WebPC-Worker": "active",
+              "X-WebPC-Stack-Module": "repository-pinned"
+            }
+          });
+        } catch (error) {
+          return new Response("Stack module fetch failed: " + errorText(error), {
+            status: 502,
+            headers: {
+              "Content-Type": "text/plain; charset=utf-8",
+              "Cache-Control": "no-store",
+              "X-WebPC-Worker": "active"
+            }
+          });
+        }
       }
 
       const upstreamURL =
