@@ -295,7 +295,7 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         if (filename === "stack.js") {
           let source = await upstream.text();
           const fetchPattern =
-            /fetch\\(\\s*connObj\\.address\\s*,\\s*connObj\\.request\\s*\\)/;
+            /fetch\(\s*connObj\.address\s*,\s*connObj\.request\s*\)/;
           const newFetchCall =
             'fetch("/net-proxy", Object.assign({}, connObj.request, {headers: Object.assign({}, connObj.request.headers || {}, {"X-WebPC-Proxy-Target": connObj.address})}))';
 
