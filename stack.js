@@ -1,4 +1,21 @@
 var accepted = false;
+
+// Send guest HTTP(S) requests through the same-origin Cloudflare Worker relay.
+// This avoids browser CORS blocking upstream sites before the guest can receive
+// their responses. The Worker validates the destination and performs the fetch.
+function fetchWebPCRequest(address, request) {
+    const headers = new Headers(request.headers || {});
+    headers.set("X-WebPC-Proxy-Target", address);
+
+    const relayRequest = {
+        ...request,
+        headers,
+        mode: "same-origin",
+        credentials: "omit"
+    };
+
+    return fetch(new URL("/net-proxy", window.location.origin).toString(), relayRequest);
+}
 let curSocket = null;
 let eventQueue = [];
 let stackWorker = null;
@@ -458,7 +475,7 @@ function connect(name, shared, toNet, certbuf) {
                         if ((connObj.request.method != "HEAD") && (connObj.request.method != "GET")) {
                             connObj.request.body = connObj.reqBodybuf;
                         }
-                        fetch(connObj.address, connObj.request).then((resp) => {
+                        fetchWebPCRequest(connObj.address, connObj.request).then((resp) => {
                             connObj.done = false;
                             connObj.respBodybuf = new Uint8Array(0);
                             if (resp.ok) {
