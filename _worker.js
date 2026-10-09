@@ -45,7 +45,7 @@ const RELEASE_BASE =
  * Worker itself is already new.
  */
 const STATIC_COMMIT =
-  "b20d4b19505543cd05cc8362ebab18aab7e487d1";
+  "d19516044b0f6cecc986609c3f1a92341a87042c";
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
@@ -159,6 +159,11 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
       const allowed =
         host === "example.com" ||
         host === "httpbin.org" ||
+        host === "google.com" ||
+        host.endsWith(".google.com") ||
+        host === "1.1.1.1" ||
+        host === "cloudflare.com" ||
+        host.endsWith(".cloudflare.com") ||
         host === "api.adoptium.net" ||
         host === "dl-cdn.alpinelinux.org" ||
         host === "dl-3.alpinelinux.org" ||
