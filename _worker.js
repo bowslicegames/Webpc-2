@@ -316,7 +316,7 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
           const fetchPattern =
             /fetch\(\s*connObj\.address\s*,\s*connObj\.request\s*\)/;
           const newFetchCall =
-            'fetch("/net-proxy", Object.assign({}, connObj.request, {headers: Object.assign({}, connObj.request.headers || {}, {"X-WebPC-Proxy-Target": connObj.address})}))';
+            'fetch("/net-proxy?target=" + encodeURIComponent(connObj.address), connObj.request)';
 
           if (!fetchPattern.test(source)) {
             return new Response(
