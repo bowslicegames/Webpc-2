@@ -539,11 +539,22 @@ function connect(name, shared, toNet, certbuf) {
                                 connObj.done = true;
                             }
                         }).catch((error) => {
+                            const reason = String(
+                                error && error.message ? error.message : error
+                            ).slice(0, 240);
+                            console.error(
+                                "[WebPC network relay] request failed:",
+                                connObj.address,
+                                error
+                            );
                             connObj.response = new TextEncoder().encode(JSON.stringify({
                                 status: 503,
-                                statusText: "Service Unavailable",
-                            }))
-                            connObj.respBodybuf = new Uint8Array(0);
+                                statusText: "WebPC relay fetch failed: " + reason,
+                                url: connObj.address
+                            }));
+                            connObj.respBodybuf = new TextEncoder().encode(
+                                "WebPC relay fetch failed for " + connObj.address + ": " + reason + "\n"
+                            );
                             connObj.done = true;
                         });
                     }
