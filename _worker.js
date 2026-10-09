@@ -312,36 +312,21 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
             });
           }
 
-          let source = await upstream.text();
-          const fetchPattern =
-            /fetch\(\s*connObj\.address\s*,\s*connObj\.request\s*\)/;
-          const newFetchCall =
-            'fetch("/net-proxy?target=" + encodeURIComponent(connObj.address), connObj.request)';
-
-          if (!fetchPattern.test(source)) {
-            return new Response(
-              "WebPC 2 Worker ACTIVE\\nstack.js proxy patch target not found",
-              {
-                status: 502,
-                headers: corsHeaders({
-                  "Content-Type": "text/plain; charset=utf-8",
-                  "Cache-Control": "no-store",
-                  "X-WebPC-Worker": "active"
-                })
-              }
-            );
-          }
-
-          source = source.replace(fetchPattern, newFetchCall);
-
+          /*
+           * Serve stack.js unchanged. Rewriting JavaScript source here
+           * can corrupt syntax when upstream versions change their fetch
+           * expression. Keep this response byte-for-byte equivalent to
+           * the upstream module while retaining the correct module MIME
+           * type and disabling caching during debugging.
+           */
           const stackHeaders = new Headers();
           stackHeaders.set("Content-Type", "application/javascript; charset=utf-8");
           stackHeaders.set("Cache-Control", "no-store");
           stackHeaders.set("Cross-Origin-Resource-Policy", "same-origin");
           stackHeaders.set("X-WebPC-Worker", "active");
-          stackHeaders.set("X-WebPC-Stack-Proxy", "enabled");
+          stackHeaders.set("X-WebPC-Stack-Proxy", "disabled");
 
-          return new Response(source, {status: 200, headers: stackHeaders});
+          return new Response(upstream.body, {status: 200, headers: stackHeaders});
         }
 
         /*
