@@ -3078,14 +3078,23 @@ async function bootQEMU() {
         typeof window.Stack.Start !==
         "function"
     ) {
-        await new Promise((resolve, reject) => {
-            const script = document.createElement("script");
-            script.src = assetURL(FILES.stack) + "?v=20261008-classic-stack";
-            script.async = false;
-            script.onload = () => resolve();
-            script.onerror = () => reject(new Error("Failed to load the browser network stack script."));
-            document.head.appendChild(script);
-        });
+        /*
+         * stack.js is an ES module in the current c2w-net-proxy source.
+         * Loading it as a classic script silently leaves Stack undefined
+         * because its Start function is exported, not attached to window.
+         * Import it as a module and expose its exports through the API
+         * expected by the rest of WebPC.
+         */
+        const stackModule = await import(
+            assetURL(FILES.stack) + "?v=20261009-module-stack"
+        );
+
+        if (
+            stackModule &&
+            typeof stackModule.Start === "function"
+        ) {
+            window.Stack = stackModule;
+        }
     }
 
     if (
@@ -3094,7 +3103,7 @@ async function bootQEMU() {
         "function"
     ) {
         throw new Error(
-            "The browser network stack loaded, but window.Stack.Start() was not available."
+            "The browser network stack loaded, but its Start() export was not available. Check the /assets/stack.js response and JavaScript console."
         );
     }
 
