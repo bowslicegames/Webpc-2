@@ -18,6 +18,19 @@ function fetchWebPCRequest(address, request) {
 }
 let curSocket = null;
 let eventQueue = [];
+// Offset into eventQueue[0] when a WebSocket frame is larger than the
+// currently available ring-buffer space.
+let eventQueueOffset = 0;
+let sockSendRetryScheduled = false;
+
+function scheduleSockSend(delay = 1) {
+    if (sockSendRetryScheduled || eventQueue.length === 0) return;
+    sockSendRetryScheduled = true;
+    setTimeout(() => {
+        sockSendRetryScheduled = false;
+        sockSend();
+    }, delay);
+}
 let stackWorker = null;
 
 // Mimimum WebSocket mock which implements only fields used by the emscripten runtime.
@@ -131,52 +144,86 @@ function sockAccept(){
 }
 
 function sockSend(){
-    if (Atomics.compareExchange(toNetCtrl, 0, 0, 1) != 0) {
-        setTimeout(() => {
-            sockSend();
-        }, 0);
-        return;
-    }
-    const data = eventQueue.shift();
-    let begin = toNetBegin[0]; //inclusive
-    let end = toNetEnd[0]; //exclusive
-    var len;
-    var round;
-    if (end >= begin) {
-        len = toNetData.byteLength - end;
-        round = begin;
-    } else {
-        len = begin - end;
-        round = 0;
-    }
-    if ((len + round) < data.length) {
-        // buffer is full; drop packets
-        // TODO: preserve this
-        console.log("FIXME: buffer full; dropping packets");
-    } else {
-        if (len > 0) {
-            if (len > data.length) {
-                len = data.length
-            }
-            toNetData.set(data.subarray(0, len), end);
-            toNetEnd[0] = end + len;
-        }
-        if ((round > 0) && (data.length > len)) {
-            if (round > data.length - len) {
-                round = data.length - len
-            }
-            toNetData.set(data.subarray(len, len + round), 0);
-            toNetEnd[0] = round;
-        }
-    }
-    if (Atomics.compareExchange(toNetCtrl, 0, 1, 0) != 1) {
-        console.log("UNEXPECTED STATUS");
-    }
-    Atomics.notify(toNetCtrl, 0, 1);
+    if (eventQueue.length === 0) return 0;
 
-    Atomics.store(toNetNotify, 0, 1);
-    Atomics.notify(toNetNotify, 0);
-    return 0;
+    // Only one producer may write to the shared ring buffer at a time.
+    if (Atomics.compareExchange(toNetCtrl, 0, 0, 1) != 0) {
+        scheduleSockSend(1);
+        return 0;
+    }
+
+    let copied = 0;
+    let hasPendingData = false;
+    try {
+        // Do not remove a frame from the queue until every byte has been
+        // copied. A frame can be larger than the ring buffer, so retain an
+        // offset and copy it in safe chunks as the consumer frees space.
+        while (eventQueue.length > 0) {
+            const data = eventQueue[0];
+            if (eventQueueOffset >= data.length) {
+                eventQueue.shift();
+                eventQueueOffset = 0;
+                continue;
+            }
+
+            const capacity = toNetData.byteLength;
+            const begin = toNetBegin[0];
+            const end = toNetEnd[0];
+
+            // The ring buffer reserves one byte to distinguish full from
+            // empty. All indices are kept in [0, capacity).
+            const used = end >= begin
+                ? end - begin
+                : capacity - begin + end;
+            const free = capacity - used - 1;
+            if (free <= 0) {
+                hasPendingData = true;
+                break;
+            }
+
+            // Copy only the contiguous segment at the end of the ring. The
+            // next scheduled call will wrap to index zero if necessary.
+            const contiguous = end >= begin
+                ? capacity - end
+                : begin - end - 1;
+            const count = Math.min(data.length - eventQueueOffset, free, contiguous);
+            if (count <= 0) {
+                hasPendingData = true;
+                break;
+            }
+
+            toNetData.set(data.subarray(eventQueueOffset, eventQueueOffset + count), end);
+            toNetEnd[0] = (end + count) % capacity;
+            eventQueueOffset += count;
+            copied += count;
+
+            if (eventQueueOffset >= data.length) {
+                eventQueue.shift();
+                eventQueueOffset = 0;
+            } else {
+                // Avoid monopolising the producer lock on large frames.
+                hasPendingData = true;
+                break;
+            }
+        }
+        hasPendingData = hasPendingData || eventQueue.length > 0;
+    } finally {
+        if (Atomics.compareExchange(toNetCtrl, 0, 1, 0) != 1) {
+            console.log("UNEXPECTED STATUS");
+        }
+        Atomics.notify(toNetCtrl, 0, 1);
+    }
+
+    if (copied > 0) {
+        Atomics.store(toNetNotify, 0, 1);
+        Atomics.notify(toNetNotify, 0);
+    }
+    if (hasPendingData) {
+        // Poll briefly for the consumer to advance toNetBegin; never drop
+        // data merely because the shared buffer is temporarily full.
+        scheduleSockSend(1);
+    }
+    return copied;
 }
 
 function sockRecvWS(targetLen){
