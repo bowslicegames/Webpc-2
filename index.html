@@ -3568,12 +3568,15 @@ async function bootQEMU() {
 
     /* Assets are ready, but keep the loading screen until Linux emits its login prompt. */
     if (mainStage) mainStage.textContent = "Booting Linux…";
-    if (stageDetail) stageDetail.textContent = "Waiting for the Linux login prompt. When it appears, type root in the terminal; the desktop opens after login.";
+    if (stageDetail) stageDetail.textContent = "Linux is starting. The desktop is open with Terminal; sign in as root to unlock the other apps.";
     if (percentText) percentText.textContent = "BOOT";
     const startupScreen = $("startup");
     if (startupScreen) startupScreen.classList.add("waiting-for-login");
     if (linuxBootProgress) linuxBootProgress.style.display = "block";
-    if (linuxBootLabel) linuxBootLabel.textContent = "Waiting for Linux login prompt…";
+    if (linuxBootLabel) linuxBootLabel.textContent = "Linux is starting — desktop is ready";
+
+    /* Show the HTML desktop as soon as the VM runtime is launched, without waiting for login detection. */
+    if (typeof window.showDesktopUI === "function") window.showDesktopUI();
 
     await factory(
         Module
@@ -4082,8 +4085,7 @@ main();
     if(document.getElementById("fileWindow").classList.contains("open")) refreshFiles();
   };
   window.showDesktopUI = function() {
-    /* Desktop is visible at the login prompt; other apps unlock only after root. */
-    if (!loginPromptShown && !shellReadyNow()) return;
+    /* Always reveal the desktop once the VM runtime has started; apps remain locked until root. */
     const startup=document.getElementById("startup");
     if(startup)startup.classList.add("hidden");
     app.classList.add("vm-ready");
