@@ -291,7 +291,7 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         const bridge =
           '<base href="' + baseHref + '">' +
           '<script>(function(){' +
-          'var prefix="/browser-proxy?url=";' +
+          'var prefix=' + JSON.stringify(new URL("/browser-proxy", url.origin).toString() + "?url=") + ';' +
           'document.addEventListener("click",function(e){' +
           'var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;' +
           'if(!a||a.hasAttribute("download"))return;' +
@@ -305,7 +305,7 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
           'new FormData(f).forEach(function(v,k){if(typeof v==="string")u.searchParams.append(k,v)});' +
           'location.href=prefix+encodeURIComponent(u.href);' +
           '},true);' +
-          '})();<\/script>';
+          '})();</script>';
 
         if (/<head\b[^>]*>/i.test(html)) {
           html = html.replace(/<head\b[^>]*>/i, match => match + bridge);
