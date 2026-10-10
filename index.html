@@ -592,6 +592,89 @@ button:active {
     }
 }
 
+
+/* ============================================================
+   WEBPC DESKTOP SHELL — rendered in HTML over the existing VM
+   ============================================================ */
+#desktop { display:none; position:absolute; inset:50px 0 0; overflow:hidden; color:#edf4ff;
+  background:radial-gradient(ellipse at 18% 10%,#26496b 0%,#16283d 34%,#0c1421 72%,#080d16 100%);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+#app.vm-ready #desktop { display:block; }
+#app.vm-ready #terminalWrap, #app.vm-ready #controls { display:none !important; }
+#desktopTop {height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 13px;
+  background:rgba(8,13,22,.72);border-bottom:1px solid rgba(255,255,255,.12);font-size:12px;letter-spacing:.2px}
+#desktopStatus {color:#a9c8e8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:12px}
+#desktopArea {position:absolute;inset:34px 0 78px;overflow:hidden}
+.desktop-shortcut {position:absolute;width:82px;min-height:76px;border:1px solid transparent;background:transparent;color:#f4f8ff;
+  display:flex;flex-direction:column;align-items:center;gap:7px;padding:9px 3px;border-radius:10px;cursor:pointer;touch-action:manipulation}
+.desktop-shortcut:active,.desktop-shortcut:focus {background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.24);outline:none}
+.desktop-shortcut .shortcut-icon {font-size:30px;line-height:34px;filter:drop-shadow(0 4px 5px #0008)}
+.desktop-shortcut .shortcut-label {font-size:11px;text-align:center;text-shadow:0 1px 4px #000;overflow-wrap:anywhere}
+#shortcut-files {left:14px;top:14px} #shortcut-terminal {left:14px;top:104px} #shortcut-minecraft {left:14px;top:194px}
+#appDock {position:absolute;left:50%;bottom:11px;transform:translateX(-50%);display:flex;align-items:center;gap:7px;
+  padding:9px 12px;border:1px solid rgba(255,255,255,.22);border-radius:19px;background:rgba(11,18,29,.73);
+  box-shadow:0 10px 35px #0006;backdrop-filter:blur(18px);max-width:calc(100% - 20px)}
+.dock-app {width:48px;height:48px;flex:0 0 48px;border:1px solid #ffffff22;border-radius:14px;background:linear-gradient(145deg,#344b67,#17283e);
+  display:flex;align-items:center;justify-content:center;font-size:25px;cursor:pointer;touch-action:manipulation}
+.dock-app:active {transform:scale(.94)} .dock-app[aria-label="Minecraft"] {background:linear-gradient(145deg,#4b754e,#1d3828)}
+#windowHost {position:absolute;inset:0;pointer-events:none}
+.desktop-window {position:absolute;display:none;flex-direction:column;min-width:280px;min-height:190px;width:min(760px,calc(100% - 24px));
+  height:min(520px,calc(100% - 22px));left:105px;top:18px;background:#111a27;border:1px solid #65778e;border-radius:12px;
+  box-shadow:0 22px 65px #0009;overflow:hidden;resize:none;pointer-events:auto}
+.desktop-window.open {display:flex}
+.desktop-window.maximized {left:7px!important;top:7px!important;width:calc(100% - 14px)!important;height:calc(100% - 14px)!important}
+.window-titlebar {height:40px;flex:0 0 40px;display:flex;align-items:center;gap:9px;padding:0 10px 0 13px;
+  background:linear-gradient(#26384d,#1b293b);border-bottom:1px solid #526176;touch-action:none;user-select:none}
+.window-title {font-size:13px;font-weight:700;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.window-action {width:29px;height:27px;flex:0 0 29px;border:1px solid #ffffff20;border-radius:6px;background:#ffffff0b;color:#eef5ff;padding:0;font-size:13px}
+.window-action.close {background:#9c3942;border-color:#c75b64}
+.window-body {position:relative;display:flex;flex:1;min-height:0;min-width:0;overflow:hidden;background:#0e1622}
+.window-resize {position:absolute;right:0;bottom:0;width:24px;height:24px;z-index:5;touch-action:none;cursor:nwse-resize;
+  background:linear-gradient(135deg,transparent 50%,#8ca2bb 51%,#8ca2bb 57%,transparent 58%,transparent 68%,#8ca2bb 69%,#8ca2bb 75%,transparent 76%)}
+#fileWindow {left:clamp(12px,13vw,150px);top:clamp(12px,7vh,45px);width:min(780px,calc(100% - 24px));height:min(570px,calc(100% - 24px))}
+.file-layout {display:flex;flex:1;min-width:0;min-height:0}
+.file-sidebar {width:132px;flex:0 0 132px;padding:12px 8px;background:#111e2e;border-right:1px solid #26374b}
+.file-nav {width:100%;height:36px;text-align:left;padding:0 9px;margin:0 0 5px;border-radius:7px;background:transparent;color:#d9e6f5;font-size:12px}
+.file-nav.active,.file-nav:active {background:#2b496a}
+.file-main {display:flex;flex-direction:column;gap:8px;flex:1;min-width:0;min-height:0;padding:12px}
+.file-toolbar {display:flex;flex-wrap:wrap;gap:6px}
+.ui-button {height:34px;flex:0 0 auto;padding:0 11px;border:1px solid #3b5068;border-radius:7px;background:#22354b;color:#f1f6ff;font-size:12px;font-weight:600}
+.ui-button.primary {background:#2b6ca8;border-color:#438bc9}
+.file-path,.file-name {width:100%;height:34px;border:1px solid #34485e;border-radius:7px;background:#0a111a;color:#e7f1ff;padding:0 9px;font-size:12px}
+.file-editor {flex:1;min-height:90px;width:100%;resize:none;border:1px solid #34485e;border-radius:8px;background:#090f17;color:#dce9f8;padding:10px;
+  font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;outline:none}
+.file-footer {display:flex;align-items:center;gap:8px;min-height:18px;color:#9cb0c6;font-size:11px;overflow-wrap:anywhere}
+#fileList {display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;max-height:105px;overflow:auto;padding:3px}
+.file-chip {max-width:100%;padding:6px 8px;border:1px solid #31465c;border-radius:7px;background:#17273a;color:#dce9f8;font-size:11px;overflow-wrap:anywhere}
+#terminalWindow {left:clamp(10px,7vw,90px);top:clamp(10px,5vh,35px);width:min(850px,calc(100% - 20px));height:min(600px,calc(100% - 20px))}
+#terminalWindow .window-body {display:flex;flex-direction:column;padding:5px}
+#terminalWindow #terminalWrap {position:relative!important;display:flex!important;flex:1 1 auto!important;min-height:0!important;height:auto!important;width:100%!important;padding:0!important;overflow:hidden}
+#terminalWindow #terminal {height:100%;width:100%;min-height:0}
+#terminalWindow #controls {display:flex!important;flex:0 0 auto!important;position:relative!important;flex-wrap:wrap;gap:6px;padding:6px 0 0!important;background:transparent!important;border:0!important}
+#terminalWindow #command {flex:1 1 100%;height:36px;font-size:12px}
+#terminalWindow #buttons {display:flex;flex:1 1 100%;gap:5px}
+#terminalWindow #buttons button {flex:1 1 0;min-width:0;height:34px;padding:0 5px;font-size:11px}
+#terminalWindow .window-resize {display:block}
+.info-content {padding:20px;overflow:auto;color:#dce8f6;font-size:13px;line-height:1.6}
+.info-card {padding:14px;margin-bottom:12px;border:1px solid #2d435b;border-radius:10px;background:#142235}
+.info-card h3 {margin:0 0 7px;font-size:14px}
+.info-card p {margin:0;color:#afc1d5}
+.info-status {margin-top:10px;padding:9px;border-radius:7px;background:#0b131d;color:#b8cde4;overflow-wrap:anywhere}
+@media(max-width:600px) {
+  #desktop {inset:50px 0 0}
+  #desktopArea {inset:34px 0 76px}
+  #shortcut-files {left:8px;top:8px} #shortcut-terminal {left:8px;top:92px} #shortcut-minecraft {left:8px;top:176px}
+  #appDock {gap:5px;padding:7px 9px;bottom:8px}
+  .dock-app {width:43px;height:43px;flex-basis:43px;font-size:22px}
+  .desktop-window {left:7px!important;top:7px!important;width:calc(100% - 14px)!important;height:calc(100% - 14px)!important;min-width:0}
+  #fileWindow {height:calc(100% - 14px)!important}
+  .file-sidebar {width:92px;flex-basis:92px;padding:8px 5px}
+  .file-nav {font-size:11px;padding:0 5px}
+  .file-main {padding:8px;gap:6px}
+  .ui-button {height:32px;padding:0 8px;font-size:11px}
+  #fileList {max-height:75px}
+}
+
 </style>
 </head>
 
@@ -822,6 +905,47 @@ button:active {
             <button id="java" disabled>Java</button>
         </div>
 
+    </div>
+
+
+    <div id="desktop" aria-label="WebPC desktop">
+      <div id="desktopTop"><span>◈ WebPC Desktop</span><span id="desktopStatus">Starting Alpine Linux…</span></div>
+      <div id="desktopArea">
+        <button class="desktop-shortcut" id="shortcut-files" data-open-app="files"><span class="shortcut-icon">📁</span><span class="shortcut-label">File Manager</span></button>
+        <button class="desktop-shortcut" id="shortcut-terminal" data-open-app="terminal"><span class="shortcut-icon">▣</span><span class="shortcut-label">Terminal</span></button>
+        <button class="desktop-shortcut" id="shortcut-minecraft" data-open-app="minecraft"><span class="shortcut-icon">🟩</span><span class="shortcut-label">Minecraft</span></button>
+        <div id="windowHost">
+          <section class="desktop-window" id="fileWindow" aria-label="File Manager window">
+            <div class="window-titlebar"><span>📁</span><span class="window-title">File Manager</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
+            <div class="window-body">
+              <div class="file-layout">
+                <aside class="file-sidebar"><button class="file-nav active" data-folder="Desktop">🖥 Desktop</button><button class="file-nav" data-folder="Documents">📄 Documents</button><button class="file-nav" data-folder="Downloads">⬇ Downloads</button><button class="file-nav" data-folder="">⌂ Home</button></aside>
+                <div class="file-main">
+                  <input class="file-path" id="filePath" value="/home/webpc/Desktop" aria-label="Current folder path">
+                  <div class="file-toolbar"><button class="ui-button" id="fileNew">＋ New</button><button class="ui-button" id="fileRefresh">↻ Refresh</button><button class="ui-button primary" id="fileSave">Save to disk</button><button class="ui-button" id="fileOpenPath">Open path</button></div>
+                  <input class="file-name" id="fileName" value="hello.txt" aria-label="File name">
+                  <textarea class="file-editor" id="fileEditor" spellcheck="false" placeholder="Write a file here. Save to disk writes it to the Linux virtual disk using a hidden shell command."></textarea>
+                  <div id="fileList" aria-label="Files in current folder"></div>
+                  <div class="file-footer" id="fileStatus">Waiting for the Alpine shell…</div>
+                </div>
+              </div>
+              <div class="window-resize" aria-hidden="true"></div>
+            </div>
+          </section>
+          <section class="desktop-window" id="terminalWindow" aria-label="Terminal window">
+            <div class="window-titlebar"><span>▣</span><span class="window-title">Alpine Linux Terminal</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
+            <div class="window-body" id="terminalWindowBody"><div class="window-resize" aria-hidden="true"></div></div>
+          </section>
+          <section class="desktop-window" id="minecraftWindow" aria-label="Minecraft launcher window">
+            <div class="window-titlebar"><span>🟩</span><span class="window-title">Minecraft Java Edition</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
+            <div class="window-body"><div class="info-content">
+              <div class="info-card"><h3>Minecraft Java Edition</h3><p>This desktop is the foundation for the Minecraft setup. First we need to confirm Java and the VM's file storage are working, then add the game files and launcher.</p><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="margin-top:10px"><button class="ui-button primary" id="checkJava">Check Java</button></div></div>
+              <div class="info-card"><h3>Virtual computer</h3><p>Files saved in the File Manager are written into the Linux VM disk. This browser VM is currently non-persistent between fresh launches.</p></div>
+            </div><div class="window-resize" aria-hidden="true"></div></div>
+          </section>
+        </div>
+      </div>
+      <div id="appDock" aria-label="App dock"><button class="dock-app" data-open-app="files" aria-label="Files" title="File Manager">📁</button><button class="dock-app" data-open-app="terminal" aria-label="Terminal" title="Terminal">▣</button><button class="dock-app" data-open-app="minecraft" aria-label="Minecraft" title="Minecraft Java Edition">🟩</button></div>
     </div>
 
 </div>
@@ -2459,11 +2583,9 @@ function onShellReady() {
             "Alpine shell detected. Testing web access and Java.";
     }
 
-    if (!webSetupStarted) {
-        webSetupStarted = true;
-        setTimeout(() => {
-            sendGuestCommand(webSetupCommand());
-        }, 250);
+    /* Java/package setup is deliberately manual for now: the APK signature/package issue is being handled separately. */
+    if (typeof window.webpcDesktopShellReady === "function") {
+        window.webpcDesktopShellReady();
     }
 }
 
@@ -2473,6 +2595,10 @@ function onShellReady() {
    ============================================================ */
 
 function noteBootSignal(data) {
+
+    if (window.webpcDesktopConsumeOutput) {
+        try { window.webpcDesktopConsumeOutput(data); } catch (_) {}
+    }
 
     if (!data)
         return;
@@ -2601,22 +2727,15 @@ function showTerminalUI() {
      * they are. The loading screen is only an overlay, so xterm
      * has already been laid out at the correct size underneath it.
      */
-    terminalWrap.style.display =
-        "flex";
+    if (typeof window.showDesktopUI === "function") {
+        window.showDesktopUI();
+        return;
+    }
 
-    controls.style.display =
-        "flex";
-
-    if (
-        terminal &&
-        typeof terminal.refresh === "function"
-    ) {
-        try {
-            terminal.refresh(
-                0,
-                Math.max(0, terminal.rows - 1)
-            );
-        } catch (_) {}
+    terminalWrap.style.display = "flex";
+    controls.style.display = "flex";
+    if (terminal && typeof terminal.refresh === "function") {
+        try { terminal.refresh(0, Math.max(0, terminal.rows - 1)); } catch (_) {}
     }
 }
 
@@ -3440,12 +3559,7 @@ async function bootQEMU() {
             }
         }, 15000);
 
-    /*
-     * All large runtime assets are now downloaded and the browser
-     * network stack is ready. This is the point where the startup
-     * loading screen has finished its job and the working terminal
-     * UI is revealed.
-     */
+    /* All VM assets are ready; reveal the HTML desktop shell. */
     showTerminalUI();
 
     await factory(
@@ -3724,6 +3838,241 @@ main();
     if (bootLog) {
         bootLog.classList.add("hidden");
     }
+})();
+</script>
+
+
+<script>
+/* WebPC desktop apps. The VM itself remains the existing Alpine/QEMU guest. */
+(function () {
+  const desktop = document.getElementById("desktop");
+  if (!desktop) return;
+  const status = document.getElementById("desktopStatus");
+  const host = document.getElementById("windowHost");
+  const fileStatus = document.getElementById("fileStatus");
+  const filePath = document.getElementById("filePath");
+  const fileName = document.getElementById("fileName");
+  const editor = document.getElementById("fileEditor");
+  const fileList = document.getElementById("fileList");
+  const terminalWindow = document.getElementById("terminalWindow");
+  const terminalBody = document.getElementById("terminalWindowBody");
+  const terminalWrap = document.getElementById("terminalWrap");
+  const controls = document.getElementById("controls");
+  const app = document.getElementById("app");
+  let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "";
+  const BASE_HOME = "/home/webpc";
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+  function shellReadyNow() { return typeof shellReady !== "undefined" && shellReady && typeof masterPTY !== "undefined" && masterPTY; }
+  function setStatus(text) { if (status) status.textContent = text; }
+  function cleanOutput(s) { return String(s || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\r/g, "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, ""); }
+  function unique() { return "WPC" + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+  function runGuest(command, callback) {
+    if (!shellReadyNow()) { if (callback) callback(new Error("The Alpine shell is not ready yet."), ""); return false; }
+    if (commandBusy) { if (callback) callback(new Error("Another file operation is still running. Please wait."), ""); return false; }
+    commandBusy = true;
+    const id = unique(), begin = "__" + id + "_BEGIN__", end = "__" + id + "_END__";
+    pending = {begin, end, callback, text:"", found:false, timeout:null};
+    pending.timeout = setTimeout(() => {
+      if (!pending || pending.begin !== begin) return;
+      const p = pending; pending = null; commandBusy = false;
+      if (p.callback) p.callback(new Error("No response from the shell. Open Terminal to check that the prompt is ready."), p.text);
+    }, 12000);
+    const wrapped = "printf '\\n" + begin + "\\n'; " + command + "; printf '\\n" + end + "\\n'";
+    try { masterPTY.write(wrapped + "\r"); }
+    catch (e) { clearTimeout(pending.timeout); pending=null; commandBusy=false; if(callback)callback(e,""); return false; }
+    return true;
+  }
+  window.webpcDesktopConsumeOutput = function (data) {
+    if (!pending) return;
+    let s = typeof data === "string" ? data : "";
+    if (!s && data && typeof data.length === "number") { try { s = dec.decode(data instanceof Uint8Array ? data : new Uint8Array(data)); } catch (_) {} }
+    if (!s) return;
+    outputBuffer = (outputBuffer + s).slice(-500000);
+    const p = pending;
+    if (!p.found) {
+      const i = outputBuffer.lastIndexOf(p.begin);
+      if (i < 0) { outputBuffer = outputBuffer.slice(-Math.max(2000,p.begin.length)); return; }
+      p.found = true;
+      outputBuffer = outputBuffer.slice(i + p.begin.length);
+    }
+    const endIndex = outputBuffer.indexOf(p.end);
+    if (endIndex >= 0) {
+      p.text += outputBuffer.slice(0,endIndex);
+      outputBuffer = outputBuffer.slice(endIndex + p.end.length);
+      clearTimeout(p.timeout); pending = null; commandBusy = false;
+      const result = cleanOutput(p.text).trim();
+      if (p.callback) p.callback(null,result);
+    } else {
+      p.text += outputBuffer;
+      outputBuffer = "";
+      if (p.text.length > 450000) {
+        clearTimeout(p.timeout); pending=null; commandBusy=false;
+        if (p.callback) p.callback(new Error("File response was too large."), "");
+      }
+    }
+  };
+  function guestPath() {
+    let raw = (filePath.value || "").trim().replace(/\\/g,"/");
+    if (!raw.startsWith("/")) raw = BASE_HOME + "/" + raw;
+    const parts = raw.split("/").filter(Boolean);
+    if (parts.some(p => p === "." || p === ".." || !/^[A-Za-z0-9._ -]+$/.test(p))) throw new Error("Use simple folder names (letters, numbers, spaces, dots, _ or -).");
+    if (raw !== BASE_HOME && !raw.startsWith(BASE_HOME + "/")) throw new Error("File Manager is restricted to /home/webpc for safety.");
+    return raw.replace(/\/$/,"") || BASE_HOME;
+  }
+  function safeName() {
+    const n = (fileName.value || "").trim();
+    if (!n || n === "." || n === ".." || !/^[A-Za-z0-9._ -]+$/.test(n) || n.includes("/")) throw new Error("Enter a simple file name without slashes.");
+    return n;
+  }
+  function b64(s) {
+    const bytes = enc.encode(s); let binary = "";
+    for (let i=0;i<bytes.length;i+=0x8000) binary += String.fromCharCode.apply(null,bytes.subarray(i,Math.min(i+0x8000,bytes.length)));
+    return btoa(binary);
+  }
+  function fromB64(s) {
+    const binary = atob(s.replace(/\s/g,"")); const bytes = new Uint8Array(binary.length);
+    for (let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+    return dec.decode(bytes);
+  }
+  function showWindow(id) {
+    const win = document.getElementById(id); if (!win) return;
+    win.classList.add("open"); win.style.zIndex = ++zTop;
+    if (id === "terminalWindow") attachTerminal();
+    if (id === "fileWindow") { if (shellReadyNow()) refreshFiles(); else fileStatus.textContent="Waiting for the Alpine shell…"; }
+    if (id === "minecraftWindow") checkJavaStatus(false);
+  }
+  function closeWindow(win) { win.classList.remove("open"); }
+  function attachTerminal() {
+    if (!terminalWrap || !terminalBody) return;
+    if (terminalWrap.parentElement !== terminalBody) terminalBody.insertBefore(terminalWrap, terminalBody.firstChild);
+    if (controls && controls.parentElement !== terminalBody) terminalBody.appendChild(controls);
+    terminalWrap.style.display = "flex";
+    if (controls) controls.style.display = "flex";
+    setTimeout(() => {
+      try {
+        const rect = terminalWrap.getBoundingClientRect();
+        if (typeof terminal !== "undefined" && terminal && rect.width > 0 && rect.height > 0) {
+          terminal.resize(Math.max(30,Math.floor((rect.width-12)/8.6)),Math.max(5,Math.floor((rect.height-12)/18)));
+          terminal.refresh(0,Math.max(0,terminal.rows-1));
+          terminal.focus();
+        }
+      } catch (_) {}
+    },100);
+  }
+  function detachTerminal() {
+    if (terminalWrap && terminalWrap.parentElement !== app) app.insertBefore(terminalWrap,document.getElementById("controls"));
+    if (controls && controls.parentElement !== app) app.appendChild(controls);
+    if (terminalWrap) terminalWrap.style.display = "none";
+    if (controls) controls.style.display = "none";
+  }
+  document.querySelectorAll("[data-open-app]").forEach(el => el.addEventListener("click", () => {
+    const which = el.getAttribute("data-open-app");
+    showWindow(which === "files" ? "fileWindow" : which === "terminal" ? "terminalWindow" : "minecraftWindow");
+  }));
+  document.querySelectorAll(".desktop-window").forEach(win => {
+    win.addEventListener("pointerdown", () => { win.style.zIndex = ++zTop; });
+    const bar = win.querySelector(".window-titlebar");
+    let drag = null;
+    bar.addEventListener("pointerdown", e => {
+      if (e.target.closest("button") || win.classList.contains("maximized")) return;
+      const r = win.getBoundingClientRect(); drag = {x:e.clientX,y:e.clientY,left:r.left,top:r.top};
+      try { bar.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    bar.addEventListener("pointermove", e => {
+      if (!drag) return;
+      const area = document.getElementById("desktopArea").getBoundingClientRect();
+      const x = Math.max(0,Math.min(area.width-win.offsetWidth,drag.left + e.clientX-drag.x));
+      const y = Math.max(0,Math.min(area.height-win.offsetHeight,drag.top + e.clientY-drag.y));
+      win.style.left=x+"px"; win.style.top=y+"px";
+    });
+    const endDrag = () => { drag=null; };
+    bar.addEventListener("pointerup",endDrag); bar.addEventListener("pointercancel",endDrag);
+    win.querySelector("[data-close]").addEventListener("click", () => closeWindow(win));
+    win.querySelector("[data-minimize]").addEventListener("click", () => win.classList.remove("open"));
+    win.querySelector("[data-maximize]").addEventListener("click", () => {
+      if (win.classList.contains("maximized")) { win.classList.remove("maximized"); win.style.left=win.dataset.left||"105px"; win.style.top=win.dataset.top||"18px"; win.style.width=win.dataset.width||"min(760px,calc(100% - 24px))"; win.style.height=win.dataset.height||"min(520px,calc(100% - 22px))"; }
+      else { win.dataset.left=win.style.left||win.offsetLeft+"px";win.dataset.top=win.style.top||win.offsetTop+"px";win.dataset.width=win.style.width||win.offsetWidth+"px";win.dataset.height=win.style.height||win.offsetHeight+"px";win.classList.add("maximized"); }
+      if (win.id==="terminalWindow") attachTerminal();
+    });
+    const handle=win.querySelector(".window-resize"); let resize=null;
+    handle.addEventListener("pointerdown",e=>{if(win.classList.contains("maximized"))return;resize={x:e.clientX,y:e.clientY,w:win.offsetWidth,h:win.offsetHeight};try{handle.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();});
+    handle.addEventListener("pointermove",e=>{if(!resize)return;const area=document.getElementById("desktopArea").getBoundingClientRect();win.style.width=Math.max(280,Math.min(area.width-win.offsetLeft,resize.w+e.clientX-resize.x))+"px";win.style.height=Math.max(190,Math.min(area.height-win.offsetTop,resize.h+e.clientY-resize.y))+"px";if(win.id==="terminalWindow")attachTerminal();});
+    const stopResize=()=>{resize=null};handle.addEventListener("pointerup",stopResize);handle.addEventListener("pointercancel",stopResize);
+  });
+  function setFileStatus(text, bad) { fileStatus.textContent=text; fileStatus.style.color=bad?"#ffaaaa":"#9cb0c6"; }
+  function refreshFiles() {
+    if (!shellReadyNow()) { setFileStatus("The Alpine shell is not ready yet.",true); return; }
+    let dir; try { dir=guestPath(); } catch(e) { setFileStatus(e.message,true); return; }
+    setFileStatus("Reading folder…");
+    runGuest("mkdir -p " + JSON.stringify(dir) + " && find " + JSON.stringify(dir) + " -maxdepth 1 -type f 2>/dev/null | sort", (err,out) => {
+      if (err) { setFileStatus(err.message,true); return; }
+      fileList.replaceChildren();
+      const files=out.split("\n").map(s=>s.trim()).filter(s=>s.startsWith(dir+"/"));
+      if (!files.length) { const empty=document.createElement("div");empty.className="file-footer";empty.textContent="No files here yet. Create a file above and choose Save to disk.";fileList.appendChild(empty); }
+      files.forEach(path=>{
+        const b=document.createElement("button");b.className="file-chip";b.textContent=path.slice(dir.length+1);b.title=path;
+        b.addEventListener("click",()=>loadFile(path));fileList.appendChild(b);
+      });
+      setFileStatus(files.length+" file(s) · Linux disk folder: "+dir);
+    });
+  }
+  function loadFile(path) {
+    if (!path.startsWith(BASE_HOME+"/") || !/^[A-Za-z0-9._ /-]+$/.test(path)) { setFileStatus("That path is not allowed.",true); return; }
+    setFileStatus("Opening "+path.split("/").pop()+"…");
+    runGuest("base64 " + JSON.stringify(path) + " 2>/dev/null", (err,out) => {
+      if (err) { setFileStatus(err.message,true); return; }
+      try { editor.value=fromB64(out); fileName.value=path.split("/").pop();filePath.value=path.slice(0,path.lastIndexOf("/"));setFileStatus("Opened "+path); }
+      catch(e) { setFileStatus("Could not decode this file as UTF-8 text. "+e.message,true); }
+    });
+  }
+  function saveFile() {
+    if (!shellReadyNow()) { setFileStatus("Wait for the Alpine shell to finish booting.",true); return; }
+    let dir,name; try { dir=guestPath();name=safeName(); } catch(e) { setFileStatus(e.message,true); return; }
+    const path=dir+"/"+name, encoded=b64(editor.value);
+    setFileStatus("Saving "+name+" to the Linux virtual disk…");
+    const cmd="mkdir -p "+JSON.stringify(dir)+" && printf '%s' '"+encoded+"' | base64 -d > "+JSON.stringify(path)+" && test -f "+JSON.stringify(path)+" && echo WEBPC_FILE_SAVED";
+    runGuest(cmd,(err,out)=>{
+      if(err){setFileStatus("Save failed: "+err.message,true);return;}
+      if(out.includes("WEBPC_FILE_SAVED")){setFileStatus("Saved to disk: "+path);refreshFiles();}
+      else setFileStatus("Save command returned, but confirmation was missing. Open Terminal to inspect the shell.",true);
+    });
+  }
+  document.getElementById("fileSave").addEventListener("click",saveFile);
+  document.getElementById("fileRefresh").addEventListener("click",refreshFiles);
+  document.getElementById("fileOpenPath").addEventListener("click",refreshFiles);
+  document.getElementById("fileNew").addEventListener("click",()=>{fileName.value="untitled.txt";editor.value="";editor.focus();setFileStatus("New text file. Choose Save to disk when ready.");});
+  document.querySelectorAll("[data-folder]").forEach(btn=>btn.addEventListener("click",()=>{
+    document.querySelectorAll("[data-folder]").forEach(b=>b.classList.toggle("active",b===btn));
+    activeFolder=btn.getAttribute("data-folder");
+    filePath.value=activeFolder ? BASE_HOME+"/"+activeFolder : BASE_HOME;
+    refreshFiles();
+  }));
+  function checkJavaStatus(opened) {
+    const box=document.getElementById("minecraftStatus");
+    if (!shellReadyNow()) { box.textContent="Java status: waiting for Alpine shell"; return; }
+    box.textContent="Checking Java…";
+    runGuest("if command -v java >/dev/null 2>&1; then java -version 2>&1; else echo WEBPC_JAVA_MISSING; fi",(err,out)=>{
+      if(err){box.textContent="Could not check Java: "+err.message;return;}
+      box.textContent=out.includes("WEBPC_JAVA_MISSING")?"Java status: not installed yet. We will fix package/network setup next.":"Java status: installed · "+out.slice(0,180);
+    });
+  }
+  document.getElementById("checkJava").addEventListener("click",()=>checkJavaStatus(true));
+  window.webpcDesktopShellReady = function() {
+    setStatus("Alpine shell ready");
+    if(fileStatus) setFileStatus("Linux shell ready. Files are saved to the VM's /home/webpc folders.");
+    if(document.getElementById("fileWindow").classList.contains("open")) refreshFiles();
+  };
+  window.showDesktopUI = function() {
+    const startup=document.getElementById("startup");
+    if(startup)startup.classList.add("hidden");
+    app.classList.add("vm-ready");
+    desktop.style.display="block";
+    detachTerminal();
+    setStatus(shellReadyNow()?"Alpine shell ready":"Desktop ready · waiting for Alpine shell");
+    if(typeof terminal!=="undefined"&&terminal){try{terminal.refresh(0,Math.max(0,terminal.rows-1));}catch(_){}}
+  };
+  setStatus("Desktop ready · waiting for Alpine shell");
 })();
 </script>
 
