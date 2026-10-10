@@ -2514,6 +2514,41 @@ async function createTerminal() {
         masterPTY
     );
 
+    /*
+     * Manual recovery command: type webpc-unlock at the Linux prompt and
+     * press Enter if automatic root-prompt detection misses the prompt.
+     * Track only normal one-character terminal input. When the exact command
+     * is submitted, cancel that line and unlock the desktop in the browser.
+     */
+    if (masterPTY && typeof masterPTY.write === "function") {
+        const ptyWrite = masterPTY.write.bind(masterPTY);
+        let manualUnlockLine = "";
+        masterPTY.write = function (value) {
+            const input = typeof value === "string" ? value : "";
+            if ((input === "\r" || input === "\n") &&
+                manualUnlockLine.trim() === "webpc-unlock") {
+                manualUnlockLine = "";
+                /* Cancel the unrecognised command without running it in Linux. */
+                ptyWrite("\x03");
+                onShellReady();
+                return;
+            }
+            if (input === "\x7f" || input === "\b") {
+                manualUnlockLine = manualUnlockLine.slice(0, -1);
+            } else if (input === "\x03" || input === "\x15") {
+                manualUnlockLine = "";
+            } else if (input.length === 1 && input >= " " && input <= "~") {
+                manualUnlockLine = (manualUnlockLine + input).slice(-80);
+            } else if (input.length > 1 && !input.includes("\r") && !input.includes("\n")) {
+                /* Ignore pasted commands and programmatic multi-character writes. */
+                manualUnlockLine = "";
+            } else if (input.includes("\r") || input.includes("\n")) {
+                manualUnlockLine = "";
+            }
+            return ptyWrite(value);
+        };
+    }
+
     finishStage(
         "terminal"
     );
