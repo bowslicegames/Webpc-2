@@ -675,10 +675,16 @@ button:active {
 .info-card h3 {margin:0 0 7px;font-size:14px}
 .info-card p {margin:0;color:#afc1d5}
 .info-status {margin-top:10px;padding:9px;border-radius:7px;background:#0b131d;color:#b8cde4;overflow-wrap:anywhere}
+#shortcut-browser {left:8px;top:260px}
+.browser-body {display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.browser-toolbar {display:flex;align-items:center;gap:6px;padding:8px;border-bottom:1px solid #293849;background:#101923}
+.browser-address {min-width:0;flex:1;height:36px;border:1px solid #3a4c61;border-radius:7px;background:#09111a;color:#eaf2fb;padding:0 9px;font-size:13px}
+.browser-note {flex:0 0 auto;padding:6px 10px;font-size:11px;color:#9db2c9;background:#0b131d;border-bottom:1px solid #293849}
+#browserFrame {display:block;flex:1 1 auto;width:100%;height:100%;min-height:0;border:0;background:#fff}
 @media(max-width:600px) {
   #desktop {inset:50px 0 0}
   #desktopArea {inset:34px 0 76px}
-  #shortcut-files {left:8px;top:8px} #shortcut-terminal {left:8px;top:92px} #shortcut-minecraft {left:8px;top:176px}
+  #shortcut-files {left:8px;top:8px} #shortcut-terminal {left:8px;top:92px} #shortcut-minecraft {left:8px;top:176px} #shortcut-browser {left:8px;top:260px}
   #appDock {gap:5px;padding:7px 9px;bottom:8px}
   .dock-app {width:43px;height:43px;flex-basis:43px;font-size:22px}
   #desktop .desktop-window {left:7px;top:7px;width:calc(100% - 14px);height:calc(100% - 14px);min-width:0}
@@ -929,6 +935,7 @@ button:active {
         <button class="desktop-shortcut" id="shortcut-files" data-open-app="files"><span class="shortcut-icon">📁</span><span class="shortcut-label">File Manager</span></button>
         <button class="desktop-shortcut" id="shortcut-terminal" data-open-app="terminal"><span class="shortcut-icon">▣</span><span class="shortcut-label">Terminal</span></button>
         <button class="desktop-shortcut" id="shortcut-minecraft" data-open-app="minecraft"><span class="shortcut-icon">🟩</span><span class="shortcut-label">Minecraft</span></button>
+        <button class="desktop-shortcut" id="shortcut-browser" data-open-app="browser"><span class="shortcut-icon">🌐</span><span class="shortcut-label">Browser</span></button>
         <div id="windowHost">
           <section class="desktop-window" id="fileWindow" aria-label="File Manager window">
             <div class="window-titlebar"><span>📁</span><span class="window-title">File Manager</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
@@ -937,7 +944,7 @@ button:active {
                 <aside class="file-sidebar"><button class="file-nav active" data-folder="Desktop">🖥 Desktop</button><button class="file-nav" data-folder="Documents">📄 Documents</button><button class="file-nav" data-folder="Downloads">⬇ Downloads</button><button class="file-nav" data-folder="">⌂ Home</button></aside>
                 <div class="file-main">
                   <input class="file-path" id="filePath" value="/home/webpc/Desktop" aria-label="Current folder path">
-                  <div class="file-toolbar"><button class="ui-button" id="fileNew">＋ New</button><button class="ui-button" id="fileRefresh">↻ Refresh</button><button class="ui-button primary" id="fileSave">Save to disk</button><button class="ui-button" id="fileOpenPath">Open path</button></div>
+                  <div class="file-toolbar"><button class="ui-button" id="fileUp">↑ Up</button><button class="ui-button" id="fileNew">＋ New</button><button class="ui-button" id="fileRefresh">↻ Refresh</button><button class="ui-button primary" id="fileSave">Save to disk</button><button class="ui-button" id="fileOpenPath">Open path</button><button class="ui-button" id="fileDelete">Delete selected</button></div>
                   <input class="file-name" id="fileName" value="hello.txt" aria-label="File name">
                   <textarea class="file-editor" id="fileEditor" spellcheck="false" placeholder="Write a file here. Save to disk writes it to the Linux virtual disk using a hidden shell command."></textarea>
                   <div id="fileList" aria-label="Files in current folder"></div>
@@ -958,9 +965,24 @@ button:active {
               <div class="info-card"><h3>Virtual computer</h3><p>Files saved in the File Manager are written into the Linux VM disk. This browser VM is currently non-persistent between fresh launches.</p></div>
             </div><div class="window-resize" aria-hidden="true"></div></div>
           </section>
+          <section class="desktop-window browser-window" id="browserWindow" aria-label="Web Browser window">
+            <div class="window-titlebar"><span>🌐</span><span class="window-title">Web Browser</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
+            <div class="window-body browser-body">
+              <form class="browser-toolbar" id="browserForm">
+                <button class="ui-button" type="button" id="browserBack" title="Back">←</button>
+                <button class="ui-button" type="button" id="browserReload" title="Reload">↻</button>
+                <input class="browser-address" id="browserAddress" type="text" inputmode="url" autocomplete="url" spellcheck="false" value="https://example.com" aria-label="Website address">
+                <button class="ui-button primary" type="submit">Go</button>
+                <button class="ui-button" type="button" id="browserExternal">Open tab</button>
+              </form>
+              <div class="browser-note" id="browserStatus">Enter a website or search. Some websites block embedding; use Open tab if a page refuses to load.</div>
+              <iframe id="browserFrame" title="WebPC web browser" src="https://example.com/" referrerpolicy="no-referrer" loading="lazy"></iframe>
+              <div class="window-resize" aria-hidden="true"></div>
+            </div>
+          </section>
         </div>
       </div>
-      <div id="appDock" aria-label="App dock"><button class="dock-app" data-open-app="files" aria-label="Files" title="File Manager">📁</button><button class="dock-app" data-open-app="terminal" aria-label="Terminal" title="Terminal">▣</button><button class="dock-app" data-open-app="minecraft" aria-label="Minecraft" title="Minecraft Java Edition">🟩</button></div>
+      <div id="appDock" aria-label="App dock"><button class="dock-app" data-open-app="files" aria-label="Files" title="File Manager">📁</button><button class="dock-app" data-open-app="terminal" aria-label="Terminal" title="Terminal">▣</button><button class="dock-app" data-open-app="minecraft" aria-label="Minecraft" title="Minecraft Java Edition">🟩</button><button class="dock-app" data-open-app="browser" aria-label="Browser" title="Web Browser">🌐</button></div>
     </div>
 
 </div>
@@ -2494,25 +2516,24 @@ async function createTerminal() {
         result.slave;
 
     /*
-     * xterm-pty's master.onWrite event is the actual PTY output
-     * path used by the terminal addon.  Observe that event for
-     * diagnostics; do not wrap slave.read(), because that is the
-     * input/read side and is not the guest's display output.
+     * Attach xterm first, then observe PTY output events.
+     * xterm-pty emits [bytes, drainCallback], not a byte array.
+     * Decoding that tuple lost the real text and caused File Manager
+     * timeouts even though the guest executed the commands.
      */
-    if (
-        masterPTY &&
-        typeof masterPTY.onWrite === "function"
-    ) {
-        masterPTY.onWrite(
-            data => {
-                noteBootSignal(data);
-            }
-        );
-    }
+    terminal.loadAddon(masterPTY);
 
-    terminal.loadAddon(
-        masterPTY
-    );
+    if (masterPTY && typeof masterPTY.onWrite === "function") {
+        masterPTY.onWrite(event => {
+            const bytes = Array.isArray(event) ? event[0] : event;
+            if (bytes && typeof bytes.length === "number") {
+                noteBootSignal(bytes);
+                if (typeof window.webpcDesktopConsumeOutput === "function") {
+                    window.webpcDesktopConsumeOutput(bytes);
+                }
+            }
+        });
+    }
 
     finishStage(
         "terminal"
@@ -3879,7 +3900,7 @@ main();
   const terminalWrap = document.getElementById("terminalWrap");
   const controls = document.getElementById("controls");
   const app = document.getElementById("app");
-  let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "";
+  let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "", selectedFilePath = null;
   const BASE_HOME = "/home/webpc";
   const enc = new TextEncoder();
   const dec = new TextDecoder();
@@ -3988,7 +4009,7 @@ main();
   }
   document.querySelectorAll("[data-open-app]").forEach(el => el.addEventListener("click", () => {
     const which = el.getAttribute("data-open-app");
-    showWindow(which === "files" ? "fileWindow" : which === "terminal" ? "terminalWindow" : "minecraftWindow");
+    showWindow(which === "files" ? "fileWindow" : which === "terminal" ? "terminalWindow" : which === "browser" ? "browserWindow" : "minecraftWindow");
   }));
   document.querySelectorAll(".desktop-window").forEach(win => {
     win.addEventListener("pointerdown", () => { win.style.zIndex = ++zTop; });
@@ -4025,23 +4046,38 @@ main();
   function setFileStatus(text, bad) { fileStatus.textContent=text; fileStatus.style.color=bad?"#ffaaaa":"#9cb0c6"; }
   function refreshFiles() {
     if (!shellReadyNow()) { setFileStatus("The Alpine shell is not ready yet.",true); return; }
-    let dir; try { dir=guestPath(); } catch(e) { setFileStatus(e.message,true); return; }
-    setFileStatus("Reading folder…");
-    runGuest("mkdir -p " + JSON.stringify(dir) + " && find " + JSON.stringify(dir) + " -maxdepth 1 -type f 2>/dev/null | sort", (err,out) => {
-      if (err) { setFileStatus(err.message,true); return; }
+    let dir; try { dir=guestPath(); filePath.value=dir; } catch(e) { setFileStatus(e.message,true); return; }
+    selectedFilePath = null;
+    setFileStatus("Reading folder from the Linux disk…");
+    const listCommand = "mkdir -p " + JSON.stringify(dir) +
+      " && { find " + JSON.stringify(dir) + " -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sed 's|^|D:|'; " +
+      "find " + JSON.stringify(dir) + " -mindepth 1 -maxdepth 1 -type f -print 2>/dev/null | sed 's|^|F:|'; } | sort";
+    runGuest(listCommand, (err,out) => {
+      if (err) { setFileStatus("Refresh failed: " + err.message,true); return; }
       fileList.replaceChildren();
-      const files=out.split("\n").map(s=>s.trim()).filter(s=>s.startsWith(dir+"/"));
-      if (!files.length) { const empty=document.createElement("div");empty.className="file-footer";empty.textContent="No files here yet. Create a file above and choose Save to disk.";fileList.appendChild(empty); }
-      files.forEach(path=>{
-        const b=document.createElement("button");b.className="file-chip";b.textContent=path.slice(dir.length+1);b.title=path;
-        b.addEventListener("click",()=>loadFile(path));fileList.appendChild(b);
+      const entries=out.split("\n").map(line=>line.trim()).filter(line=>/^[DF]:/.test(line)).map(line=>({type:line[0],path:line.slice(2)}));
+      if (!entries.length) {
+        const empty=document.createElement("div");empty.className="file-footer";
+        empty.textContent="This folder is empty. Create a file above and choose Save to disk.";
+        fileList.appendChild(empty);
+      }
+      entries.forEach(entry=>{
+        const name=entry.path.slice(dir.length+1);
+        const b=document.createElement("button");b.className="file-chip";
+        b.textContent=(entry.type==="D"?"📁 ":"📄 ")+name;b.title=entry.path;
+        b.addEventListener("click",()=>{
+          if(entry.type==="D"){filePath.value=entry.path;refreshFiles();}
+          else {selectedFilePath=entry.path;loadFile(entry.path);}
+        });
+        fileList.appendChild(b);
       });
-      setFileStatus(files.length+" file(s) · Linux disk folder: "+dir);
+      setFileStatus(entries.filter(e=>e.type==="D").length+" folder(s), "+entries.filter(e=>e.type==="F").length+" file(s) · "+dir);
     });
   }
   function loadFile(path) {
     if (!path.startsWith(BASE_HOME+"/") || !/^[A-Za-z0-9._ /-]+$/.test(path)) { setFileStatus("That path is not allowed.",true); return; }
-    setFileStatus("Opening "+path.split("/").pop()+"…");
+    selectedFilePath = path;
+    setFileStatus("Reading "+path.split("/").pop()+" from disk…");
     runGuest("base64 " + JSON.stringify(path) + " 2>/dev/null", (err,out) => {
       if (err) { setFileStatus(err.message,true); return; }
       try { editor.value=fromB64(out); fileName.value=path.split("/").pop();filePath.value=path.slice(0,path.lastIndexOf("/"));setFileStatus("Opened "+path); }
@@ -4063,11 +4099,31 @@ main();
   document.getElementById("fileSave").addEventListener("click",saveFile);
   document.getElementById("fileRefresh").addEventListener("click",refreshFiles);
   document.getElementById("fileOpenPath").addEventListener("click",refreshFiles);
-  document.getElementById("fileNew").addEventListener("click",()=>{fileName.value="untitled.txt";editor.value="";editor.focus();setFileStatus("New text file. Choose Save to disk when ready.");});
+  document.getElementById("fileUp").addEventListener("click",()=>{
+    let dir; try { dir=guestPath(); } catch(e) { setFileStatus(e.message,true); return; }
+    if(dir===BASE_HOME){setFileStatus("Already at the WebPC home folder.");return;}
+    const parent=dir.slice(0,dir.lastIndexOf("/"))||BASE_HOME;
+    filePath.value=parent.startsWith(BASE_HOME)?parent:BASE_HOME;
+    refreshFiles();
+  });
+  document.getElementById("fileDelete").addEventListener("click",()=>{
+    const path=selectedFilePath;
+    if(!path){setFileStatus("Select a file first, then choose Delete selected.",true);return;}
+    if(!path.startsWith(BASE_HOME+"/")||!/^[A-Za-z0-9._ /-]+$/.test(path)){setFileStatus("That path is not allowed.",true);return;}
+    if(!window.confirm("Delete "+path.split("/").pop()+" from the temporary Linux disk?"))return;
+    setFileStatus("Deleting "+path.split("/").pop()+"…");
+    runGuest("rm -f "+JSON.stringify(path)+" && test ! -e "+JSON.stringify(path)+" && echo WEBPC_FILE_DELETED",(err,out)=>{
+      if(err){setFileStatus("Delete failed: "+err.message,true);return;}
+      if(out.includes("WEBPC_FILE_DELETED")){selectedFilePath=null;editor.value="";setFileStatus("Deleted file from the Linux disk.");refreshFiles();}
+      else setFileStatus("The shell did not confirm deletion.",true);
+    });
+  });
+  document.getElementById("fileNew").addEventListener("click",()=>{selectedFilePath=null;fileName.value="untitled.txt";editor.value="";editor.focus();setFileStatus("New text file. Choose Save to disk when ready.");});
   document.querySelectorAll("[data-folder]").forEach(btn=>btn.addEventListener("click",()=>{
     document.querySelectorAll("[data-folder]").forEach(b=>b.classList.toggle("active",b===btn));
     activeFolder=btn.getAttribute("data-folder");
     filePath.value=activeFolder ? BASE_HOME+"/"+activeFolder : BASE_HOME;
+    selectedFilePath=null;
     refreshFiles();
   }));
   function checkJavaStatus(opened) {
@@ -4080,6 +4136,58 @@ main();
     });
   }
   document.getElementById("checkJava").addEventListener("click",()=>checkJavaStatus(true));
+
+  const browserForm = document.getElementById("browserForm");
+  const browserAddress = document.getElementById("browserAddress");
+  const browserFrame = document.getElementById("browserFrame");
+  const browserStatus = document.getElementById("browserStatus");
+  let browserHistory = [], browserHistoryIndex = -1;
+  function normalizeBrowserAddress(raw) {
+    let value = String(raw || "").trim();
+    if (!value) throw new Error("Enter a website address or search phrase.");
+    const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
+    if (/\s/.test(value) && !hasScheme) {
+      return "https://duckduckgo.com/?q=" + encodeURIComponent(value);
+    }
+    if (!hasScheme) value = "https://" + value;
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only HTTP and HTTPS websites are supported.");
+    return url.href;
+  }
+  function navigateBrowser(raw, remember = true) {
+    let url;
+    try { url = normalizeBrowserAddress(raw); }
+    catch (e) { browserStatus.textContent = e.message; return; }
+    browserAddress.value = url;
+    browserStatus.textContent = "Loading " + url + " · some sites refuse to display inside embedded browsers.";
+    browserFrame.src = url;
+    if (remember) {
+      browserHistory = browserHistory.slice(0, browserHistoryIndex + 1);
+      browserHistory.push(url);
+      if (browserHistory.length > 40) browserHistory.shift();
+      browserHistoryIndex = browserHistory.length - 1;
+    }
+  }
+  browserForm.addEventListener("submit", event => { event.preventDefault(); navigateBrowser(browserAddress.value); });
+  document.getElementById("browserReload").addEventListener("click", () => {
+    try { browserFrame.contentWindow.location.reload(); } catch (_) { browserFrame.src = browserAddress.value; }
+    browserStatus.textContent = "Reloading page…";
+  });
+  document.getElementById("browserBack").addEventListener("click", () => {
+    if (browserHistoryIndex > 0) {
+      browserHistoryIndex--;
+      navigateBrowser(browserHistory[browserHistoryIndex], false);
+    } else browserStatus.textContent = "No previous page in this browser session.";
+  });
+  document.getElementById("browserExternal").addEventListener("click", () => {
+    let url;
+    try { url = normalizeBrowserAddress(browserAddress.value); }
+    catch (e) { browserStatus.textContent = e.message; return; }
+    window.open(url, "_blank", "noopener,noreferrer");
+  });
+  browserFrame.addEventListener("load", () => {
+    browserStatus.textContent = "Page loaded. If it is blank or shows a refusal, choose Open tab; many sites block iframe embedding.";
+  });
   window.webpcDesktopShellReady = function() {
     desktop.classList.remove("locked");
     setStatus("Linux shell ready · all desktop apps available");

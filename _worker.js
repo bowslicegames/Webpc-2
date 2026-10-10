@@ -45,7 +45,7 @@ const RELEASE_BASE =
  * Worker itself is already new.
  */
 const STATIC_COMMIT =
-  "7303529f6a44e1b950cdae35166870d1a987bdb5";
+  "6c1e1a340e2512a409d27201d357e36a885db6ed";
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
@@ -160,6 +160,29 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         host === "example.com" ||
         host === "httpbin.org" ||
         host === "google.com" || host.endsWith(".google.com") ||
+        host === "bing.com" || host.endsWith(".bing.com") ||
+        host === "duckduckgo.com" || host.endsWith(".duckduckgo.com") ||
+        host === "search.brave.com" ||
+        host === "stackoverflow.com" || host.endsWith(".stackoverflow.com") ||
+        host === "stackexchange.com" || host.endsWith(".stackexchange.com") ||
+        host === "superuser.com" || host === "serverfault.com" ||
+        host === "reddit.com" || host.endsWith(".reddit.com") ||
+        host === "bbc.co.uk" || host.endsWith(".bbc.co.uk") ||
+        host === "bbc.com" || host.endsWith(".bbc.com") ||
+        host === "theguardian.com" || host.endsWith(".theguardian.com") ||
+        host === "reuters.com" || host.endsWith(".reuters.com") ||
+        host === "arstechnica.com" || host.endsWith(".arstechnica.com") ||
+        host === "techcrunch.com" || host.endsWith(".techcrunch.com") ||
+        host === "crazygames.com" || host.endsWith(".crazygames.com") ||
+        host === "itch.io" || host.endsWith(".itch.io") ||
+        host === "newgrounds.com" || host.endsWith(".newgrounds.com") ||
+        host === "developer.mozilla.org" || host === "mdn.dev" ||
+        host === "web.dev" || host === "w3.org" || host.endsWith(".w3.org") ||
+        host === "caniuse.com" || host.endsWith(".caniuse.com") ||
+        host === "jsdelivr.net" || host.endsWith(".jsdelivr.net") ||
+        host === "unpkg.com" || host.endsWith(".unpkg.com") ||
+        host === "cdnjs.cloudflare.com" ||
+        host === "fonts.googleapis.com" || host === "fonts.gstatic.com" ||
         host === "1.1.1.1" ||
         host === "cloudflare.com" || host.endsWith(".cloudflare.com") ||
         host === "api.adoptium.net" || host.endsWith(".adoptium.net") ||
