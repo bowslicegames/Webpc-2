@@ -3962,7 +3962,16 @@ main();
     p.finish = finish;
     p.timeout = setTimeout(() => {
       if (pending !== p) return;
-      finish(new Error("No response from the shell. Open Terminal to check that the prompt is ready."), p.text);
+      commandChannelStalled = true;
+      const stopped = new Error("No response from the shell. Reload the VM before retrying so app commands cannot overlap.");
+      while (commandQueue.length) {
+        const queued = commandQueue.shift();
+        if (queued.callback) {
+          try { queued.callback(new Error("The shell stopped responding. Reload the VM before running more app tasks."), ""); }
+          catch (callbackError) { console.error("WebPC queued callback failed:", callbackError); }
+        }
+      }
+      finish(stopped, p.text);
     }, 20000);
     const wrapped = "printf '\\n" + begin + "\\n'; " + job.command + "; printf '\\n" + end + "\\n'";
     try { terminal.paste(wrapped + "\r"); }
