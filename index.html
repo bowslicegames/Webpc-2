@@ -2596,7 +2596,7 @@ function onShellReady() {
 
     if (stageDetail) {
         stageDetail.textContent =
-            "Root login succeeded. Opening the WebPC desktop.";
+            "Root login succeeded. Desktop apps are now unlocked.";
     }
 
     /* Only reveal the HTML desktop after Linux has accepted the login. */
@@ -2714,7 +2714,7 @@ function noteBootSignal(data) {
     if (!loginPromptShown && /\blogin:\s*$/i.test(lastLine)) {
         loginPromptShown = true;
         if (mainStage) mainStage.textContent = "Linux is ready — sign in";
-        if (stageDetail) stageDetail.textContent = "Login prompt detected. Type root in the terminal below; the desktop opens after the shell prompt appears.";
+        if (stageDetail) stageDetail.textContent = "Login prompt detected. The desktop is open with Terminal; type root to unlock the other apps.";
         if (percentText) percentText.textContent = "LOGIN";
         const startup = $("startup");
         if (startup) startup.classList.remove("waiting-for-login");
