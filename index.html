@@ -944,7 +944,7 @@ button:active {
                 <aside class="file-sidebar"><button class="file-nav active" data-folder="Desktop">🖥 Desktop</button><button class="file-nav" data-folder="Documents">📄 Documents</button><button class="file-nav" data-folder="Downloads">⬇ Downloads</button><button class="file-nav" data-folder="">⌂ Home</button></aside>
                 <div class="file-main">
                   <input class="file-path" id="filePath" value="/home/webpc/Desktop" aria-label="Current folder path">
-                  <div class="file-toolbar"><button class="ui-button" id="fileNew">＋ New</button><button class="ui-button" id="fileRefresh">↻ Refresh</button><button class="ui-button primary" id="fileSave">Save to disk</button><button class="ui-button" id="fileOpenPath">Open path</button></div>
+                  <div class="file-toolbar"><button class="ui-button" id="fileUp">↑ Up</button><button class="ui-button" id="fileNew">＋ New</button><button class="ui-button" id="fileRefresh">↻ Refresh</button><button class="ui-button primary" id="fileSave">Save to disk</button><button class="ui-button" id="fileOpenPath">Open path</button><button class="ui-button" id="fileDelete">Delete selected</button></div>
                   <input class="file-name" id="fileName" value="hello.txt" aria-label="File name">
                   <textarea class="file-editor" id="fileEditor" spellcheck="false" placeholder="Write a file here. Save to disk writes it to the Linux virtual disk using a hidden shell command."></textarea>
                   <div id="fileList" aria-label="Files in current folder"></div>
@@ -3900,7 +3900,7 @@ main();
   const terminalWrap = document.getElementById("terminalWrap");
   const controls = document.getElementById("controls");
   const app = document.getElementById("app");
-  let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "";
+  let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "", selectedFilePath = null;
   const BASE_HOME = "/home/webpc";
   const enc = new TextEncoder();
   const dec = new TextDecoder();
@@ -4046,23 +4046,38 @@ main();
   function setFileStatus(text, bad) { fileStatus.textContent=text; fileStatus.style.color=bad?"#ffaaaa":"#9cb0c6"; }
   function refreshFiles() {
     if (!shellReadyNow()) { setFileStatus("The Alpine shell is not ready yet.",true); return; }
-    let dir; try { dir=guestPath(); } catch(e) { setFileStatus(e.message,true); return; }
-    setFileStatus("Reading folder…");
-    runGuest("mkdir -p " + JSON.stringify(dir) + " && find " + JSON.stringify(dir) + " -maxdepth 1 -type f 2>/dev/null | sort", (err,out) => {
-      if (err) { setFileStatus(err.message,true); return; }
+    let dir; try { dir=guestPath(); filePath.value=dir; } catch(e) { setFileStatus(e.message,true); return; }
+    selectedFilePath = null;
+    setFileStatus("Reading folder from the Linux disk…");
+    const listCommand = "mkdir -p " + JSON.stringify(dir) +
+      " && { find " + JSON.stringify(dir) + " -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sed 's|^|D:|'; " +
+      "find " + JSON.stringify(dir) + " -mindepth 1 -maxdepth 1 -type f -print 2>/dev/null | sed 's|^|F:|'; } | sort";
+    runGuest(listCommand, (err,out) => {
+      if (err) { setFileStatus("Refresh failed: " + err.message,true); return; }
       fileList.replaceChildren();
-      const files=out.split("\n").map(s=>s.trim()).filter(s=>s.startsWith(dir+"/"));
-      if (!files.length) { const empty=document.createElement("div");empty.className="file-footer";empty.textContent="No files here yet. Create a file above and choose Save to disk.";fileList.appendChild(empty); }
-      files.forEach(path=>{
-        const b=document.createElement("button");b.className="file-chip";b.textContent=path.slice(dir.length+1);b.title=path;
-        b.addEventListener("click",()=>loadFile(path));fileList.appendChild(b);
+      const entries=out.split("\n").map(line=>line.trim()).filter(line=>/^[DF]:/.test(line)).map(line=>({type:line[0],path:line.slice(2)}));
+      if (!entries.length) {
+        const empty=document.createElement("div");empty.className="file-footer";
+        empty.textContent="This folder is empty. Create a file above and choose Save to disk.";
+        fileList.appendChild(empty);
+      }
+      entries.forEach(entry=>{
+        const name=entry.path.slice(dir.length+1);
+        const b=document.createElement("button");b.className="file-chip";
+        b.textContent=(entry.type==="D"?"📁 ":"📄 ")+name;b.title=entry.path;
+        b.addEventListener("click",()=>{
+          if(entry.type==="D"){filePath.value=entry.path;refreshFiles();}
+          else {selectedFilePath=entry.path;loadFile(entry.path);}
+        });
+        fileList.appendChild(b);
       });
-      setFileStatus(files.length+" file(s) · Linux disk folder: "+dir);
+      setFileStatus(entries.filter(e=>e.type==="D").length+" folder(s), "+entries.filter(e=>e.type==="F").length+" file(s) · "+dir);
     });
   }
   function loadFile(path) {
     if (!path.startsWith(BASE_HOME+"/") || !/^[A-Za-z0-9._ /-]+$/.test(path)) { setFileStatus("That path is not allowed.",true); return; }
-    setFileStatus("Opening "+path.split("/").pop()+"…");
+    selectedFilePath = path;
+    setFileStatus("Reading "+path.split("/").pop()+" from disk…");
     runGuest("base64 " + JSON.stringify(path) + " 2>/dev/null", (err,out) => {
       if (err) { setFileStatus(err.message,true); return; }
       try { editor.value=fromB64(out); fileName.value=path.split("/").pop();filePath.value=path.slice(0,path.lastIndexOf("/"));setFileStatus("Opened "+path); }
@@ -4084,11 +4099,31 @@ main();
   document.getElementById("fileSave").addEventListener("click",saveFile);
   document.getElementById("fileRefresh").addEventListener("click",refreshFiles);
   document.getElementById("fileOpenPath").addEventListener("click",refreshFiles);
-  document.getElementById("fileNew").addEventListener("click",()=>{fileName.value="untitled.txt";editor.value="";editor.focus();setFileStatus("New text file. Choose Save to disk when ready.");});
+  document.getElementById("fileUp").addEventListener("click",()=>{
+    let dir; try { dir=guestPath(); } catch(e) { setFileStatus(e.message,true); return; }
+    if(dir===BASE_HOME){setFileStatus("Already at the WebPC home folder.");return;}
+    const parent=dir.slice(0,dir.lastIndexOf("/"))||BASE_HOME;
+    filePath.value=parent.startsWith(BASE_HOME)?parent:BASE_HOME;
+    refreshFiles();
+  });
+  document.getElementById("fileDelete").addEventListener("click",()=>{
+    const path=selectedFilePath;
+    if(!path){setFileStatus("Select a file first, then choose Delete selected.",true);return;}
+    if(!path.startsWith(BASE_HOME+"/")||!/^[A-Za-z0-9._ /-]+$/.test(path)){setFileStatus("That path is not allowed.",true);return;}
+    if(!window.confirm("Delete "+path.split("/").pop()+" from the temporary Linux disk?"))return;
+    setFileStatus("Deleting "+path.split("/").pop()+"…");
+    runGuest("rm -f "+JSON.stringify(path)+" && test ! -e "+JSON.stringify(path)+" && echo WEBPC_FILE_DELETED",(err,out)=>{
+      if(err){setFileStatus("Delete failed: "+err.message,true);return;}
+      if(out.includes("WEBPC_FILE_DELETED")){selectedFilePath=null;editor.value="";setFileStatus("Deleted file from the Linux disk.");refreshFiles();}
+      else setFileStatus("The shell did not confirm deletion.",true);
+    });
+  });
+  document.getElementById("fileNew").addEventListener("click",()=>{selectedFilePath=null;fileName.value="untitled.txt";editor.value="";editor.focus();setFileStatus("New text file. Choose Save to disk when ready.");});
   document.querySelectorAll("[data-folder]").forEach(btn=>btn.addEventListener("click",()=>{
     document.querySelectorAll("[data-folder]").forEach(b=>b.classList.toggle("active",b===btn));
     activeFolder=btn.getAttribute("data-folder");
     filePath.value=activeFolder ? BASE_HOME+"/"+activeFolder : BASE_HOME;
+    selectedFilePath=null;
     refreshFiles();
   }));
   function checkJavaStatus(opened) {
