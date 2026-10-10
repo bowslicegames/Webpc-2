@@ -615,7 +615,11 @@ button:active {
   background:rgba(8,13,22,.72);border-bottom:1px solid rgba(255,255,255,.12);font-size:12px;letter-spacing:.2px}
 #desktopStatus {color:#a9c8e8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:12px}
  #desktop.locked #desktopStatus {color:#ffd18a}
- .desktop-window .window-titlebar {cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+#desktop.locked .desktop-shortcut,
+#desktop.locked .dock-app:not([data-open-app="terminal"]),
+#desktop.locked .desktop-window:not(#terminalWindow) {pointer-events:none;opacity:.42;filter:saturate(.55)}
+#desktop.locked .desktop-window:not(#terminalWindow) {visibility:hidden}
+.desktop-window .window-titlebar {cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
  .desktop-window .window-titlebar:active {cursor:grabbing}
  .window-resize {touch-action:none;user-select:none;-webkit-user-select:none}
  #desktop, #desktopArea, #windowHost {overscroll-behavior:contain}
@@ -2741,11 +2745,11 @@ function noteBootSignal(data) {
     const lines = normalizedOutput.split("\n");
     const lastLine = lines.length ? lines[lines.length - 1].trimEnd() : "";
 
-    /* Login progress updates the status only; desktop access is never gated. */
+    /* Keep the pre-boot screen until Linux presents its real login prompt. */
     if (!loginPromptShown && /\blogin:\s*$/i.test(lastLine)) {
         loginPromptShown = true;
         if (mainStage) mainStage.textContent = "Linux is ready — sign in";
-        if (stageDetail) stageDetail.textContent = "Linux is ready for sign-in. The desktop and Terminal remain available.";
+        if (stageDetail) stageDetail.textContent = "Linux is ready for sign-in. The Terminal is available; desktop apps unlock after sign-in.";
         if (percentText) percentText.textContent = "READY";
         const startup = $("startup");
         if (startup) startup.classList.remove("waiting-for-login");
@@ -2770,7 +2774,7 @@ function noteBootSignal(data) {
    ============================================================ */
 
 function showTerminalUI() {
-    /* Keep the terminal usable during login; the desktop itself is already available. */
+    /* Reveal the login terminal while the desktop remains hidden or locked. */
     const startup = $("startup");
     if (startup) startup.classList.add("hidden");
 
