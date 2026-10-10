@@ -116,6 +116,16 @@ body {
     transition: width .15s linear;
 }
 
+/* Once downloads finish, keep the startup screen alive while Linux boots. */
+#startup.waiting-for-login #overallBar {
+    width: 34% !important;
+    animation: loginWait 1.25s ease-in-out infinite alternate;
+}
+@keyframes loginWait {
+    from { transform: translateX(0); }
+    to { transform: translateX(190%); }
+}
+
 #downloadStats {
     margin-top: 8px;
     min-height: 20px;
@@ -1302,6 +1312,7 @@ let terminal = null;
 let shellReady = false;
 let webSetupStarted = false;
 let shellOutputBuffer = "";
+let loginPromptShown = false;
 
 const downloaded = new Map();
 const objectURLs = new Map();
@@ -2580,12 +2591,15 @@ function onShellReady() {
 
     if (stageDetail) {
         stageDetail.textContent =
-            "Alpine shell detected. Testing web access and Java.";
+            "Root login succeeded. Opening the WebPC desktop.";
     }
 
-    /* Java/package setup is deliberately manual for now: the APK signature/package issue is being handled separately. */
+    /* Only reveal the HTML desktop after Linux has accepted the login. */
     if (typeof window.webpcDesktopShellReady === "function") {
         window.webpcDesktopShellReady();
+    }
+    if (typeof window.showDesktopUI === "function") {
+        window.showDesktopUI();
     }
 }
 
@@ -2685,13 +2699,22 @@ function noteBootSignal(data) {
             text
         ).slice(-4096);
 
-    const lines =
-        shellOutputBuffer.split(/\r?\n/);
+    const normalizedOutput = shellOutputBuffer
+        .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+        .replace(/\r/g, "\n");
+    const lines = normalizedOutput.split("\n");
+    const lastLine = lines.length ? lines[lines.length - 1].trimEnd() : "";
 
-    const lastLine =
-        lines.length
-            ? lines[lines.length - 1].trimEnd()
-            : "";
+    /* Stop on the real Linux login prompt, not merely when QEMU finishes loading. */
+    if (!loginPromptShown && /\blogin:\s*$/i.test(lastLine)) {
+        loginPromptShown = true;
+        if (mainStage) mainStage.textContent = "Linux is ready — sign in";
+        if (stageDetail) stageDetail.textContent = "Login prompt detected. Type root in the terminal below; the desktop opens after the shell prompt appears.";
+        if (percentText) percentText.textContent = "LOGIN";
+        const startup = $("startup");
+        if (startup) startup.classList.remove("waiting-for-login");
+        showTerminalUI();
+    }
 
     if (
         bootSignalReceived &&
@@ -2710,27 +2733,9 @@ function noteBootSignal(data) {
    ============================================================ */
 
 function showTerminalUI() {
-
+    /* This is the login stage only. Do not reveal the desktop yet. */
     const startup = $("startup");
-    const app = $("app");
-
-    if (startup) {
-        startup.classList.add("hidden");
-    }
-
-    if (app) {
-        app.classList.add("vm-ready");
-    }
-
-    /*
-     * Keep the existing terminal instance and controls exactly as
-     * they are. The loading screen is only an overlay, so xterm
-     * has already been laid out at the correct size underneath it.
-     */
-    if (typeof window.showDesktopUI === "function") {
-        window.showDesktopUI();
-        return;
-    }
+    if (startup) startup.classList.add("hidden");
 
     terminalWrap.style.display = "flex";
     controls.style.display = "flex";
@@ -3559,8 +3564,14 @@ async function bootQEMU() {
             }
         }, 15000);
 
-    /* All VM assets are ready; reveal the HTML desktop shell. */
-    showTerminalUI();
+    /* Assets are ready, but keep the loading screen until Linux emits its login prompt. */
+    if (mainStage) mainStage.textContent = "Booting Linux…";
+    if (stageDetail) stageDetail.textContent = "Waiting for the Linux login prompt. When it appears, type root in the terminal; the desktop opens after login.";
+    if (percentText) percentText.textContent = "BOOT";
+    const startupScreen = $("startup");
+    if (startupScreen) startupScreen.classList.add("waiting-for-login");
+    if (linuxBootProgress) linuxBootProgress.style.display = "block";
+    if (linuxBootLabel) linuxBootLabel.textContent = "Waiting for Linux login prompt…";
 
     await factory(
         Module
@@ -4064,12 +4075,14 @@ main();
     if(document.getElementById("fileWindow").classList.contains("open")) refreshFiles();
   };
   window.showDesktopUI = function() {
+    /* Defensive gate: the desktop must never appear before shell login. */
+    if (!shellReadyNow()) return;
     const startup=document.getElementById("startup");
     if(startup)startup.classList.add("hidden");
     app.classList.add("vm-ready");
     desktop.style.display="block";
     detachTerminal();
-    setStatus(shellReadyNow()?"Alpine shell ready":"Desktop ready · waiting for Alpine shell");
+    setStatus("Alpine shell ready · signed in as root");
     if(typeof terminal!=="undefined"&&terminal){try{terminal.refresh(0,Math.max(0,terminal.rows-1));}catch(_){}}
   };
   setStatus("Desktop ready · waiting for Alpine shell");
