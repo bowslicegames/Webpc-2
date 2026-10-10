@@ -45,7 +45,7 @@ const RELEASE_BASE =
  * Worker itself is already new.
  */
 const STATIC_COMMIT =
-  "23b9bf954343825f0e1a136d6437e82b993e1b0a";
+  "cb57a6c536edafb8ad307741d7a9ed509759cc3c";
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
@@ -159,19 +159,33 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
       const allowed =
         host === "example.com" ||
         host === "httpbin.org" ||
-        host === "google.com" ||
-        host.endsWith(".google.com") ||
+        host === "google.com" || host.endsWith(".google.com") ||
         host === "1.1.1.1" ||
-        host === "cloudflare.com" ||
-        host.endsWith(".cloudflare.com") ||
-        host === "api.adoptium.net" ||
+        host === "cloudflare.com" || host.endsWith(".cloudflare.com") ||
+        host === "api.adoptium.net" || host.endsWith(".adoptium.net") ||
         host === "dl-cdn.alpinelinux.org" ||
-        host === "dl-3.alpinelinux.org" ||
-        host.endsWith(".alpinelinux.org") ||
-        host === "github.com" ||
+        host === "dl-3.alpinelinux.org" || host.endsWith(".alpinelinux.org") ||
+        host === "github.com" || host.endsWith(".github.com") ||
         host === "raw.githubusercontent.com" ||
         host === "objects.githubusercontent.com" ||
-        host === "release-assets.githubusercontent.com";
+        host === "release-assets.githubusercontent.com" ||
+        host === "repo.maven.apache.org" || host.endsWith(".apache.org") ||
+        host === "download.oracle.com" || host.endsWith(".oracle.com") ||
+        host === "openjdk.org" || host.endsWith(".openjdk.org") ||
+        host === "java.com" || host.endsWith(".java.com") ||
+        host === "mozilla.org" || host.endsWith(".mozilla.org") ||
+        host === "wikipedia.org" || host.endsWith(".wikipedia.org") ||
+        host === "debian.org" || host.endsWith(".debian.org") ||
+        host === "ubuntu.com" || host.endsWith(".ubuntu.com") ||
+        host === "packages.microsoft.com" || host.endsWith(".microsoft.com") ||
+        host === "dl.google.com" ||
+        host === "storage.googleapis.com" ||
+        host === "registry.npmjs.org" || host.endsWith(".npmjs.org") ||
+        host === "nodejs.org" || host.endsWith(".nodejs.org") ||
+        host === "pypi.org" || host.endsWith(".pypi.org") ||
+        host === "files.pythonhosted.org" ||
+        host === "sourceforge.net" || host.endsWith(".sourceforge.net") ||
+        host === "eclipse.org" || host.endsWith(".eclipse.org");
 
       if (!allowed) {
         return new Response("Proxy target not allowlisted: " + host,{status:403,headers:corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"})});
