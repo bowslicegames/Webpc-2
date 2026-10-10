@@ -2527,10 +2527,8 @@ async function createTerminal() {
         masterPTY.onWrite(event => {
             const bytes = Array.isArray(event) ? event[0] : event;
             if (bytes && typeof bytes.length === "number") {
+                /* noteBootSignal forwards each chunk to the desktop command broker. */
                 noteBootSignal(bytes);
-                if (typeof window.webpcDesktopConsumeOutput === "function") {
-                    window.webpcDesktopConsumeOutput(bytes);
-                }
             }
         });
     }
@@ -3900,7 +3898,7 @@ main();
   const terminalWrap = document.getElementById("terminalWrap");
   const controls = document.getElementById("controls");
   const app = document.getElementById("app");
-  let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "", selectedFilePath = null;
+  let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "", selectedFilePath = null, commandChannelStalled = false;
   const BASE_HOME = "/home/webpc";
   const enc = new TextEncoder();
   const dec = new TextDecoder();
@@ -3908,26 +3906,83 @@ main();
   function setStatus(text) { if (status) status.textContent = text; }
   function cleanOutput(s) { return String(s || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\r/g, "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, ""); }
   function unique() { return "WPC" + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+  const commandQueue = [];
+  const MAX_QUEUED_COMMANDS = 24;
+  function updateRuntimeStatus() {
+    if (!status || !shellReadyNow()) return;
+    if (commandChannelStalled) {
+      status.textContent = "App command channel stalled · reopen the VM to recover";
+    } else if (commandBusy) {
+      status.textContent = "Linux shell ready · app task running" +
+        (commandQueue.length ? " · " + commandQueue.length + " queued" : "");
+    } else if (commandQueue.length) {
+      status.textContent = "Linux shell ready · " + commandQueue.length + " app task(s) queued";
+    } else {
+      status.textContent = "Linux shell ready · all desktop apps available";
+    }
+  }
   function runGuest(command, callback) {
-    if (!shellReadyNow()) { if (callback) callback(new Error("The Alpine shell is not ready yet."), ""); return false; }
-    if (commandBusy) { if (callback) callback(new Error("Another file operation is still running. Please wait."), ""); return false; }
-    commandBusy = true;
-    const id = unique(), begin = "__" + id + "_BEGIN__", end = "__" + id + "_END__";
-    pending = {begin, end, callback, text:"", found:false, timeout:null};
-    pending.timeout = setTimeout(() => {
-      if (!pending || pending.begin !== begin) return;
-      const p = pending; pending = null; commandBusy = false;
-      if (p.callback) p.callback(new Error("No response from the shell. Open Terminal to check that the prompt is ready."), p.text);
-    }, 12000);
-    const wrapped = "printf '\\n" + begin + "\\n'; " + command + "; printf '\\n" + end + "\\n'";
-    try { terminal.paste(wrapped + "\r"); }
-    catch (e) { clearTimeout(pending.timeout); pending=null; commandBusy=false; if(callback)callback(e,""); return false; }
+    if (commandChannelStalled) {
+      if (callback) callback(new Error("The shell stopped responding during an app task. Reload the VM before retrying."), "");
+      return false;
+    }
+    if (!shellReadyNow()) {
+      if (callback) callback(new Error("The Alpine shell is not ready yet."), "");
+      return false;
+    }
+    if (commandQueue.length >= MAX_QUEUED_COMMANDS) {
+      if (callback) callback(new Error("The desktop command queue is full. Wait for a task to finish and try again."), "");
+      return false;
+    }
+    commandQueue.push({command, callback});
+    updateRuntimeStatus();
+    pumpGuestQueue();
     return true;
+  }
+  function pumpGuestQueue() {
+    if (commandChannelStalled || commandBusy || pending || !commandQueue.length || !shellReadyNow()) return;
+    const job = commandQueue.shift();
+    commandBusy = true;
+    outputBuffer = "";
+    updateRuntimeStatus();
+    const id = unique(), begin = "__" + id + "_BEGIN__", end = "__" + id + "_END__";
+    const p = {begin, end, callback:job.callback, text:"", found:false, timeout:null};
+    pending = p;
+    function finish(err, result) {
+      if (p.timeout) clearTimeout(p.timeout);
+      if (pending === p) pending = null;
+      commandBusy = false;
+      updateRuntimeStatus();
+      if (p.callback) {
+        try { p.callback(err || null, result || ""); }
+        catch (callbackError) { console.error("WebPC app callback failed:", callbackError); }
+      }
+      pumpGuestQueue();
+    }
+    p.finish = finish;
+    p.timeout = setTimeout(() => {
+      if (pending !== p) return;
+      commandChannelStalled = true;
+      const stopped = new Error("No response from the shell. Reload the VM before retrying so app commands cannot overlap.");
+      while (commandQueue.length) {
+        const queued = commandQueue.shift();
+        if (queued.callback) {
+          try { queued.callback(new Error("The shell stopped responding. Reload the VM before running more app tasks."), ""); }
+          catch (callbackError) { console.error("WebPC queued callback failed:", callbackError); }
+        }
+      }
+      finish(stopped, p.text);
+    }, 20000);
+    const wrapped = "printf '\\n" + begin + "\\n'; " + job.command + "; printf '\\n" + end + "\\n'";
+    try { terminal.paste(wrapped + "\r"); }
+    catch (e) { finish(e, ""); }
   }
   window.webpcDesktopConsumeOutput = function (data) {
     if (!pending) return;
     let s = typeof data === "string" ? data : "";
-    if (!s && data && typeof data.length === "number") { try { s = dec.decode(data instanceof Uint8Array ? data : new Uint8Array(data)); } catch (_) {} }
+    if (!s && data && typeof data.length === "number") {
+      try { s = dec.decode(data instanceof Uint8Array ? data : new Uint8Array(data)); } catch (_) {}
+    }
     if (!s) return;
     outputBuffer = (outputBuffer + s).slice(-500000);
     const p = pending;
@@ -3941,16 +3996,11 @@ main();
     if (endIndex >= 0) {
       p.text += outputBuffer.slice(0,endIndex);
       outputBuffer = outputBuffer.slice(endIndex + p.end.length);
-      clearTimeout(p.timeout); pending = null; commandBusy = false;
-      const result = cleanOutput(p.text).trim();
-      if (p.callback) p.callback(null,result);
+      p.finish(null, cleanOutput(p.text).trim());
     } else {
       p.text += outputBuffer;
       outputBuffer = "";
-      if (p.text.length > 450000) {
-        clearTimeout(p.timeout); pending=null; commandBusy=false;
-        if (p.callback) p.callback(new Error("File response was too large."), "");
-      }
+      if (p.text.length > 450000) p.finish(new Error("File response was too large."), "");
     }
   };
   function guestPath() {
