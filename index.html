@@ -2535,12 +2535,12 @@ function enableGuestWebControls() {
 
 function sendGuestCommand(command) {
     if (
-        !slavePTY ||
-        typeof slavePTY.write !== "function" ||
+        !terminal ||
+        typeof terminal.paste !== "function" ||
         !shellReady
     ) return false;
 
-    slavePTY.write(command + "\r");
+    terminal.paste(command + "\r");
     return true;
 }
 
@@ -3659,10 +3659,10 @@ function setupControls() {
         () => {
 
             if (
-                slavePTY && typeof slavePTY.write === "function"
+                terminal && typeof terminal.paste === "function"
             ) {
 
-                slavePTY.write(
+                terminal.paste(
                     "\x03"
                 );
             }
@@ -3692,10 +3692,10 @@ function sendCommand() {
         return;
 
     if (
-        slavePTY && typeof slavePTY.write === "function"
+        terminal && typeof terminal.paste === "function"
     ) {
 
-        slavePTY.write(
+        terminal.paste(
             value + "\r"
         );
     }
@@ -3899,7 +3899,7 @@ main();
       if (p.callback) p.callback(new Error("No response from the shell. Open Terminal to check that the prompt is ready."), p.text);
     }, 12000);
     const wrapped = "printf '\\n" + begin + "\\n'; " + command + "; printf '\\n" + end + "\\n'";
-    try { slavePTY.write(wrapped + "\r"); }
+    try { terminal.paste(wrapped + "\r"); }
     catch (e) { clearTimeout(pending.timeout); pending=null; commandBusy=false; if(callback)callback(e,""); return false; }
     return true;
   }
