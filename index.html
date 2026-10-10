@@ -2514,41 +2514,6 @@ async function createTerminal() {
         masterPTY
     );
 
-    /*
-     * Manual recovery command: type webpc-unlock at the Linux prompt and
-     * press Enter if automatic root-prompt detection misses the prompt.
-     * Track only normal one-character terminal input. When the exact command
-     * is submitted, cancel that line and unlock the desktop in the browser.
-     */
-    if (masterPTY && typeof masterPTY.write === "function") {
-        const ptyWrite = masterPTY.write.bind(masterPTY);
-        let manualUnlockLine = "";
-        masterPTY.write = function (value) {
-            const input = typeof value === "string" ? value : "";
-            if ((input === "\r" || input === "\n") &&
-                manualUnlockLine.trim() === "webpc-unlock") {
-                manualUnlockLine = "";
-                /* Cancel the unrecognised command without running it in Linux. */
-                ptyWrite("\x03");
-                onShellReady();
-                return;
-            }
-            if (input === "\x7f" || input === "\b") {
-                manualUnlockLine = manualUnlockLine.slice(0, -1);
-            } else if (input === "\x03" || input === "\x15") {
-                manualUnlockLine = "";
-            } else if (input.length === 1 && input >= " " && input <= "~") {
-                manualUnlockLine = (manualUnlockLine + input).slice(-80);
-            } else if (input.length > 1 && !input.includes("\r") && !input.includes("\n")) {
-                /* Ignore pasted commands and programmatic multi-character writes. */
-                manualUnlockLine = "";
-            } else if (input.includes("\r") || input.includes("\n")) {
-                manualUnlockLine = "";
-            }
-            return ptyWrite(value);
-        };
-    }
-
     finishStage(
         "terminal"
     );
@@ -2631,10 +2596,10 @@ function onShellReady() {
 
     if (stageDetail) {
         stageDetail.textContent =
-            "Root login succeeded. Desktop apps are now unlocked.";
+            "Linux login prompt detected. Desktop apps are now unlocked.";
     }
 
-    /* Only reveal the HTML desktop after Linux has accepted the login. */
+    /* Reveal the HTML desktop once the guest login prompt has been detected. */
     if (typeof window.webpcDesktopShellReady === "function") {
         window.webpcDesktopShellReady();
     }
@@ -2749,13 +2714,14 @@ function noteBootSignal(data) {
     if (!loginPromptShown && /\blogin:\s*$/i.test(lastLine)) {
         loginPromptShown = true;
         if (mainStage) mainStage.textContent = "Linux is ready — sign in";
-        if (stageDetail) stageDetail.textContent = "Login prompt detected. The desktop is open with Terminal; type root to unlock the other apps.";
-        if (percentText) percentText.textContent = "LOGIN";
+        if (stageDetail) stageDetail.textContent = "The webpc2 login prompt was detected. Desktop apps are now unlocked.";
+        if (percentText) percentText.textContent = "READY";
         const startup = $("startup");
         if (startup) startup.classList.remove("waiting-for-login");
         showTerminalUI();
-        /* Show the desktop at login, with only Terminal usable until root. */
-        if (typeof window.showDesktopUI === "function") window.showDesktopUI();
+        /* Unlock as soon as the complete login prompt is recognised, even if
+           its characters arrived in separate serial-console chunks. */
+        onShellReady();
     }
 
     /* Alpine root prompts end in #; a regular user prompt ending in $ stays locked. */
