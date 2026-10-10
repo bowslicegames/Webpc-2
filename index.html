@@ -3985,7 +3985,11 @@ main();
       }
       finish(stopped, p.text);
     }, 20000);
-    const wrapped = "printf '\\n" + begin + "\\n'; " + job.command + "; printf '\\n" + end + "\\n'";
+    // Keep the markers out of the command line echoed by the interactive shell.
+    // Otherwise the broker can mistake the echoed command for its real output and
+    // finish before file operations have actually run.
+    const payload = "printf '\\n" + begin + "\\n'; " + job.command + "; printf '\\n" + end + "\\n'";
+    const wrapped = "printf '%s' '" + b64(payload) + "' | base64 -d | sh";
     try { terminal.paste(wrapped + "\r"); }
     catch (e) { finish(e, ""); }
   }
