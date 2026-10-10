@@ -2535,12 +2535,12 @@ function enableGuestWebControls() {
 
 function sendGuestCommand(command) {
     if (
-        !masterPTY ||
-        typeof masterPTY.write !== "function" ||
+        !slavePTY ||
+        typeof slavePTY.write !== "function" ||
         !shellReady
     ) return false;
 
-    masterPTY.write(command + "\r");
+    slavePTY.write(command + "\r");
     return true;
 }
 
@@ -2564,12 +2564,18 @@ function javaSetupCommand() {
         "if command -v java >/dev/null 2>&1; then",
         "echo '[WebPC] Java already installed'; java -version",
         "else",
-        "echo '[WebPC] Java missing; downloading OpenJDK 21...'",
-        "apk add --no-cache openjdk21-jre",
-        "if command -v java >/dev/null 2>&1; then",
-        "echo '[WebPC] OpenJDK 21 installed'; java -version",
+        "echo '[WebPC] Refreshing Alpine package indexes...'",
+        "if apk update; then",
+        "echo '[WebPC] Installing OpenJDK 21 runtime...'",
+        "apk add --no-cache openjdk21-jre-headless || apk add --no-cache openjdk21-jre",
         "else",
-        "echo '[WebPC] OpenJDK 21 installation failed'",
+        "echo '[WebPC] apk update failed. Repository configuration:'",
+        "cat /etc/apk/repositories",
+        "fi",
+        "if command -v java >/dev/null 2>&1; then",
+        "echo '[WebPC] OpenJDK runtime installed'; java -version",
+        "else",
+        "echo '[WebPC] Java installation failed; keep the APK error above for diagnosis'",
         "fi",
         "fi"
     ].join("; ");
@@ -3653,12 +3659,10 @@ function setupControls() {
         () => {
 
             if (
-                masterPTY &&
-                typeof masterPTY.write ===
-                "function"
+                slavePTY && typeof slavePTY.write === "function"
             ) {
 
-                masterPTY.write(
+                slavePTY.write(
                     "\x03"
                 );
             }
@@ -3688,12 +3692,10 @@ function sendCommand() {
         return;
 
     if (
-        masterPTY &&
-        typeof masterPTY.write ===
-        "function"
+        slavePTY && typeof slavePTY.write === "function"
     ) {
 
-        masterPTY.write(
+        slavePTY.write(
             value + "\r"
         );
     }
@@ -3881,7 +3883,7 @@ main();
   const BASE_HOME = "/home/webpc";
   const enc = new TextEncoder();
   const dec = new TextDecoder();
-  function shellReadyNow() { return typeof shellReady !== "undefined" && shellReady && typeof masterPTY !== "undefined" && masterPTY; }
+  function shellReadyNow() { return typeof shellReady !== "undefined" && shellReady && typeof masterPTY !== "undefined" && masterPTY && typeof slavePTY !== "undefined" && slavePTY; }
   function setStatus(text) { if (status) status.textContent = text; }
   function cleanOutput(s) { return String(s || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\r/g, "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, ""); }
   function unique() { return "WPC" + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -3897,7 +3899,7 @@ main();
       if (p.callback) p.callback(new Error("No response from the shell. Open Terminal to check that the prompt is ready."), p.text);
     }, 12000);
     const wrapped = "printf '\\n" + begin + "\\n'; " + command + "; printf '\\n" + end + "\\n'";
-    try { masterPTY.write(wrapped + "\r"); }
+    try { slavePTY.write(wrapped + "\r"); }
     catch (e) { clearTimeout(pending.timeout); pending=null; commandBusy=false; if(callback)callback(e,""); return false; }
     return true;
   }
