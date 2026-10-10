@@ -222,24 +222,50 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
       if (targetURL.protocol !== "http:" && targetURL.protocol !== "https:") {
         return browserError(400, "Unsupported address", "Only HTTP and HTTPS pages can be opened here.");
       }
+      if (targetURL.username || targetURL.password) {
+        return browserError(400, "Credentials in URLs are not supported", "Remove the username or password from the address and try again.");
+      }
+      if (targetURL.port && !((targetURL.protocol === "https:" && targetURL.port === "443") || (targetURL.protocol === "http:" && targetURL.port === "80"))) {
+        return browserError(400, "Unsupported port", "Embedded browsing only permits standard HTTP and HTTPS ports.");
+      }
       if (!isAllowedProxyHost(targetURL.hostname.toLowerCase())) {
         return browserError(403, "Site not enabled for embedded browsing", targetURL.hostname + " is not in WebPC's curated embedded-browser allowlist.");
       }
 
       try {
-        const upstream = await fetch(targetURL.toString(), {
-          method: "GET",
-          redirect: "follow",
-          headers: { "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-GB,en;q=0.8" }
-        });
+        let finalURL = targetURL;
+        let upstream = null;
+        for (let redirectCount = 0; redirectCount <= 5; redirectCount++) {
+          upstream = await fetch(finalURL.toString(), {
+            method: "GET",
+            redirect: "manual",
+            headers: { "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-GB,en;q=0.8" }
+          });
 
-        let finalURL;
-        try { finalURL = new URL(upstream.url || targetURL.toString()); }
-        catch { return browserError(502, "Invalid upstream redirect", "The website redirected to an invalid address."); }
+          if (![301, 302, 303, 307, 308].includes(upstream.status)) break;
+          const location = upstream.headers.get("location");
+          if (!location) break;
+          if (redirectCount === 5) {
+            return browserError(502, "Too many redirects", "The website exceeded WebPC's redirect limit.");
+          }
 
-        if (!isAllowedProxyHost(finalURL.hostname.toLowerCase())) {
-          return browserError(403, "Redirect blocked", "The website redirected to a domain outside WebPC's curated allowlist: " + finalURL.hostname);
+          let nextURL;
+          try { nextURL = new URL(location, finalURL.toString()); }
+          catch { return browserError(502, "Invalid upstream redirect", "The website redirected to an invalid address."); }
+
+          if (nextURL.protocol !== "http:" && nextURL.protocol !== "https:") {
+            return browserError(403, "Redirect blocked", "The website redirected to a non-HTTP address.");
+          }
+          if (nextURL.username || nextURL.password || (nextURL.port && !((nextURL.protocol === "https:" && nextURL.port === "443") || (nextURL.protocol === "http:" && nextURL.port === "80")))) {
+            return browserError(403, "Redirect blocked", "The website redirected to a URL with unsupported credentials or port.");
+          }
+          if (!isAllowedProxyHost(nextURL.hostname.toLowerCase())) {
+            return browserError(403, "Redirect blocked", "The website redirected to a domain outside WebPC's curated allowlist: " + nextURL.hostname);
+          }
+          finalURL = nextURL;
         }
+
+        if (!upstream) return browserError(502, "Page fetch failed", "WebPC did not receive a response from the website.");
         if (!upstream.ok) {
           return browserError(upstream.status, "Website returned " + upstream.status, "The website server returned " + upstream.status + " " + upstream.statusText + ".");
         }
