@@ -4155,11 +4155,12 @@ main();
     let dir,name; try { dir=guestPath();name=safeName(); } catch(e) { setFileStatus(e.message,true); return; }
     const path=dir+"/"+name, encoded=b64(editor.value);
     setFileStatus("Saving "+name+" to the Linux virtual disk…");
-    const cmd="mkdir -p "+JSON.stringify(dir)+" && printf '%s' '"+encoded+"' | base64 -d > "+JSON.stringify(path)+" && test -f "+JSON.stringify(path)+" && echo WEBPC_FILE_SAVED";
+    const cmd="if mkdir -p "+JSON.stringify(dir)+" && printf '%s' '"+encoded+"' | base64 -d > "+JSON.stringify(path)+" && test \"$(base64 < "+JSON.stringify(path)+" | tr -d '\\r\\n')\" = '"+encoded+"'; then echo WEBPC_FILE_SAVED; else echo WEBPC_FILE_SAVE_FAILED; fi";
     runGuest(cmd,(err,out)=>{
       if(err){setFileStatus("Save failed: "+err.message,true);return;}
-      if(out.includes("WEBPC_FILE_SAVED")){setFileStatus("Saved to disk: "+path);refreshFiles();}
-      else setFileStatus("Save command returned, but confirmation was missing. Open Terminal to inspect the shell.",true);
+      if(out.includes("WEBPC_FILE_SAVED")){setFileStatus("Saved and verified on disk: "+path);refreshFiles();}
+      else if(out.includes("WEBPC_FILE_SAVE_FAILED"))setFileStatus("Save failed: Linux could not write or verify the file. Check the folder and available disk space.",true);
+      else setFileStatus("Save command returned without confirmation. Output: "+out.slice(-180),true);
     });
   }
   document.getElementById("fileSave").addEventListener("click",saveFile);
