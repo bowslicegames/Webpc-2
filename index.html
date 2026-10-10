@@ -4269,7 +4269,13 @@ main();
 
   function noteWebPCResume() {
     if (shellReadyNow()) {
-      setStatus("Linux shell ready · WebPC resumed in the foreground");
+      if (typeof commandChannelStalled !== "undefined" && commandChannelStalled) {
+        setStatus("App command channel stalled · WebPC resumed; inspect the terminal before retrying");
+      } else if (typeof commandBusy !== "undefined" && commandBusy) {
+        setStatus("Linux shell ready · resumed; an app task may have paused");
+      } else {
+        setStatus("Linux shell ready · WebPC resumed in the foreground");
+      }
     } else {
       setStatus("WebPC resumed · Linux may need a moment to wake up");
     }
