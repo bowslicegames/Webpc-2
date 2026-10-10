@@ -2705,27 +2705,31 @@ function noteBootSignal(data) {
         ).slice(-4096);
 
     const normalizedOutput = shellOutputBuffer
+        .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\\\)/g, "")
         .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+        .replace(/\x1b[@-_]/g, "")
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
         .replace(/\r/g, "\n");
     const lines = normalizedOutput.split("\n");
     const lastLine = lines.length ? lines[lines.length - 1].trimEnd() : "";
 
-    /* Stop on the real Linux login prompt, not merely when QEMU finishes loading. */
+    /* A login prompt only means the guest is asking for credentials.
+       Keep the desktop apps locked until the root shell prompt appears. */
     if (!loginPromptShown && /\blogin:\s*$/i.test(lastLine)) {
         loginPromptShown = true;
         if (mainStage) mainStage.textContent = "Linux is ready — sign in";
-        if (stageDetail) stageDetail.textContent = "The webpc2 login prompt was detected. Desktop apps are now unlocked.";
+        if (stageDetail) stageDetail.textContent = "Waiting for the root shell prompt (webpc2:~#) before unlocking desktop apps.";
         if (percentText) percentText.textContent = "READY";
         const startup = $("startup");
         if (startup) startup.classList.remove("waiting-for-login");
         showTerminalUI();
-        /* Unlock as soon as the complete login prompt is recognised, even if
-           its characters arrived in separate serial-console chunks. */
-        onShellReady();
     }
 
-    /* Alpine root prompts end in #; a regular user prompt ending in $ stays locked. */
-    if (bootSignalReceived && /[^\n]{0,70}#\s*$/.test(lastLine)) {
+    /* Unlock only after serial output contains a root-style prompt such as
+       "webpc2:~#". This works when the prompt arrives over multiple chunks,
+       with terminal control sequences, or without a trailing newline. */
+    const rootPromptSeen = /(?:^|\n)[^\n]{0,100}#\s*$/.test(lastLine);
+    if (bootSignalReceived && rootPromptSeen) {
         onShellReady();
     }
 }
