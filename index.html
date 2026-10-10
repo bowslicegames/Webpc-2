@@ -614,6 +614,11 @@ button:active {
 #desktopTop {height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 13px;
   background:rgba(8,13,22,.72);border-bottom:1px solid rgba(255,255,255,.12);font-size:12px;letter-spacing:.2px}
 #desktopStatus {color:#a9c8e8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:12px}
+ #desktop.locked #desktopStatus {color:#ffd18a}
+ .desktop-window .window-titlebar {cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+ .desktop-window .window-titlebar:active {cursor:grabbing}
+ .window-resize {touch-action:none;user-select:none;-webkit-user-select:none}
+ #desktop, #desktopArea, #windowHost {overscroll-behavior:contain}
 #desktopArea {position:absolute;inset:34px 0 78px;overflow:hidden}
 .desktop-shortcut {position:absolute;width:82px;min-height:76px;border:1px solid transparent;background:transparent;color:#f4f8ff;
   display:flex;flex-direction:column;align-items:center;gap:7px;padding:9px 3px;border-radius:10px;cursor:pointer;touch-action:manipulation}
@@ -676,7 +681,7 @@ button:active {
   #shortcut-files {left:8px;top:8px} #shortcut-terminal {left:8px;top:92px} #shortcut-minecraft {left:8px;top:176px}
   #appDock {gap:5px;padding:7px 9px;bottom:8px}
   .dock-app {width:43px;height:43px;flex-basis:43px;font-size:22px}
-  .desktop-window {left:7px!important;top:7px!important;width:calc(100% - 14px)!important;height:calc(100% - 14px)!important;min-width:0}
+  #desktop .desktop-window {left:7px;top:7px;width:calc(100% - 14px);height:calc(100% - 14px);min-width:0}
   #fileWindow {height:calc(100% - 14px)!important}
   .file-sidebar {width:92px;flex-basis:92px;padding:8px 5px}
   .file-nav {font-size:11px;padding:0 5px}
@@ -2714,15 +2719,12 @@ function noteBootSignal(data) {
         const startup = $("startup");
         if (startup) startup.classList.remove("waiting-for-login");
         showTerminalUI();
+        /* Show the desktop at login, with only Terminal usable until root. */
+        if (typeof window.showDesktopUI === "function") window.showDesktopUI();
     }
 
-    if (
-        bootSignalReceived &&
-        (
-            /[^\n]{0,70}#\s*$/.test(lastLine) ||
-            /[^\n]{0,70}\$\s*$/.test(lastLine)
-        )
-    ) {
+    /* Alpine root prompts end in #; a regular user prompt ending in $ stays locked. */
+    if (bootSignalReceived && /[^\n]{0,70}#\s*$/.test(lastLine)) {
         onShellReady();
     }
 }
@@ -3948,6 +3950,7 @@ main();
   }
   function showWindow(id) {
     const win = document.getElementById(id); if (!win) return;
+    if (!shellReadyNow() && id !== "terminalWindow") { setStatus("Locked · sign in as root in Terminal to unlock apps"); return; }
     win.classList.add("open"); win.style.zIndex = ++zTop;
     if (id === "terminalWindow") attachTerminal();
     if (id === "fileWindow") { if (shellReadyNow()) refreshFiles(); else fileStatus.textContent="Waiting for the Alpine shell…"; }
@@ -3979,6 +3982,7 @@ main();
   }
   document.querySelectorAll("[data-open-app]").forEach(el => el.addEventListener("click", () => {
     const which = el.getAttribute("data-open-app");
+    if (!shellReadyNow() && which !== "terminal") { setStatus("Locked · sign in as root in Terminal to unlock apps"); return; }
     showWindow(which === "files" ? "fileWindow" : which === "terminal" ? "terminalWindow" : "minecraftWindow");
   }));
   document.querySelectorAll(".desktop-window").forEach(win => {
@@ -3987,11 +3991,13 @@ main();
     let drag = null;
     bar.addEventListener("pointerdown", e => {
       if (e.target.closest("button") || win.classList.contains("maximized")) return;
-      const r = win.getBoundingClientRect(); drag = {x:e.clientX,y:e.clientY,left:r.left,top:r.top};
+      e.preventDefault();
+      drag = {x:e.clientX,y:e.clientY,left:win.offsetLeft,top:win.offsetTop};
       try { bar.setPointerCapture(e.pointerId); } catch (_) {}
     });
     bar.addEventListener("pointermove", e => {
       if (!drag) return;
+      e.preventDefault();
       const area = document.getElementById("desktopArea").getBoundingClientRect();
       const x = Math.max(0,Math.min(area.width-win.offsetWidth,drag.left + e.clientX-drag.x));
       const y = Math.max(0,Math.min(area.height-win.offsetHeight,drag.top + e.clientY-drag.y));
@@ -4007,8 +4013,8 @@ main();
       if (win.id==="terminalWindow") attachTerminal();
     });
     const handle=win.querySelector(".window-resize"); let resize=null;
-    handle.addEventListener("pointerdown",e=>{if(win.classList.contains("maximized"))return;resize={x:e.clientX,y:e.clientY,w:win.offsetWidth,h:win.offsetHeight};try{handle.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();});
-    handle.addEventListener("pointermove",e=>{if(!resize)return;const area=document.getElementById("desktopArea").getBoundingClientRect();win.style.width=Math.max(280,Math.min(area.width-win.offsetLeft,resize.w+e.clientX-resize.x))+"px";win.style.height=Math.max(190,Math.min(area.height-win.offsetTop,resize.h+e.clientY-resize.y))+"px";if(win.id==="terminalWindow")attachTerminal();});
+    handle.addEventListener("pointerdown",e=>{if(win.classList.contains("maximized"))return;e.preventDefault();e.stopPropagation();resize={x:e.clientX,y:e.clientY,w:win.offsetWidth,h:win.offsetHeight};try{handle.setPointerCapture(e.pointerId)}catch(_){}});
+    handle.addEventListener("pointermove",e=>{if(!resize)return;e.preventDefault();const area=document.getElementById("desktopArea").getBoundingClientRect();const minW=window.matchMedia("(max-width:600px)").matches?180:280;const minH=150;win.style.width=Math.max(minW,Math.min(area.width-win.offsetLeft,resize.w+e.clientX-resize.x))+"px";win.style.height=Math.max(minH,Math.min(area.height-win.offsetTop,resize.h+e.clientY-resize.y))+"px";if(win.id==="terminalWindow")attachTerminal();});
     const stopResize=()=>{resize=null};handle.addEventListener("pointerup",stopResize);handle.addEventListener("pointercancel",stopResize);
   });
   function setFileStatus(text, bad) { fileStatus.textContent=text; fileStatus.style.color=bad?"#ffaaaa":"#9cb0c6"; }
@@ -4070,22 +4076,25 @@ main();
   }
   document.getElementById("checkJava").addEventListener("click",()=>checkJavaStatus(true));
   window.webpcDesktopShellReady = function() {
-    setStatus("Alpine shell ready");
+    desktop.classList.remove("locked");
+    setStatus("Root session unlocked");
     if(fileStatus) setFileStatus("Linux shell ready. Files are saved to the VM's /home/webpc folders.");
     if(document.getElementById("fileWindow").classList.contains("open")) refreshFiles();
   };
   window.showDesktopUI = function() {
-    /* Defensive gate: the desktop must never appear before shell login. */
-    if (!shellReadyNow()) return;
+    /* Desktop is visible at the login prompt; other apps unlock only after root. */
+    if (!loginPromptShown && !shellReadyNow()) return;
     const startup=document.getElementById("startup");
     if(startup)startup.classList.add("hidden");
     app.classList.add("vm-ready");
     desktop.style.display="block";
-    detachTerminal();
-    setStatus("Alpine shell ready · signed in as root");
-    if(typeof terminal!=="undefined"&&terminal){try{terminal.refresh(0,Math.max(0,terminal.rows-1));}catch(_){}}
+    if (shellReadyNow()) { desktop.classList.remove("locked"); setStatus("Root session unlocked"); }
+    else { desktop.classList.add("locked"); setStatus("Locked · enter root in Terminal"); }
+    showWindow("terminalWindow");
+    attachTerminal();
   };
-  setStatus("Desktop ready · waiting for Alpine shell");
+  desktop.classList.add("locked");
+  setStatus("Locked · waiting for root login");
 })();
 </script>
 
