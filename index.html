@@ -3922,6 +3922,10 @@ main();
     }
   }
   function runGuest(command, callback) {
+    if (commandChannelStalled) {
+      if (callback) callback(new Error("The shell stopped responding during an app task. Reload the VM before retrying."), "");
+      return false;
+    }
     if (!shellReadyNow()) {
       if (callback) callback(new Error("The Alpine shell is not ready yet."), "");
       return false;
@@ -3936,7 +3940,7 @@ main();
     return true;
   }
   function pumpGuestQueue() {
-    if (commandBusy || pending || !commandQueue.length || !shellReadyNow()) return;
+    if (commandChannelStalled || commandBusy || pending || !commandQueue.length || !shellReadyNow()) return;
     const job = commandQueue.shift();
     commandBusy = true;
     outputBuffer = "";
