@@ -100,6 +100,61 @@ function errorText(error) {
     : String(error);
 }
 
+function isAllowedProxyHost(host) {
+  return host === "example.com" ||
+    host === "httpbin.org" ||
+    host === "google.com" || host.endsWith(".google.com") ||
+    host === "bing.com" || host.endsWith(".bing.com") ||
+    host === "duckduckgo.com" || host.endsWith(".duckduckgo.com") ||
+    host === "search.brave.com" ||
+    host === "stackoverflow.com" || host.endsWith(".stackoverflow.com") ||
+    host === "stackexchange.com" || host.endsWith(".stackexchange.com") ||
+    host === "superuser.com" || host === "serverfault.com" ||
+    host === "reddit.com" || host.endsWith(".reddit.com") ||
+    host === "bbc.co.uk" || host.endsWith(".bbc.co.uk") ||
+    host === "bbc.com" || host.endsWith(".bbc.com") ||
+    host === "theguardian.com" || host.endsWith(".theguardian.com") ||
+    host === "reuters.com" || host.endsWith(".reuters.com") ||
+    host === "arstechnica.com" || host.endsWith(".arstechnica.com") ||
+    host === "techcrunch.com" || host.endsWith(".techcrunch.com") ||
+    host === "crazygames.com" || host.endsWith(".crazygames.com") ||
+    host === "itch.io" || host.endsWith(".itch.io") ||
+    host === "newgrounds.com" || host.endsWith(".newgrounds.com") ||
+    host === "developer.mozilla.org" || host === "mdn.dev" ||
+    host === "web.dev" || host === "w3.org" || host.endsWith(".w3.org") ||
+    host === "caniuse.com" || host.endsWith(".caniuse.com") ||
+    host === "jsdelivr.net" || host.endsWith(".jsdelivr.net") ||
+    host === "unpkg.com" || host.endsWith(".unpkg.com") ||
+    host === "cdnjs.cloudflare.com" ||
+    host === "fonts.googleapis.com" || host === "fonts.gstatic.com" ||
+    host === "1.1.1.1" ||
+    host === "cloudflare.com" || host.endsWith(".cloudflare.com") ||
+    host === "api.adoptium.net" || host.endsWith(".adoptium.net") ||
+    host === "dl-cdn.alpinelinux.org" ||
+    host === "dl-3.alpinelinux.org" || host.endsWith(".alpinelinux.org") ||
+    host === "github.com" || host.endsWith(".github.com") ||
+    host === "raw.githubusercontent.com" ||
+    host === "objects.githubusercontent.com" ||
+    host === "release-assets.githubusercontent.com" ||
+    host === "repo.maven.apache.org" || host.endsWith(".apache.org") ||
+    host === "download.oracle.com" || host.endsWith(".oracle.com") ||
+    host === "openjdk.org" || host.endsWith(".openjdk.org") ||
+    host === "java.com" || host.endsWith(".java.com") ||
+    host === "mozilla.org" || host.endsWith(".mozilla.org") ||
+    host === "wikipedia.org" || host.endsWith(".wikipedia.org") ||
+    host === "debian.org" || host.endsWith(".debian.org") ||
+    host === "ubuntu.com" || host.endsWith(".ubuntu.com") ||
+    host === "packages.microsoft.com" || host.endsWith(".microsoft.com") ||
+    host === "dl.google.com" ||
+    host === "storage.googleapis.com" ||
+    host === "registry.npmjs.org" || host.endsWith(".npmjs.org") ||
+    host === "nodejs.org" || host.endsWith(".nodejs.org") ||
+    host === "pypi.org" || host.endsWith(".pypi.org") ||
+    host === "files.pythonhosted.org" ||
+    host === "sourceforge.net" || host.endsWith(".sourceforge.net") ||
+    host === "eclipse.org" || host.endsWith(".eclipse.org");
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -143,6 +198,135 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
       );
     }
 
+    if (url.pathname === "/browser-proxy") {
+      const browserError = (status, title, detail) => {
+        const safe = String(detail || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return new Response(
+          "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + title + "</title>" +
+          "<style>body{font:16px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;background:#101923;color:#eaf2fb;padding:24px}main{max-width:640px;margin:auto}code{overflow-wrap:anywhere;color:#9fcaff}</style></head><body><main><h2>" + title + "</h2><p>" + safe + "</p><p>For unrestricted site features, use <b>Open tab</b> in WebPC's browser toolbar.</p></main></body></html>",
+          { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-WebPC-Browser-Proxy": "active" } }
+        );
+      };
+
+      if (request.method !== "GET") {
+        return browserError(405, "Browser proxy only supports page navigation", "Use GET navigation or open the site in a separate tab.");
+      }
+
+      const target = url.searchParams.get("url");
+      if (!target) return browserError(400, "Missing website address", "Enter a website address in the browser toolbar.");
+
+      let targetURL;
+      try { targetURL = new URL(target); }
+      catch { return browserError(400, "Invalid website address", "The address could not be parsed."); }
+
+      if (targetURL.protocol !== "http:" && targetURL.protocol !== "https:") {
+        return browserError(400, "Unsupported address", "Only HTTP and HTTPS pages can be opened here.");
+      }
+      if (targetURL.username || targetURL.password) {
+        return browserError(400, "Credentials in URLs are not supported", "Remove the username or password from the address and try again.");
+      }
+      if (targetURL.port && !((targetURL.protocol === "https:" && targetURL.port === "443") || (targetURL.protocol === "http:" && targetURL.port === "80"))) {
+        return browserError(400, "Unsupported port", "Embedded browsing only permits standard HTTP and HTTPS ports.");
+      }
+      if (!isAllowedProxyHost(targetURL.hostname.toLowerCase())) {
+        return browserError(403, "Site not enabled for embedded browsing", targetURL.hostname + " is not in WebPC's curated embedded-browser allowlist.");
+      }
+
+      try {
+        let finalURL = targetURL;
+        let upstream = null;
+        for (let redirectCount = 0; redirectCount <= 5; redirectCount++) {
+          upstream = await fetch(finalURL.toString(), {
+            method: "GET",
+            redirect: "manual",
+            headers: { "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-GB,en;q=0.8" }
+          });
+
+          if (![301, 302, 303, 307, 308].includes(upstream.status)) break;
+          const location = upstream.headers.get("location");
+          if (!location) break;
+          if (redirectCount === 5) {
+            return browserError(502, "Too many redirects", "The website exceeded WebPC's redirect limit.");
+          }
+
+          let nextURL;
+          try { nextURL = new URL(location, finalURL.toString()); }
+          catch { return browserError(502, "Invalid upstream redirect", "The website redirected to an invalid address."); }
+
+          if (nextURL.protocol !== "http:" && nextURL.protocol !== "https:") {
+            return browserError(403, "Redirect blocked", "The website redirected to a non-HTTP address.");
+          }
+          if (nextURL.username || nextURL.password || (nextURL.port && !((nextURL.protocol === "https:" && nextURL.port === "443") || (nextURL.protocol === "http:" && nextURL.port === "80")))) {
+            return browserError(403, "Redirect blocked", "The website redirected to a URL with unsupported credentials or port.");
+          }
+          if (!isAllowedProxyHost(nextURL.hostname.toLowerCase())) {
+            return browserError(403, "Redirect blocked", "The website redirected to a domain outside WebPC's curated allowlist: " + nextURL.hostname);
+          }
+          finalURL = nextURL;
+        }
+
+        if (!upstream) return browserError(502, "Page fetch failed", "WebPC did not receive a response from the website.");
+        if (!upstream.ok) {
+          return browserError(upstream.status, "Website returned " + upstream.status, "The website server returned " + upstream.status + " " + upstream.statusText + ".");
+        }
+        const type = (upstream.headers.get("content-type") || "").toLowerCase();
+        if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) {
+          return browserError(415, "Not an HTML page", "The embedded view currently supports HTML pages, not direct images, downloads, or other file types.");
+        }
+        const declaredLength = Number(upstream.headers.get("content-length") || 0);
+        if (declaredLength > 2000000) {
+          return browserError(413, "Page too large", "The embedded browser limits HTML documents to 2 MB. Use Open tab for this site.");
+        }
+
+        let html = await upstream.text();
+        if (html.length > 2000000) {
+          return browserError(413, "Page too large", "The embedded browser limits HTML documents to 2 MB. Use Open tab for this site.");
+        }
+
+        const baseHref = finalURL.toString().replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+        html = html
+          .replace(/<meta\b[^>]*http-equiv\s*=\s*["']?content-security-policy["']?[^>]*>/gi, "")
+          .replace(/<base\b[^>]*>/gi, "");
+
+        const bridge =
+          '<base href="' + baseHref + '">' +
+          '<script>(function(){' +
+          'var prefix="/browser-proxy?url=";' +
+          'document.addEventListener("click",function(e){' +
+          'var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;' +
+          'if(!a||a.hasAttribute("download"))return;' +
+          'var u;try{u=new URL(a.href,document.baseURI)}catch(_){return}' +
+          'if(u.protocol!=="http:"&&u.protocol!=="https:")return;' +
+          'e.preventDefault();location.href=prefix+encodeURIComponent(u.href);' +
+          '},true);' +
+          'document.addEventListener("submit",function(e){' +
+          'var f=e.target;if(!(f instanceof HTMLFormElement)||(f.method||"get").toLowerCase()!=="get")return;' +
+          'e.preventDefault();var u;try{u=new URL(f.action||document.baseURI,document.baseURI)}catch(_){return}' +
+          'new FormData(f).forEach(function(v,k){if(typeof v==="string")u.searchParams.append(k,v)});' +
+          'location.href=prefix+encodeURIComponent(u.href);' +
+          '},true);' +
+          '})();<\/script>';
+
+        if (/<head\b[^>]*>/i.test(html)) {
+          html = html.replace(/<head\b[^>]*>/i, match => match + bridge);
+        } else {
+          html = "<!doctype html><html><head>" + bridge + "</head><body>" + html + "</body></html>";
+        }
+
+        return new Response(html, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store",
+            "X-WebPC-Browser-Proxy": "active",
+            "X-WebPC-Browser-Target": finalURL.hostname
+          }
+        });
+      } catch (error) {
+        return browserError(502, "Embedded page failed", "WebPC could not fetch the page: " + errorText(error));
+      }
+    }
+
     if (url.pathname === "/net-proxy") {
       const target = request.headers.get("X-WebPC-Proxy-Target") || new URL(request.url).searchParams.get("target");
       if (!target) return new Response("Missing X-WebPC-Proxy-Target",{status:400,headers:corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"})});
@@ -156,61 +340,7 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
       }
 
       const host = targetURL.hostname.toLowerCase();
-      const allowed =
-        host === "example.com" ||
-        host === "httpbin.org" ||
-        host === "google.com" || host.endsWith(".google.com") ||
-        host === "bing.com" || host.endsWith(".bing.com") ||
-        host === "duckduckgo.com" || host.endsWith(".duckduckgo.com") ||
-        host === "search.brave.com" ||
-        host === "stackoverflow.com" || host.endsWith(".stackoverflow.com") ||
-        host === "stackexchange.com" || host.endsWith(".stackexchange.com") ||
-        host === "superuser.com" || host === "serverfault.com" ||
-        host === "reddit.com" || host.endsWith(".reddit.com") ||
-        host === "bbc.co.uk" || host.endsWith(".bbc.co.uk") ||
-        host === "bbc.com" || host.endsWith(".bbc.com") ||
-        host === "theguardian.com" || host.endsWith(".theguardian.com") ||
-        host === "reuters.com" || host.endsWith(".reuters.com") ||
-        host === "arstechnica.com" || host.endsWith(".arstechnica.com") ||
-        host === "techcrunch.com" || host.endsWith(".techcrunch.com") ||
-        host === "crazygames.com" || host.endsWith(".crazygames.com") ||
-        host === "itch.io" || host.endsWith(".itch.io") ||
-        host === "newgrounds.com" || host.endsWith(".newgrounds.com") ||
-        host === "developer.mozilla.org" || host === "mdn.dev" ||
-        host === "web.dev" || host === "w3.org" || host.endsWith(".w3.org") ||
-        host === "caniuse.com" || host.endsWith(".caniuse.com") ||
-        host === "jsdelivr.net" || host.endsWith(".jsdelivr.net") ||
-        host === "unpkg.com" || host.endsWith(".unpkg.com") ||
-        host === "cdnjs.cloudflare.com" ||
-        host === "fonts.googleapis.com" || host === "fonts.gstatic.com" ||
-        host === "1.1.1.1" ||
-        host === "cloudflare.com" || host.endsWith(".cloudflare.com") ||
-        host === "api.adoptium.net" || host.endsWith(".adoptium.net") ||
-        host === "dl-cdn.alpinelinux.org" ||
-        host === "dl-3.alpinelinux.org" || host.endsWith(".alpinelinux.org") ||
-        host === "github.com" || host.endsWith(".github.com") ||
-        host === "raw.githubusercontent.com" ||
-        host === "objects.githubusercontent.com" ||
-        host === "release-assets.githubusercontent.com" ||
-        host === "repo.maven.apache.org" || host.endsWith(".apache.org") ||
-        host === "download.oracle.com" || host.endsWith(".oracle.com") ||
-        host === "openjdk.org" || host.endsWith(".openjdk.org") ||
-        host === "java.com" || host.endsWith(".java.com") ||
-        host === "mozilla.org" || host.endsWith(".mozilla.org") ||
-        host === "wikipedia.org" || host.endsWith(".wikipedia.org") ||
-        host === "debian.org" || host.endsWith(".debian.org") ||
-        host === "ubuntu.com" || host.endsWith(".ubuntu.com") ||
-        host === "packages.microsoft.com" || host.endsWith(".microsoft.com") ||
-        host === "dl.google.com" ||
-        host === "storage.googleapis.com" ||
-        host === "registry.npmjs.org" || host.endsWith(".npmjs.org") ||
-        host === "nodejs.org" || host.endsWith(".nodejs.org") ||
-        host === "pypi.org" || host.endsWith(".pypi.org") ||
-        host === "files.pythonhosted.org" ||
-        host === "sourceforge.net" || host.endsWith(".sourceforge.net") ||
-        host === "eclipse.org" || host.endsWith(".eclipse.org");
-
-      if (!allowed) {
+      if (!isAllowedProxyHost(host)) {
         return new Response("Proxy target not allowlisted: " + host,{status:403,headers:corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"})});
       }
 
