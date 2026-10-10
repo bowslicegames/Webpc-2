@@ -3910,7 +3910,9 @@ main();
   const MAX_QUEUED_COMMANDS = 24;
   function updateRuntimeStatus() {
     if (!status || !shellReadyNow()) return;
-    if (commandBusy) {
+    if (commandChannelStalled) {
+      status.textContent = "App command channel stalled · reopen the VM to recover";
+    } else if (commandBusy) {
       status.textContent = "Linux shell ready · app task running" +
         (commandQueue.length ? " · " + commandQueue.length + " queued" : "");
     } else if (commandQueue.length) {
