@@ -2596,7 +2596,7 @@ function onShellReady() {
 
     if (stageDetail) {
         stageDetail.textContent =
-            "Linux login prompt detected. Desktop apps are now unlocked.";
+            "Linux shell detected. Desktop apps are available.";
     }
 
     /* Reveal the HTML desktop once the guest login prompt has been detected. */
@@ -2713,21 +2713,18 @@ function noteBootSignal(data) {
     const lines = normalizedOutput.split("\n");
     const lastLine = lines.length ? lines[lines.length - 1].trimEnd() : "";
 
-    /* A login prompt only means the guest is asking for credentials.
-       Keep the desktop apps locked until the root shell prompt appears. */
+    /* Login progress updates the status only; desktop access is never gated. */
     if (!loginPromptShown && /\blogin:\s*$/i.test(lastLine)) {
         loginPromptShown = true;
         if (mainStage) mainStage.textContent = "Linux is ready — sign in";
-        if (stageDetail) stageDetail.textContent = "Waiting for the root shell prompt (webpc2:~#) before unlocking desktop apps.";
+        if (stageDetail) stageDetail.textContent = "Linux is ready for sign-in. The desktop and Terminal remain available.";
         if (percentText) percentText.textContent = "READY";
         const startup = $("startup");
         if (startup) startup.classList.remove("waiting-for-login");
         showTerminalUI();
     }
 
-    /* Unlock only after serial output contains a root-style prompt such as
-       "webpc2:~#". This works when the prompt arrives over multiple chunks,
-       with terminal control sequences, or without a trailing newline. */
+    /* Detect a usable shell for guest commands, but never use this to lock the desktop. */
     const rootPromptSeen = /(?:^|\n)[^\n]{0,100}#\s*$/.test(lastLine);
     if (bootSignalReceived && rootPromptSeen) {
         onShellReady();
@@ -2740,7 +2737,7 @@ function noteBootSignal(data) {
    ============================================================ */
 
 function showTerminalUI() {
-    /* This is the login stage only. Do not reveal the desktop yet. */
+    /* Keep the terminal usable during login; the desktop itself is already available. */
     const startup = $("startup");
     if (startup) startup.classList.add("hidden");
 
@@ -3958,7 +3955,6 @@ main();
   }
   function showWindow(id) {
     const win = document.getElementById(id); if (!win) return;
-    if (!shellReadyNow() && id !== "terminalWindow") { setStatus("Locked · sign in as root in Terminal to unlock apps"); return; }
     win.classList.add("open"); win.style.zIndex = ++zTop;
     if (id === "terminalWindow") attachTerminal();
     if (id === "fileWindow") { if (shellReadyNow()) refreshFiles(); else fileStatus.textContent="Waiting for the Alpine shell…"; }
@@ -3990,7 +3986,6 @@ main();
   }
   document.querySelectorAll("[data-open-app]").forEach(el => el.addEventListener("click", () => {
     const which = el.getAttribute("data-open-app");
-    if (!shellReadyNow() && which !== "terminal") { setStatus("Locked · sign in as root in Terminal to unlock apps"); return; }
     showWindow(which === "files" ? "fileWindow" : which === "terminal" ? "terminalWindow" : "minecraftWindow");
   }));
   document.querySelectorAll(".desktop-window").forEach(win => {
@@ -4013,8 +4008,8 @@ main();
     });
     const endDrag = () => { drag=null; };
     bar.addEventListener("pointerup",endDrag); bar.addEventListener("pointercancel",endDrag);
-    win.querySelector("[data-close]").addEventListener("click", () => { if (!shellReadyNow() && win.id === "terminalWindow") { setStatus("Keep Terminal open and sign in as root to unlock the desktop."); return; } closeWindow(win); });
-    win.querySelector("[data-minimize]").addEventListener("click", () => { if (!shellReadyNow() && win.id === "terminalWindow") { setStatus("Keep Terminal open and sign in as root to unlock the desktop."); return; } win.classList.remove("open"); });
+    win.querySelector("[data-close]").addEventListener("click", () => closeWindow(win));
+    win.querySelector("[data-minimize]").addEventListener("click", () => win.classList.remove("open"));
     win.querySelector("[data-maximize]").addEventListener("click", () => {
       if (win.classList.contains("maximized")) { win.classList.remove("maximized"); win.style.left=win.dataset.left||"105px"; win.style.top=win.dataset.top||"18px"; win.style.width=win.dataset.width||"min(760px,calc(100% - 24px))"; win.style.height=win.dataset.height||"min(520px,calc(100% - 22px))"; }
       else { win.dataset.left=win.style.left||win.offsetLeft+"px";win.dataset.top=win.style.top||win.offsetTop+"px";win.dataset.width=win.style.width||win.offsetWidth+"px";win.dataset.height=win.style.height||win.offsetHeight+"px";win.classList.add("maximized"); }
@@ -4085,23 +4080,23 @@ main();
   document.getElementById("checkJava").addEventListener("click",()=>checkJavaStatus(true));
   window.webpcDesktopShellReady = function() {
     desktop.classList.remove("locked");
-    setStatus("Root session unlocked");
+    setStatus("Linux shell ready · all desktop apps available");
     if(fileStatus) setFileStatus("Linux shell ready. Files are saved to the VM's /home/webpc folders.");
     if(document.getElementById("fileWindow").classList.contains("open")) refreshFiles();
   };
   window.showDesktopUI = function() {
-    /* Always reveal the desktop once the VM runtime has started; apps remain locked until root. */
+    /* Always reveal the desktop as soon as the VM runtime starts; no login gate. */
     const startup=document.getElementById("startup");
     if(startup)startup.classList.add("hidden");
     app.classList.add("vm-ready");
     desktop.style.display="block";
-    if (shellReadyNow()) { desktop.classList.remove("locked"); setStatus("Root session unlocked"); }
-    else { desktop.classList.add("locked"); setStatus("Locked · enter root in Terminal"); }
+    desktop.classList.remove("locked");
+    setStatus(shellReadyNow() ? "Linux shell ready · all desktop apps available" : "Starting Linux · desktop apps available");
     showWindow("terminalWindow");
     attachTerminal();
   };
-  desktop.classList.add("locked");
-  setStatus("Locked · waiting for root login");
+  desktop.classList.remove("locked");
+  setStatus("Starting Linux · desktop apps available");
 })();
 </script>
 
