@@ -3898,7 +3898,7 @@ main();
   const terminalWrap = document.getElementById("terminalWrap");
   const controls = document.getElementById("controls");
   const app = document.getElementById("app");
-  let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "", selectedFilePath = null;
+  let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "", selectedFilePath = null, commandChannelStalled = false;
   const BASE_HOME = "/home/webpc";
   const enc = new TextEncoder();
   const dec = new TextDecoder();
