@@ -969,10 +969,13 @@ button:active {
             <div class="window-titlebar"><span>🌐</span><span class="window-title">Web Browser</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body browser-body">
               <form class="browser-toolbar" id="browserForm">
-                <button class="ui-button" type="button" id="browserBack" title="Back">←</button>
-                <button class="ui-button" type="button" id="browserReload" title="Reload">↻</button>
+                <button class="ui-button" type="button" id="browserBack" title="Back" aria-label="Back">←</button>
+                <button class="ui-button" type="button" id="browserForward" title="Forward" aria-label="Forward">→</button>
+                <button class="ui-button" type="button" id="browserReload" title="Reload" aria-label="Reload">↻</button>
+                <button class="ui-button" type="button" id="browserStop" title="Stop loading" aria-label="Stop loading">×</button>
                 <input class="browser-address" id="browserAddress" type="text" inputmode="url" autocomplete="url" spellcheck="false" value="https://example.com" aria-label="Website address">
                 <button class="ui-button primary" type="submit">Go</button>
+                <button class="ui-button" type="button" id="browserHome" title="Home" aria-label="Home">⌂</button>
                 <button class="ui-button" type="button" id="browserExternal">Open tab</button>
               </form>
               <div class="browser-note" id="browserStatus">Enter a website or search. Some websites block embedding; use Open tab if a page refuses to load.</div>
@@ -4192,6 +4195,9 @@ main();
   const browserFrame = document.getElementById("browserFrame");
   const browserStatus = document.getElementById("browserStatus");
   let browserHistory = [], browserHistoryIndex = -1;
+  let browserStopped = false;
+  let browserLoading = false;
+  let webpcHiddenAt = 0;
   function normalizeBrowserAddress(raw) {
     let value = String(raw || "").trim();
     if (!value) throw new Error("Enter a website address or search phrase.");
@@ -4209,6 +4215,8 @@ main();
     try { url = normalizeBrowserAddress(raw); }
     catch (e) { browserStatus.textContent = e.message; return; }
     browserAddress.value = url;
+    browserStopped = false;
+    browserLoading = true;
     browserStatus.textContent = "Loading " + url + " · some sites refuse to display inside embedded browsers.";
     browserFrame.src = url;
     if (remember) {
@@ -4220,6 +4228,8 @@ main();
   }
   browserForm.addEventListener("submit", event => { event.preventDefault(); navigateBrowser(browserAddress.value); });
   document.getElementById("browserReload").addEventListener("click", () => {
+    browserStopped = false;
+    browserLoading = true;
     try { browserFrame.contentWindow.location.reload(); } catch (_) { browserFrame.src = browserAddress.value; }
     browserStatus.textContent = "Reloading page…";
   });
@@ -4229,6 +4239,19 @@ main();
       navigateBrowser(browserHistory[browserHistoryIndex], false);
     } else browserStatus.textContent = "No previous page in this browser session.";
   });
+  document.getElementById("browserForward").addEventListener("click", () => {
+    if (browserHistoryIndex < browserHistory.length - 1) {
+      browserHistoryIndex++;
+      navigateBrowser(browserHistory[browserHistoryIndex], false);
+    } else browserStatus.textContent = "No forward page in this browser session.";
+  });
+  document.getElementById("browserStop").addEventListener("click", () => {
+    browserStopped = true;
+    browserLoading = false;
+    browserFrame.src = "about:blank";
+    browserStatus.textContent = "Stopped loading. Press Reload or enter another address to continue.";
+  });
+  document.getElementById("browserHome").addEventListener("click", () => navigateBrowser("https://example.com/"));
   document.getElementById("browserExternal").addEventListener("click", () => {
     let url;
     try { url = normalizeBrowserAddress(browserAddress.value); }
@@ -4236,8 +4259,42 @@ main();
     window.open(url, "_blank", "noopener,noreferrer");
   });
   browserFrame.addEventListener("load", () => {
+    browserLoading = false;
+    if (browserStopped) {
+      browserStatus.textContent = "Loading stopped. Enter an address or press Home to continue.";
+      return;
+    }
     browserStatus.textContent = "Page loaded. If it is blank or shows a refusal, choose Open tab; many sites block iframe embedding.";
   });
+
+  function noteWebPCResume() {
+    if (shellReadyNow()) {
+      setStatus("Linux shell ready · WebPC resumed in the foreground");
+    } else {
+      setStatus("WebPC resumed · Linux may need a moment to wake up");
+    }
+    if (browserStatus) {
+      browserStatus.textContent = browserLoading
+        ? "WebPC resumed. The embedded page may still be loading; use Reload if it appears stuck."
+        : "WebPC resumed. Embedded sites may need Reload after a long pause.";
+    }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      webpcHiddenAt = Date.now();
+    } else if (webpcHiddenAt) {
+      const awayMs = Date.now() - webpcHiddenAt;
+      webpcHiddenAt = 0;
+      noteWebPCResume();
+      if (awayMs > 30000 && browserLoading && browserStatus) {
+        browserStatus.textContent = "Returned after " + Math.round(awayMs / 1000) + "s. If the page stalled while WebPC was backgrounded, press Reload.";
+      }
+    }
+  });
+  window.addEventListener("pageshow", event => {
+    if (event.persisted) noteWebPCResume();
+  });
+
   window.webpcDesktopShellReady = function() {
     desktop.classList.remove("locked");
     setStatus("Linux shell ready · all desktop apps available");
