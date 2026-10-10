@@ -4110,10 +4110,11 @@ main();
   function normalizeBrowserAddress(raw) {
     let value = String(raw || "").trim();
     if (!value) throw new Error("Enter a website address or search phrase.");
-    if (/\\s/.test(value) && !/^[a-z]+:\\/\\//i.test(value)) {
+    const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
+    if (/\s/.test(value) && !hasScheme) {
       return "https://duckduckgo.com/?q=" + encodeURIComponent(value);
     }
-    if (!/^[a-z][a-z0-9+.-]*:\\/\\//i.test(value)) value = "https://" + value;
+    if (!hasScheme) value = "https://" + value;
     const url = new URL(value);
     if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only HTTP and HTTPS websites are supported.");
     return url.href;
