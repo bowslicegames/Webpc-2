@@ -978,8 +978,8 @@ button:active {
                 <button class="ui-button" type="button" id="browserHome" title="Home" aria-label="Home">⌂</button>
                 <button class="ui-button" type="button" id="browserExternal">Open tab</button>
               </form>
-              <div class="browser-note" id="browserStatus">Enter a website or search. Some websites block embedding; use Open tab if a page refuses to load.</div>
-              <iframe id="browserFrame" title="WebPC web browser" src="https://example.com/" referrerpolicy="no-referrer" loading="lazy"></iframe>
+              <div class="browser-note" id="browserStatus">Public pages are loaded through WebPC's safe embedded-browser proxy. Some interactive sites still need Open tab.</div>
+              <iframe id="browserFrame" title="WebPC web browser" src="./browser-proxy?url=https%3A%2F%2Fexample.com%2F" sandbox="allow-scripts allow-forms allow-popups allow-downloads" referrerpolicy="no-referrer" loading="lazy"></iframe>
               <div class="window-resize" aria-hidden="true"></div>
             </div>
           </section>
@@ -2750,9 +2750,14 @@ function noteBootSignal(data) {
         const startup = $("startup");
         if (startup) startup.classList.remove("waiting-for-login");
         showTerminalUI();
+        /* Reveal the desktop only once Linux actually reaches its login prompt.
+           Keep it locked until the authenticated shell prompt is detected. */
+        if (typeof window.webpcRevealDesktopAtLogin === "function") {
+            window.webpcRevealDesktopAtLogin();
+        }
     }
 
-    /* Detect a usable shell for guest commands, but never use this to lock the desktop. */
+    /* Detect a usable shell for guest commands and unlock only after sign-in. */
     const rootPromptSeen = /(?:^|\n)[^\n]{0,100}#\s*$/.test(lastLine);
     if (bootSignalReceived && rootPromptSeen) {
         onShellReady();
@@ -4217,8 +4222,8 @@ main();
     browserAddress.value = url;
     browserStopped = false;
     browserLoading = true;
-    browserStatus.textContent = "Loading " + url + " · some sites refuse to display inside embedded browsers.";
-    browserFrame.src = url;
+    browserStatus.textContent = "Loading " + url + " through WebPC's safe embedded-browser proxy…";
+    browserFrame.src = "./browser-proxy?url=" + encodeURIComponent(url);
     if (remember) {
       browserHistory = browserHistory.slice(0, browserHistoryIndex + 1);
       browserHistory.push(url);
@@ -4230,8 +4235,8 @@ main();
   document.getElementById("browserReload").addEventListener("click", () => {
     browserStopped = false;
     browserLoading = true;
-    try { browserFrame.contentWindow.location.reload(); } catch (_) { browserFrame.src = browserAddress.value; }
-    browserStatus.textContent = "Reloading page…";
+    browserFrame.src = "./browser-proxy?url=" + encodeURIComponent(browserAddress.value);
+    browserStatus.textContent = "Reloading through WebPC's embedded-browser proxy…";
   });
   document.getElementById("browserBack").addEventListener("click", () => {
     if (browserHistoryIndex > 0) {
@@ -4264,7 +4269,7 @@ main();
       browserStatus.textContent = "Loading stopped. Enter an address or press Home to continue.";
       return;
     }
-    browserStatus.textContent = "Page loaded. If it is blank or shows a refusal, choose Open tab; many sites block iframe embedding.";
+    browserStatus.textContent = "Proxy response loaded. If the page reports an unsupported site or interactive features fail, choose Open tab.";
   });
 
   function noteWebPCResume() {
@@ -4301,6 +4306,16 @@ main();
     if (event.persisted) noteWebPCResume();
   });
 
+  window.webpcRevealDesktopAtLogin = function() {
+    const startup = document.getElementById("startup");
+    if (startup) startup.classList.add("hidden");
+    app.classList.add("vm-ready");
+    desktop.style.display = "block";
+    desktop.classList.add("locked");
+    setStatus("Linux login prompt detected · sign in in Terminal to unlock apps");
+    showWindow("terminalWindow");
+    attachTerminal();
+  };
   window.webpcDesktopShellReady = function() {
     desktop.classList.remove("locked");
     setStatus("Linux shell ready · all desktop apps available");
@@ -4308,18 +4323,23 @@ main();
     if(document.getElementById("fileWindow").classList.contains("open")) refreshFiles();
   };
   window.showDesktopUI = function() {
-    /* Always reveal the desktop as soon as the VM runtime starts; no login gate. */
-    const startup=document.getElementById("startup");
-    if(startup)startup.classList.add("hidden");
+    /* The shell-ready callback is the only path that unlocks the desktop. */
+    const startup = document.getElementById("startup");
+    if (startup) startup.classList.add("hidden");
     app.classList.add("vm-ready");
-    desktop.style.display="block";
-    desktop.classList.remove("locked");
-    setStatus(shellReadyNow() ? "Linux shell ready · all desktop apps available" : "Starting Linux · desktop apps available");
+    desktop.style.display = "block";
+    if (shellReadyNow()) {
+      desktop.classList.remove("locked");
+      setStatus("Linux shell ready · all desktop apps available");
+    } else {
+      desktop.classList.add("locked");
+      setStatus("Linux starting · desktop apps remain locked until sign-in");
+    }
     showWindow("terminalWindow");
     attachTerminal();
   };
-  desktop.classList.remove("locked");
-  setStatus("Starting Linux · desktop apps available");
+  desktop.classList.add("locked");
+  setStatus("Waiting for Linux login prompt…");
 })();
 </script>
 
