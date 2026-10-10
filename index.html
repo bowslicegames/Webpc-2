@@ -4005,8 +4005,8 @@ main();
     });
     const endDrag = () => { drag=null; };
     bar.addEventListener("pointerup",endDrag); bar.addEventListener("pointercancel",endDrag);
-    win.querySelector("[data-close]").addEventListener("click", () => closeWindow(win));
-    win.querySelector("[data-minimize]").addEventListener("click", () => win.classList.remove("open"));
+    win.querySelector("[data-close]").addEventListener("click", () => { if (!shellReadyNow() && win.id === "terminalWindow") { setStatus("Keep Terminal open and sign in as root to unlock the desktop."); return; } closeWindow(win); });
+    win.querySelector("[data-minimize]").addEventListener("click", () => { if (!shellReadyNow() && win.id === "terminalWindow") { setStatus("Keep Terminal open and sign in as root to unlock the desktop."); return; } win.classList.remove("open"); });
     win.querySelector("[data-maximize]").addEventListener("click", () => {
       if (win.classList.contains("maximized")) { win.classList.remove("maximized"); win.style.left=win.dataset.left||"105px"; win.style.top=win.dataset.top||"18px"; win.style.width=win.dataset.width||"min(760px,calc(100% - 24px))"; win.style.height=win.dataset.height||"min(520px,calc(100% - 22px))"; }
       else { win.dataset.left=win.style.left||win.offsetLeft+"px";win.dataset.top=win.style.top||win.offsetTop+"px";win.dataset.width=win.style.width||win.offsetWidth+"px";win.dataset.height=win.style.height||win.offsetHeight+"px";win.classList.add("maximized"); }
