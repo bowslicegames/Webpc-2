@@ -165,7 +165,7 @@ jobs:
               raise SystemExit("Cannot locate root disk metadata.")
           entry = match.group(0)
           sm = re.search(r"""(["']start["']\s*:\s*)(\d+)""", entry)
-          em = re.search(r'(["\\']end["\\']\s*:\s*)(\d+)', entry)
+          em = re.search(r"""(["']end["']\s*:\s*)(\d+)""", entry)
           if not sm or not em:
               raise SystemExit("Missing disk offsets.")
           start, old_end = int(sm.group(2)), int(em.group(2))
