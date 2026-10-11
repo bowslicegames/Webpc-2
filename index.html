@@ -948,8 +948,7 @@ button:active {
             </div>
 
             <div id="message">
-                WebPC 2 will download the Linux/QEMU runtime
-                into memory. Nothing is permanently saved.
+                WebPC 2 downloads the Linux/QEMU runtime on first launch and caches runtime assets on this device for faster future launches. Linux files and installed programs are not yet saved between fresh launches.
             </div>
 
             <div id="errorBox"></div>
@@ -1021,7 +1020,7 @@ button:active {
             <div class="window-titlebar"><span>🟩</span><span class="window-title">Minecraft Java Edition</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body"><div class="info-content">
               <div class="info-card"><h3>Minecraft Java Edition</h3><p>This desktop is the foundation for the Minecraft setup. First we need to confirm Java and the VM's file storage are working, then add the game files and launcher.</p><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="margin-top:10px"><button class="ui-button primary" id="checkJava">Check Java</button></div></div>
-              <div class="info-card"><h3>Virtual computer</h3><p>Files saved in the File Manager are written into the Linux VM disk. This browser VM is currently non-persistent between fresh launches.</p></div>
+              <div class="info-card"><h3>Virtual computer</h3><p>Runtime downloads are cached by this browser for faster launches. Files and installed programs inside Linux are currently not preserved after a fresh launch.</p></div>
             </div><div class="window-resize" aria-hidden="true"></div></div>
           </section>
           <section class="desktop-window browser-window" id="browserWindow" aria-label="Web Browser window">
