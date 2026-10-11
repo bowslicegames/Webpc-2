@@ -103,21 +103,47 @@ jobs:
       - name: Boot Linux with the 8 GiB qcow2 disk attached
         run: |
           set -eux
-          set +e
-          timeout 90s qemu-system-x86_64 \
-            -M pc -m 512M -accel tcg -nic none \
-            -kernel work/vmlinuz-virt \
-            -initrd work/initramfs-virt \
-            -append "earlyprintk=ttyS0 console=ttyS0 root=/dev/vda loglevel=7 hostname=webpc2" \
-            -drive id=test,file=work/disk-rootfs-qcow2.img,format=qcow2,if=none \
-            -device virtio-blk-pci,drive=test \
-            -nographic -no-reboot 2>&1 | tee work/boot.log
-          qemu_rc=${PIPESTATUS[0]}
-          set -e
-          if grep -qiE 'webpc login:|login:' work/boot.log; then
-            echo "PASS: Linux reached its login prompt using the 8 GiB qcow2 disk."
-          else
-            echo "Linux did not reach a login prompt (QEMU exit: $qemu_rc). Serial output follows:"
-            tail -n 160 work/boot.log
-            exit 1
-          fi
+          cat > work/boot-test.py <<'PY'
+          import os, re, select, subprocess, sys, time
+          cmd = [
+              "qemu-system-x86_64", "-M", "pc", "-m", "512M", "-accel", "tcg", "-nic", "none",
+              "-kernel", "work/vmlinuz-virt", "-initrd", "work/initramfs-virt",
+              "-append", "earlyprintk=ttyS0 console=ttyS0 root=/dev/vda loglevel=7 hostname=webpc2",
+              "-drive", "id=test,file=work/disk-rootfs-qcow2.img,format=qcow2,if=none",
+              "-device", "virtio-blk-pci,drive=test", "-nographic", "-no-reboot"
+          ]
+          proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
+          deadline = time.monotonic() + 90
+          seen = ""
+          with open("work/boot.log", "w", encoding="utf-8", errors="replace") as log:
+              while time.monotonic() < deadline:
+                  ready, _, _ = select.select([proc.stdout], [], [], 1.0)
+                  if ready:
+                      chunk = os.read(proc.stdout.fileno(), 4096)
+                      if not chunk:
+                          break
+                      piece = chunk.decode("utf-8", errors="replace")
+                      log.write(piece); log.flush()
+                      sys.stdout.write(piece); sys.stdout.flush()
+                      seen = (seen + piece)[-20000:]
+                      if re.search(r"webpc login:|login:", seen, re.I):
+                          proc.terminate()
+                          try: proc.wait(timeout=5)
+                          except subprocess.TimeoutExpired:
+                              proc.kill(); proc.wait(timeout=5)
+                          print("\nPASS: Linux reached its login prompt with the published 8 GiB qcow2 disk.")
+                          sys.exit(0)
+                  if proc.poll() is not None:
+                      break
+          if proc.poll() is None:
+              proc.kill()
+              proc.wait(timeout=5)
+          print("FAIL: Linux did not reach a login prompt.")
+          try:
+              with open("work/boot.log", encoding="utf-8", errors="replace") as log:
+                  print(log.read()[-12000:])
+          except OSError:
+              pass
+          sys.exit(1)
+          PY
+          python3 work/boot-test.py
