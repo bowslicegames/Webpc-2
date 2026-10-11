@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
 
+# Rebuilds are guarded: old release assets remain intact until qcow2 checks pass.
 concurrency:
   group: webpc-dynamic-disk-release
   cancel-in-progress: false
