@@ -4347,6 +4347,7 @@ main();
       pumpGuestQueue();
     }
     p.finish = finish;
+    const commandTimeoutMs = job.command.includes("WEBPC_DECOMPRESS_OK") ? 180000 : 20000;
     p.timeout = setTimeout(() => {
       if (pending !== p) return;
       commandChannelStalled = true;
@@ -4359,7 +4360,7 @@ main();
         }
       }
       finish(stopped, p.text);
-    }, 20000);
+    }, commandTimeoutMs);
     // Keep the markers out of the command line echoed by the interactive shell.
     // Otherwise the broker can mistake the echoed command for its real output and
     // finish before file operations have actually run.
