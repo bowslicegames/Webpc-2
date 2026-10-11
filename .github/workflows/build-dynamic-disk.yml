@@ -185,7 +185,7 @@ jobs:
               s = s.replace(old_size, f'    "disk-rootfs-qcow2.img":\n        {disk_size},', 1)
           else:
               s, count = re.subn(
-                  r'("disk-rootfs-qcow2\\.img"\\s*:\\s*)\\d+',
+                  r'("disk-rootfs-qcow2\.img"\s*:\s*)\d+',
                   lambda m: m.group(1) + str(disk_size), s, count=1
               )
               if count != 1:
@@ -262,7 +262,7 @@ jobs:
           from pathlib import Path
           p=Path("_worker.js")
           s=p.read_text()
-          match=re.search(r'(const STATIC_COMMIT =\\s*")[0-9a-f]+(")', s)
+          match=re.search(r'(const STATIC_COMMIT =\s*")[0-9a-f]+(")', s)
           if not match:
               raise SystemExit("Cannot find Worker STATIC_COMMIT pin.")
           new=s[:match.start()] + match.group(1) + sys.argv[1] + match.group(2) + s[match.end():]
