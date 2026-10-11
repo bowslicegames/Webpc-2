@@ -1041,8 +1041,8 @@ button:active {
           <section class="desktop-window" id="minecraftWindow" aria-label="Minecraft launcher window">
             <div class="window-titlebar"><span>🟩</span><span class="window-title">Minecraft Java Edition</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body"><div class="info-content">
-              <div class="info-card"><h3>Minecraft Java Edition</h3><p>This desktop is the foundation for the Minecraft setup. First we need to confirm Java and the VM's file storage are working, then add the game files and launcher.</p><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="margin-top:10px"><button class="ui-button primary" id="checkJava">Check Java</button></div></div>
-              <div class="info-card"><h3>Virtual computer</h3><p>Runtime downloads are cached by this browser for faster launches. Files and installed programs inside Linux are currently not preserved after a fresh launch.</p></div>
+              <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Java 21 runtime from here. Setup runs as a background guest task, so the File Manager and terminal remain usable while packages download.</p><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button primary" id="installJava">Install Java 21</button></div></div>
+              <div class="info-card"><h3>Virtual computer</h3><p><b>Virtual disk:</b> 8 GiB qcow2, dynamically growing. The backing file starts small and grows as Linux writes data; it does not pre-allocate 8 GiB of browser memory. The guest disk is temporary and resets on a fresh launch.</p><p style="margin-top:8px"><b>Guest RAM:</b> 512 MiB. QEMU uses CPU emulation, with browser-side memory kept deliberately conservative.</p><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div></div>
             </div><div class="window-resize" aria-hidden="true"></div></div>
           </section>
           <section class="desktop-window browser-window" id="browserWindow" aria-label="Web Browser window">
@@ -4661,34 +4661,41 @@ main();
   }
   const fileMenu=document.getElementById("fileMenu"), fileMenuPopup=document.getElementById("fileMenuPopup"), fileDecompress=document.getElementById("fileDecompress");
   const backgroundTasks = new Map();
-  function startBackgroundTask(kind, label, command, statusPath, logPath) {
-    setFileStatus(label + " queued in Linux background…");
+  function setTaskStatus(target, text, bad) {
+    if (!target) return;
+    target.textContent = text;
+    target.style.color = bad ? "#ffaaaa" : "#9cb0c6";
+  }
+  function startBackgroundTask(kind, label, command, statusPath, logPath, statusTarget = fileStatus) {
+    setTaskStatus(statusTarget, label + " queued in Linux background…");
     runGuest(command, (err, out) => {
-      if (err) { setFileStatus(label + " could not start: " + err.message, true); return; }
-      if (!out.includes("WEBPC_TASK_STARTED")) { setFileStatus(label + " did not start. " + out.slice(-160), true); return; }
-      backgroundTasks.set(statusPath, {kind, label, statusPath, logPath, started: Date.now()});
-      setFileStatus(label + " running in the background. You can keep using the desktop or terminal.");
+      if (err) { setTaskStatus(statusTarget, label + " could not start: " + err.message, true); return; }
+      if (!out.includes("WEBPC_TASK_STARTED")) { setTaskStatus(statusTarget, label + " did not start. " + out.slice(-160), true); return; }
+      backgroundTasks.set(statusPath, {kind, label, statusPath, logPath, started: Date.now(), target: statusTarget});
+      setTaskStatus(statusTarget, label + " running in the background. You can keep using the desktop or terminal.");
       pollBackgroundTask(statusPath);
     });
   }
   function pollBackgroundTask(statusPath) {
     const task = backgroundTasks.get(statusPath); if (!task) return;
-    runGuest("if [ -f " + JSON.stringify(statusPath) + " ]; then printf 'WEBPC_TASK_DONE:'; cat " + JSON.stringify(statusPath) + "; else printf 'WEBPC_TASK_RUNNING'; fi", (err, out) => {
-      if (err) { setFileStatus(task.label + " is still running; status check will retry. " + err.message, true); setTimeout(() => pollBackgroundTask(statusPath), 6000); return; }
+    const statusCommand = "if [ -f " + JSON.stringify(statusPath) + " ]; then printf 'WEBPC_TASK_DONE:'; cat " + JSON.stringify(statusPath) + "; else printf 'WEBPC_TASK_RUNNING\\n'; tail -n 2 " + JSON.stringify(task.logPath) + " 2>/dev/null || true; fi";
+    runGuestForService(task.kind === "java" ? "minecraft" : "files", statusCommand, (err, out) => {
+      if (err) { setTaskStatus(task.target, task.label + " is still running; status check will retry. " + err.message, true); setTimeout(() => pollBackgroundTask(statusPath), 6000); return; }
       if (out.includes("WEBPC_TASK_DONE:")) {
         const code = (out.split("WEBPC_TASK_DONE:").pop() || "").trim().split(/\s/)[0];
         backgroundTasks.delete(statusPath);
         if (code === "0") {
-          setFileStatus(task.label + " completed successfully. Details: " + task.logPath);
+          setTaskStatus(task.target, task.label + " completed successfully. Details: " + task.logPath);
           refreshFiles();
         } else {
           runGuest("tail -n 8 " + JSON.stringify(task.logPath) + " 2>/dev/null || true", (logErr, logOut) => {
-            setFileStatus(task.label + " failed (exit " + (code || "unknown") + "). " + (logOut || "Open the task log: " + task.logPath).slice(-500), true);
+            setTaskStatus(task.target, task.label + " failed (exit " + (code || "unknown") + "). " + (logOut || "Open the task log: " + task.logPath).slice(-500), true);
           });
         }
         return;
       }
-      setFileStatus(task.label + " running… " + Math.round((Date.now()-task.started)/1000) + "s elapsed. Other desktop tasks remain available.");
+      const detail = out.replace("WEBPC_TASK_RUNNING", "").trim().slice(-180);
+      setTaskStatus(task.target, task.label + " running… " + Math.round((Date.now()-task.started)/1000) + "s elapsed" + (detail ? " · " + detail : "") + ". Other desktop tasks remain available.");
       setTimeout(() => pollBackgroundTask(statusPath), 5000);
     });
   }
@@ -4790,7 +4797,9 @@ main();
     catch (_) { return; }
     if (url.protocol !== "https:" && url.protocol !== "http:") { setFileStatus("Only HTTP and HTTPS download URLs are supported.", true); return; }
     if (url.username || url.password) { setFileStatus("URLs containing login credentials are not supported.", true); return; }
-    let suggested = decodeURIComponent(url.pathname.split("/").pop() || "download.bin").replace(/[^A-Za-z0-9._ -]/g, "_");
+    let suggested;
+    try { suggested = decodeURIComponent(url.pathname.split("/").pop() || "download.bin").replace(/[^A-Za-z0-9._ -]/g, "_"); }
+    catch (_) { suggested = "download.bin"; }
     if (!suggested || suggested === "." || suggested === "..") suggested = "download.bin";
     const name = window.prompt("Save download as (in the current folder):", suggested);
     if (name === null) return;
@@ -4802,9 +4811,9 @@ main();
     const taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
     const targetQ = shellQuote(destination), urlQ = shellQuote(url.href);
     const inner = "mkdir -p " + shellQuote(dir) + " || exit $?; " +
-      "if command -v wget >/dev/null 2>&1; then wget -c --tries=3 --timeout=30 -O " + targetQ + " " + urlQ + "; " +
+      "if command -v wget >/dev/null 2>&1; then wget -c -t 3 -T 30 -O " + targetQ + " " + urlQ + "; " +
       "elif command -v curl >/dev/null 2>&1; then curl -fL --retry 3 --connect-timeout 20 -o " + targetQ + " " + urlQ + "; " +
-      "else echo 'Neither wget nor curl is installed'; exit 127; fi; rc=$?; printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus);
+      "else echo 'Neither wget nor curl is installed'; false; fi; rc=$?; printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus);
     const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED";
     startBackgroundTask("download", "Downloading " + name, launch, taskStatus, taskLog);
   });
@@ -4929,6 +4938,17 @@ main();
     });
   }
   document.getElementById("checkJava").addEventListener("click",()=>checkJavaStatus(true));
+  const installJavaButton = document.getElementById("installJava");
+  installJavaButton.addEventListener("click", () => {
+    if (!shellReadyNow()) { document.getElementById("minecraftStatus").textContent = "Linux is still starting."; return; }
+    if (!window.confirm("Install the OpenJDK 21 runtime inside the temporary Linux disk? This downloads packages into the guest and may take several minutes.")) return;
+    const taskId = "wpc-java-" + Date.now().toString(36);
+    const taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
+    const inner = "if command -v java >/dev/null 2>&1; then java -version; rc=$?; else apk update && (apk add --no-cache openjdk21-jre-headless || apk add --no-cache openjdk21-jre); rc=$?; fi; " +
+      "if command -v java >/dev/null 2>&1; then java -version; rc=$?; fi; printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus);
+    const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED";
+    startBackgroundTask("java", "Installing Java 21", launch, taskStatus, taskLog, document.getElementById("minecraftStatus"));
+  });
 
   const browserForm = document.getElementById("browserForm");
   const browserAddress = document.getElementById("browserAddress");
