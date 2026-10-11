@@ -4354,22 +4354,43 @@ main();
   function setStatus(text) { if (status) status.textContent = text; }
   function cleanOutput(s) { return String(s || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\r/g, "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, ""); }
   function unique() { return "WPC" + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
-  const commandQueue = [];
+  /*
+   * Per-app service queues.
+   *
+   * The browser keeps independent queues for Files, Minecraft/system
+   * checks, and other desktop tasks, with round-robin dispatch so a long
+   * upload cannot permanently starve another app. The current QEMU build
+   * exposes only one guest serial console, so this is fair scheduling over
+   * that transport, not yet an independent guest-side RPC channel.
+   */
+  const SERVICE_NAMES = ["files", "minecraft", "system", "browser"];
+  const serviceQueues = new Map(SERVICE_NAMES.map(name => [name, []]));
   const MAX_QUEUED_COMMANDS = 24;
+  let serviceCursor = 0;
+  function queuedCommandCount() {
+    let total = 0;
+    for (const queue of serviceQueues.values()) total += queue.length;
+    return total;
+  }
+  function queueSummary() {
+    return SERVICE_NAMES.filter(name => serviceQueues.get(name).length)
+      .map(name => name + ":" + serviceQueues.get(name).length).join(" · ");
+  }
   function updateRuntimeStatus() {
     if (!status || !shellReadyNow()) return;
+    const queued = queuedCommandCount();
     if (commandChannelStalled) {
       status.textContent = "App command channel stalled · reopen the VM to recover";
     } else if (commandBusy) {
       status.textContent = "Linux shell ready · app task running" +
-        (commandQueue.length ? " · " + commandQueue.length + " queued" : "");
-    } else if (commandQueue.length) {
-      status.textContent = "Linux shell ready · " + commandQueue.length + " app task(s) queued";
+        (queued ? " · " + queued + " queued (" + queueSummary() + ")" : "");
+    } else if (queued) {
+      status.textContent = "Linux shell ready · " + queued + " queued (" + queueSummary() + ")";
     } else {
-      status.textContent = "Linux shell ready · all desktop apps available";
+      status.textContent = "Linux shell ready · app queues idle";
     }
   }
-  function runGuest(command, callback) {
+  function enqueueForService(service, command, callback) {
     if (commandChannelStalled) {
       if (callback) callback(new Error("The shell stopped responding during an app task. Reload the VM before retrying."), "");
       return false;
@@ -4378,23 +4399,53 @@ main();
       if (callback) callback(new Error("The Alpine shell is not ready yet."), "");
       return false;
     }
-    if (commandQueue.length >= MAX_QUEUED_COMMANDS) {
-      if (callback) callback(new Error("The desktop command queue is full. Wait for a task to finish and try again."), "");
+    const queue = serviceQueues.get(service) || serviceQueues.get("system");
+    if (queuedCommandCount() >= MAX_QUEUED_COMMANDS) {
+      if (callback) callback(new Error("The desktop service queues are full. Wait for a task to finish and try again."), "");
       return false;
     }
-    commandQueue.push({command, callback});
+    queue.push({command, callback, service});
     updateRuntimeStatus();
     pumpGuestQueue();
     return true;
   }
+  function runGuest(command, callback) {
+    return enqueueForService("files", command, callback);
+  }
+  function runGuestForService(service, command, callback) {
+    return enqueueForService(SERVICE_NAMES.includes(service) ? service : "system", command, callback);
+  }
+  function takeNextQueuedJob() {
+    for (let checked = 0; checked < SERVICE_NAMES.length; checked++) {
+      const index = (serviceCursor + checked) % SERVICE_NAMES.length;
+      const queue = serviceQueues.get(SERVICE_NAMES[index]);
+      if (queue.length) {
+        serviceCursor = (index + 1) % SERVICE_NAMES.length;
+        return queue.shift();
+      }
+    }
+    return null;
+  }
+  function drainServiceQueues(message) {
+    for (const queue of serviceQueues.values()) {
+      while (queue.length) {
+        const queued = queue.shift();
+        if (queued.callback) {
+          try { queued.callback(new Error(message), ""); }
+          catch (callbackError) { console.error("WebPC queued callback failed:", callbackError); }
+        }
+      }
+    }
+  }
   function pumpGuestQueue() {
-    if (commandChannelStalled || commandBusy || pending || !commandQueue.length || !shellReadyNow()) return;
-    const job = commandQueue.shift();
+    if (commandChannelStalled || commandBusy || pending || !queuedCommandCount() || !shellReadyNow()) return;
+    const job = takeNextQueuedJob();
+    if (!job) return;
     commandBusy = true;
     outputBuffer = "";
     updateRuntimeStatus();
     const id = unique(), begin = "__" + id + "_BEGIN__", end = "__" + id + "_END__";
-    const p = {begin, end, callback:job.callback, text:"", found:false, timeout:null};
+    const p = {begin, end, callback:job.callback, text:"", found:false, timeout:null, service:job.service};
     pending = p;
     function finish(err, result) {
       if (p.timeout) clearTimeout(p.timeout);
@@ -4413,13 +4464,7 @@ main();
       if (pending !== p) return;
       commandChannelStalled = true;
       const stopped = new Error("No response from the shell. Reload the VM before retrying so app commands cannot overlap.");
-      while (commandQueue.length) {
-        const queued = commandQueue.shift();
-        if (queued.callback) {
-          try { queued.callback(new Error("The shell stopped responding. Reload the VM before running more app tasks."), ""); }
-          catch (callbackError) { console.error("WebPC queued callback failed:", callbackError); }
-        }
-      }
+      drainServiceQueues("The shell stopped responding. Reload the VM before running more app tasks.");
       finish(stopped, p.text);
     }, commandTimeoutMs);
     // Keep the markers out of the command line echoed by the interactive shell.
@@ -4820,7 +4865,7 @@ main();
     const box=document.getElementById("minecraftStatus");
     if (!shellReadyNow()) { box.textContent="Java status: waiting for Alpine shell"; return; }
     box.textContent="Checking Java…";
-    runGuest("if command -v java >/dev/null 2>&1; then java -version 2>&1; else echo WEBPC_JAVA_MISSING; fi",(err,out)=>{
+    runGuestForService("minecraft", "if command -v java >/dev/null 2>&1; then java -version 2>&1; else echo WEBPC_JAVA_MISSING; fi",(err,out)=>{
       if(err){box.textContent="Could not check Java: "+err.message;return;}
       box.textContent=out.includes("WEBPC_JAVA_MISSING")?"Java status: not installed yet. We will fix package/network setup next.":"Java status: installed · "+out.slice(0,180);
     });
