@@ -351,7 +351,11 @@ body {
     word-break: break-word;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px;
+    line-height: 1.5;
 }
+#startupTools { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+#startupTools button { flex:0 1 auto; min-height:36px; height:auto; padding:8px 12px; border:1px solid #43556b; background:#1b293a; color:#e8f1fc; font-size:12px; }
+#cacheResetStatus { flex:1 1 100%; min-height:16px; color:#93a4b8; font-size:11px; line-height:1.4; }
 
 #terminalWrap {
     display: none;
@@ -963,7 +967,11 @@ button:active {
                 WebPC 2 downloads the Linux/QEMU runtime on first launch and caches runtime assets on this device for faster future launches. Linux files and installed programs are not yet saved between fresh launches.
             </div>
 
-            <div id="errorBox"></div>
+            <div id="startupTools" aria-label="Startup recovery tools">
+                <button id="resetRuntimeCache" type="button">Reset runtime cache and reload</button>
+                <div id="cacheResetStatus" role="status" aria-live="polite">Use this if runtime files are stale or a previous download failed.</div>
+            </div>
+            <div id="errorBox" role="alert" aria-live="polite"></div>
 
         </div>
 
@@ -1014,7 +1022,8 @@ button:active {
                 <aside class="file-sidebar"><button class="file-nav active" data-folder="Desktop">🖥 Desktop</button><button class="file-nav" data-folder="Documents">📄 Documents</button><button class="file-nav" data-folder="Downloads">⬇ Downloads</button><button class="file-nav" data-folder="">⌂ Home</button></aside>
                 <div class="file-main">
                   <input class="file-path" id="filePath" value="/" aria-label="Current folder path">
-                  <div class="file-toolbar"><button class="ui-button" id="fileUp">↑ Up</button><button class="ui-button" id="fileNew">＋ New</button><button class="ui-button" id="fileRefresh">↻ Refresh</button><button class="ui-button primary" id="fileSave">Save to disk</button><button class="ui-button" id="fileOpenPath">Open path</button><button class="ui-button" id="fileDelete">Delete selected</button><span class="file-menu-wrap"><button class="ui-button" id="fileMenu" aria-label="More file actions" aria-expanded="false" title="More actions">⋮</button><span id="fileMenuPopup" hidden><button id="fileDecompress" hidden>📦 Decompress</button></span></span></div>
+                  <div class="file-toolbar"><button class="ui-button" id="fileUp">↑ Up</button><button class="ui-button" id="fileNew">＋ New</button><button class="ui-button" id="fileRefresh">↻ Refresh</button><button class="ui-button" id="fileUpload">⇧ Upload file</button><button class="ui-button primary" id="fileSave">Save to disk</button><button class="ui-button" id="fileOpenPath">Open path</button><button class="ui-button" id="fileDelete">Delete selected</button><span class="file-menu-wrap"><button class="ui-button" id="fileMenu" aria-label="More file actions" aria-expanded="false" title="More actions">⋮</button><span id="fileMenuPopup" hidden><button id="fileDecompress" hidden>📦 Decompress</button></span></span></div>
+                  <input id="fileUploadInput" type="file" hidden>
                   <input class="file-name" id="fileName" value="hello.txt" aria-label="File name">
                   <textarea class="file-editor" id="fileEditor" spellcheck="false" placeholder="Write a file here. Save to disk writes it to the Linux virtual disk using a hidden shell command."></textarea>
                   <div id="fileList" aria-label="Files in current folder"></div>
@@ -1076,6 +1085,56 @@ button:active {
     var memory = document.getElementById("diagMemory");
     var detail = document.getElementById("stageDetail");
     var message = document.getElementById("message");
+    var errorBox = document.getElementById("errorBox");
+    var cacheResetStatus = document.getElementById("cacheResetStatus");
+    var startupErrorLog = [];
+    window.__webpcStartupErrorLog = startupErrorLog;
+    window.__webpcRecordStartupError = function (label, detail) {
+        var line = "[" + new Date().toISOString() + "] " + label + ": " + String(detail || "Unknown error");
+        startupErrorLog.push(line);
+        if (startupErrorLog.length > 12) startupErrorLog.shift();
+        if (errorBox) {
+            errorBox.style.display = "block";
+            errorBox.textContent = "STARTUP / RUNTIME ERROR LOG\n\n" + startupErrorLog.join("\n\n");
+        }
+        if (message) message.textContent = "WebPC reported an error. Details are shown in the error log below.";
+    };
+    window.addEventListener("error", function (event) {
+        var detail = event && event.error && event.error.stack ? event.error.stack :
+            (event && event.message ? event.message : "A script or resource failed to load.");
+        window.__webpcRecordStartupError("JavaScript/resource error", detail);
+    });
+    window.addEventListener("unhandledrejection", function (event) {
+        var reason = event && event.reason;
+        window.__webpcRecordStartupError("Unhandled promise rejection",
+            reason && reason.stack ? reason.stack : (reason && reason.message ? reason.message : String(reason || "Unknown rejection")));
+    });
+    var resetCacheButton = document.getElementById("resetRuntimeCache");
+    if (resetCacheButton) {
+        resetCacheButton.addEventListener("click", async function () {
+            resetCacheButton.disabled = true;
+            if (cacheResetStatus) cacheResetStatus.textContent = "Clearing WebPC runtime caches…";
+            try {
+                if ("caches" in window && typeof window.caches.keys === "function") {
+                    var cacheNames = await window.caches.keys();
+                    var targets = cacheNames.filter(function (name) { return name.indexOf("webpc-runtime-assets-") === 0; });
+                    var results = await Promise.all(targets.map(function (name) { return window.caches.delete(name); }));
+                    var deleted = results.filter(Boolean).length;
+                    if (cacheResetStatus) cacheResetStatus.textContent = "Removed " + deleted + " runtime cache(s). Reloading with a fresh page URL…";
+                } else if (cacheResetStatus) {
+                    cacheResetStatus.textContent = "Cache Storage is unavailable here. Reloading without cached runtime entries…";
+                }
+            } catch (cacheError) {
+                if (cacheResetStatus) cacheResetStatus.textContent = "Cache clearing reported: " +
+                    (cacheError && cacheError.message ? cacheError.message : String(cacheError)) + ". Reloading anyway…";
+            }
+            try {
+                var nextURL = new URL(window.location.href);
+                nextURL.searchParams.set("webpc-cache-reset", String(Date.now()));
+                window.location.replace(nextURL.href);
+            } catch (_) { window.location.reload(); }
+        });
+    }
 
     if (isolation) {
         isolation.textContent =
@@ -4137,9 +4196,11 @@ function showError(error) {
     errorBox.style.display =
         "block";
 
+    const priorErrors = window.__webpcStartupErrorLog || [];
     errorBox.textContent =
         "WEBPC 2 STARTUP ERROR\n\n" +
-        text;
+        text +
+        (priorErrors.length ? "\n\nEARLIER ERROR LOG\n\n" + priorErrors.join("\n\n") : "");
 
     message.textContent =
         "Startup stopped. The exact failed stage is shown above.";
@@ -4618,6 +4679,114 @@ main();
     });
   }
   document.getElementById("fileSave").addEventListener("click",saveFile);
+
+  const fileUploadButton = document.getElementById("fileUpload");
+  const fileUploadInput = document.getElementById("fileUploadInput");
+  let uploadInProgress = false;
+  let uploadCancelRequested = false;
+  const uploadPartBytes = 8 * 1024 * 1024;
+  const uploadTransportBytes = 64 * 1024;
+
+  function bytesToBase64(buffer) {
+    const data = new Uint8Array(buffer);
+    let binary = "";
+    for (let i = 0; i < data.length; i += 0x8000) {
+      binary += String.fromCharCode.apply(null, data.subarray(i, Math.min(data.length, i + 0x8000)));
+    }
+    return btoa(binary);
+  }
+
+  function runGuestPromise(command) {
+    return new Promise((resolve, reject) => {
+      const accepted = runGuest(command, (err, output) => {
+        if (err) reject(err);
+        else resolve(output || "");
+      });
+      if (!accepted) reject(new Error("The VM could not accept the next upload part."));
+    });
+  }
+
+  fileUploadButton.addEventListener("click", () => {
+    if (uploadInProgress) {
+      uploadCancelRequested = true;
+      fileUploadButton.disabled = true;
+      setFileStatus("Cancellation requested. Finishing the current small transfer block…", true);
+      return;
+    }
+    fileUploadInput.value = "";
+    fileUploadInput.click();
+  });
+
+  fileUploadInput.addEventListener("change", async () => {
+    const file = fileUploadInput.files && fileUploadInput.files[0];
+    if (!file) return;
+    if (!shellReadyNow()) { setFileStatus("Wait until Linux has logged in before uploading.", true); return; }
+
+    let dir, name;
+    try {
+      dir = guestPath();
+      name = file.name;
+      if (!name || name === "." || name === ".." || !/^[A-Za-z0-9._ -]+$/.test(name) || name.includes("/")) {
+        throw new Error("This filename contains unsupported characters. Rename it using letters, numbers, spaces, dots, _ or -.");
+      }
+    } catch (e) { setFileStatus("Upload blocked: " + e.message, true); return; }
+
+    const destination = (dir === "/" ? "" : dir) + "/" + name;
+    if (!window.confirm("Upload " + name + " (" + formatFileSize(file.size) + ") to " + destination + "? If that file exists, it will be replaced.")) return;
+
+    uploadInProgress = true;
+    uploadCancelRequested = false;
+    fileUploadButton.textContent = "Cancel upload";
+    fileUploadButton.disabled = false;
+    fileUploadInput.disabled = true;
+    let uploaded = 0;
+    let partNumber = 0;
+
+    try {
+      const ready = await runGuestPromise("mkdir -p " + JSON.stringify(dir) + " && : > " + JSON.stringify(destination) + " && echo WEBPC_UPLOAD_TARGET_READY");
+      if (!ready.includes("WEBPC_UPLOAD_TARGET_READY")) throw new Error("Linux could not create the destination file. Check the folder permissions and free disk space.");
+      while (uploaded < file.size) {
+        if (uploadCancelRequested) throw new Error("Upload cancelled by the user.");
+        const part = file.slice(uploaded, Math.min(file.size, uploaded + uploadPartBytes));
+        let offset = 0;
+        partNumber++;
+        while (offset < part.size) {
+          if (uploadCancelRequested) throw new Error("Upload cancelled by the user.");
+          const blockEnd = Math.min(part.size, offset + uploadTransportBytes);
+          const block = await part.slice(offset, blockEnd).arrayBuffer();
+          const encoded = bytesToBase64(block);
+          const command = "printf '%s' '" + encoded + "' | base64 -d >> " + JSON.stringify(destination) + " && echo WEBPC_UPLOAD_BLOCK_OK";
+          const output = await runGuestPromise(command);
+          if (!output.includes("WEBPC_UPLOAD_BLOCK_OK")) throw new Error("Linux did not confirm a transfer block; upload stopped to avoid silent corruption.");
+          offset = blockEnd;
+          uploaded += block.byteLength;
+          setFileStatus("Uploading " + name + " · part " + partNumber + " · " +
+            formatFileSize(uploaded) + " / " + formatFileSize(file.size) + " (" +
+            (file.size ? (uploaded / file.size * 100).toFixed(1) : "100.0") + "%)");
+        }
+      }
+
+      const verify = await runGuestPromise("test -f " + JSON.stringify(destination) +
+        " && test \"$(wc -c < " + JSON.stringify(destination) + ")\" -eq " + file.size +
+        " && echo WEBPC_UPLOAD_VERIFIED");
+      if (!verify.includes("WEBPC_UPLOAD_VERIFIED")) throw new Error("Final file-size verification failed. The file may be incomplete or the virtual disk may be full.");
+      setFileStatus("Upload complete and size verified: " + destination);
+      fileName.value = name;
+      selectedFilePath = destination;
+      refreshFiles();
+    } catch (e) {
+      setFileStatus("Upload " + (uploadCancelRequested ? "cancelled" : "failed") + ": " + e.message +
+        (uploaded ? " · " + formatFileSize(uploaded) + " transferred before stopping." : ""), true);
+    } finally {
+      uploadInProgress = false;
+      uploadCancelRequested = false;
+      fileUploadButton.textContent = "⇧ Upload file";
+      fileUploadButton.disabled = false;
+      fileUploadInput.disabled = false;
+      fileUploadInput.value = "";
+    }
+  });
+
   document.getElementById("fileRefresh").addEventListener("click",refreshFiles);
   document.getElementById("fileOpenPath").addEventListener("click",refreshFiles);
   document.getElementById("fileUp").addEventListener("click",()=>{
