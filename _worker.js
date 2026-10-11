@@ -20,6 +20,7 @@ const ALLOWED_ASSETS = new Set([
   "load-rootfs.data",
   "load-rootfs.js",
   "disk-rootfs-qcow2.img",
+  // The disk asset is a sparse 8 GiB qcow2 image; the guest writes remain session-local.
   "out.js",
   "qemu-system-x86_64.wasm",
   "qemu-system-x86_64.worker.js",
