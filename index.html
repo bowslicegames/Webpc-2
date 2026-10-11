@@ -1300,7 +1300,7 @@ function assetURL(filename) {
  * Cache storage is best-effort: if Safari/iOS evicts it or denies
  * quota, WebPC simply downloads the assets again from the network.
  */
-const ASSET_CACHE_NAME = "webpc-runtime-assets-v2-20261011-qcow2";
+const ASSET_CACHE_NAME = "webpc-runtime-assets-v3-20261011-services-files";
 let assetCachePromise = null;
 
 function openAssetCache() {
@@ -5008,7 +5008,7 @@ main();
     const taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
     const inner = "if command -v java >/dev/null 2>&1; then java -version; rc=$?; else apk update && (apk add --no-cache openjdk21-jre-headless || apk add --no-cache openjdk21-jre); rc=$?; fi; " +
       "if command -v java >/dev/null 2>&1; then java -version; rc=$?; fi; printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus);
-    const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED";
+    const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!";
     startBackgroundTask("java", "Installing Java 21", launch, taskStatus, taskLog, document.getElementById("minecraftStatus"));
   });
 
