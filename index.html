@@ -1212,6 +1212,56 @@ function assetURL(filename) {
         encodeURIComponent(filename);
 }
 
+/*
+ * Cache downloaded runtime assets between page launches.
+ * Bump this cache name whenever the deployed runtime assets change.
+ * Cache storage is best-effort: if Safari/iOS evicts it or denies
+ * quota, WebPC simply downloads the assets again from the network.
+ */
+const ASSET_CACHE_NAME = "webpc-runtime-assets-v1-20261011";
+let assetCachePromise = null;
+
+function openAssetCache() {
+    if (!("caches" in window) || typeof caches.open !== "function") {
+        return Promise.resolve(null);
+    }
+    if (!assetCachePromise) {
+        assetCachePromise = caches.open(ASSET_CACHE_NAME).catch(error => {
+            console.warn("WebPC asset cache unavailable:", error);
+            return null;
+        });
+    }
+    return assetCachePromise;
+}
+
+async function getCachedAsset(filename) {
+    try {
+        const cache = await openAssetCache();
+        if (!cache) return null;
+        return await cache.match(assetURL(filename));
+    } catch (error) {
+        console.warn("Could not read cached WebPC asset:", filename, error);
+        return null;
+    }
+}
+
+async function storeCachedAsset(filename, blob) {
+    try {
+        const cache = await openAssetCache();
+        if (!cache || !blob || !blob.size) return;
+        const response = new Response(blob, {
+            status: 200,
+            headers: {
+                "Content-Type": blob.type || "application/octet-stream"
+            }
+        });
+        await cache.put(assetURL(filename), response);
+    } catch (error) {
+        /* Quota/security failures must never prevent the VM booting. */
+        console.warn("Could not save WebPC asset for next launch:", filename, error);
+    }
+}
+
 const FILES = {
 
     qemu:
@@ -1630,6 +1680,27 @@ async function prebootCheck() {
 
     const checkOne = async filename => {
 
+        /*
+         * Worker scripts and stack.js are loaded from their real URLs by
+         * QEMU, so keep checking those endpoints. Other versioned assets
+         * can be verified from this device's cache without a network roundtrip.
+         */
+        if (
+            ![
+                FILES.qemuWorker,
+                FILES.stackWorker,
+                FILES.stack
+            ].includes(filename) &&
+            await getCachedAsset(filename)
+        ) {
+            completed++;
+            assetBar.style.width = (completed / total * 100).toFixed(1) + "%";
+            assetNumbers.textContent = completed + " / " + total + " assets checked";
+            stageDetail.textContent = "Verified " + completed + " of " + total + " runtime assets…";
+            await new Promise(resolve => setTimeout(resolve, 0));
+            return filename;
+        }
+
         const controller =
             typeof AbortController === "function"
                 ? new AbortController()
@@ -1970,6 +2041,38 @@ async function downloadWithProgress(filename) {
         error instead of the unhelpful "Load failed".
     */
 
+    /* Serve a previously downloaded runtime asset without another 40–80 MB transfer. */
+    const cachedResponse = await getCachedAsset(filename);
+    if (cachedResponse) {
+        const cachedBlob = await cachedResponse.blob();
+        if (cachedBlob.size > 0) {
+            let cachedType = cachedBlob.type || "";
+            if (filename.endsWith(".js") || filename.endsWith(".mjs")) {
+                cachedType = "application/javascript; charset=utf-8";
+            } else if (filename.endsWith(".css")) {
+                cachedType = "text/css; charset=utf-8";
+            } else if (filename.endsWith(".wasm")) {
+                cachedType = "application/wasm";
+            }
+            const readyBlob = cachedType === cachedBlob.type
+                ? cachedBlob
+                : new Blob([cachedBlob], { type: cachedType });
+            currentAssetLoaded = readyBlob.size;
+            if (currentAssetTotal === 0) {
+                currentAssetTotal = readyBlob.size;
+                overallTotal += readyBlob.size;
+            }
+            overallLoaded += readyBlob.size;
+            assetBar.style.width = "100%";
+            assetBar.style.opacity = "1";
+            assetNumbers.textContent = bytes(readyBlob.size) + " / " + bytes(readyBlob.size) + " · cached";
+            stageDetail.textContent = "Loaded " + filename + " from this device's cache.";
+            updateOverall();
+            downloaded.set(filename, readyBlob);
+            return readyBlob;
+        }
+    }
+
     let response;
 
     try {
@@ -2141,6 +2244,7 @@ async function downloadWithProgress(filename) {
             blob
         );
 
+        await storeCachedAsset(filename, blob);
         return blob;
     }
 
@@ -2330,6 +2434,7 @@ async function downloadWithProgress(filename) {
         blob
     );
 
+    await storeCachedAsset(filename, blob);
     return blob;
 }
 
