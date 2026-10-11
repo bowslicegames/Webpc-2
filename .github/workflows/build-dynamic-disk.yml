@@ -1,0 +1,276 @@
+name: Build and enable dynamic 8 GiB WebPC disk
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-dynamic-disk.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: webpc-dynamic-disk-release
+  cancel-in-progress: false
+
+jobs:
+  build-dynamic-disk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out WebPC 2
+        uses: actions/checkout@v4
+
+      - name: Install disk image tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y e2fsprogs qemu-utils python3
+
+      - name: Download the current known-good runtime assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          mkdir -p work
+          gh release download V1 --repo "${{ github.repository }}" \
+            --pattern "load-rootfs.data" \
+            --pattern "load-rootfs.js" \
+            --pattern "qemu-system-x86_64.wasm" \
+            --dir work
+          test -s work/load-rootfs.data
+          test -s work/load-rootfs.js
+          test -s work/qemu-system-x86_64.wasm
+
+      - name: Confirm this QEMU build contains the qcow2 driver
+        run: |
+          set -eux
+          # Fail closed before publishing anything if the current WASM QEMU
+          # binary does not advertise the qcow2 block driver.
+          if ! grep -a -qi 'qcow2' work/qemu-system-x86_64.wasm; then
+            echo "::error::The current QEMU WASM binary does not contain a detectable qcow2 driver marker. Existing release assets remain untouched."
+            exit 1
+          fi
+          echo "qcow2 driver marker found in the actual QEMU WASM binary."
+
+      - name: Extract the actual ext4 disk from Emscripten's package
+        run: |
+          set -eux
+          python3 <<'PY'
+          import re
+          from pathlib import Path
+
+          js = Path("work/load-rootfs.js").read_text()
+          match = re.search(
+              r'\{[^{}]*["\\']filename["\\']\s*:\s*["\\']/pack-rootfs/disk-rootfs\.img["\\'][^{}]*\}',
+              js, re.S
+          )
+          if not match:
+              raise SystemExit("Missing /pack-rootfs/disk-rootfs.img metadata.")
+          entry = match.group(0)
+          start_match = re.search(r'["\\']start["\\']\s*:\s*(\d+)', entry)
+          end_match = re.search(r'["\\']end["\\']\s*:\s*(\d+)', entry)
+          if not start_match or not end_match:
+              raise SystemExit("Missing image start/end offsets.")
+          start, end = int(start_match.group(1)), int(end_match.group(1))
+          package = Path("work/load-rootfs.data")
+          size = package.stat().st_size
+          if start < 0 or end <= start or end > size or end != size:
+              raise SystemExit(f"Unexpected package image range {start}..{end} in {size} bytes.")
+          with package.open("rb") as source, Path("work/disk-rootfs.raw").open("wb") as target:
+              source.seek(start)
+              remaining = end - start
+              while remaining:
+                  block = source.read(min(4 * 1024 * 1024, remaining))
+                  if not block:
+                      raise SystemExit("Unexpected end of package while extracting disk.")
+                  target.write(block)
+                  remaining -= len(block)
+          print(f"Extracted {end-start} bytes from package offset {start}.")
+          PY
+          file work/disk-rootfs.raw
+          test "$(sudo blkid -p -s TYPE -o value work/disk-rootfs.raw)" = "ext4"
+
+      - name: Expand the ext4 filesystem to 8 GiB
+        run: |
+          set -eux
+          target=8589934592
+          source_size="$(stat -c '%s' work/disk-rootfs.raw)"
+          test "$source_size" -lt "$target"
+          sudo truncate -s "$target" work/disk-rootfs.raw
+          set +e
+          sudo e2fsck -f -p work/disk-rootfs.raw
+          rc=$?
+          set -e
+          test "$rc" -le 1
+          sudo resize2fs work/disk-rootfs.raw
+          set +e
+          sudo e2fsck -f -p work/disk-rootfs.raw
+          rc=$?
+          set -e
+          test "$rc" -le 1
+          sudo dumpe2fs -h work/disk-rootfs.raw 2>/dev/null | grep -E 'Block size|Block count|Free blocks'
+          test "$(stat -c '%s' work/disk-rootfs.raw)" -eq "$target"
+
+      - name: Convert to a sparse dynamically growing qcow2 disk
+        run: |
+          set -eux
+          qemu-img convert -p -c -f raw -O qcow2 -o compat=1.1,lazy_refcounts=on \
+            work/disk-rootfs.raw work/disk-rootfs.qcow2
+          qemu-img check work/disk-rootfs.qcow2
+          qemu-img info --output=json work/disk-rootfs.qcow2 > work/qcow2-info.json
+          python3 <<'PY'
+          import json
+          from pathlib import Path
+          info = json.loads(Path("work/qcow2-info.json").read_text())
+          expected = 8 * 1024 * 1024 * 1024
+          if info.get("format") != "qcow2":
+              raise SystemExit(f"Wrong disk format: {info.get('format')}")
+          if info.get("virtual-size") != expected:
+              raise SystemExit(f"Wrong virtual size: {info.get('virtual-size')}")
+          actual = Path("work/disk-rootfs.qcow2").stat().st_size
+          if actual >= expected:
+              raise SystemExit(f"qcow2 is not sparse/dynamic: physical size {actual}")
+          print(f"QCOW2 verified: {expected} virtual bytes, {actual} physical bytes.")
+          PY
+
+      - name: Verify the converted image preserves the expanded ext4 filesystem
+        run: |
+          set -eux
+          qemu-img convert -f qcow2 -O raw work/disk-rootfs.qcow2 work/roundtrip.raw
+          test "$(stat -c '%s' work/roundtrip.raw)" -eq 8589934592
+          set +e
+          sudo e2fsck -f -n work/roundtrip.raw
+          rc=$?
+          set -e
+          test "$rc" -le 1
+          rm -f work/roundtrip.raw
+          ls -lh work/disk-rootfs.qcow2
+
+      - name: Rebuild a separate Emscripten package without touching the old assets
+        run: |
+          set -eux
+          python3 <<'PY'
+          import hashlib
+          import re
+          from pathlib import Path
+
+          old_data = Path("work/load-rootfs.data").read_bytes()
+          old_js = Path("work/load-rootfs.js").read_text()
+          qcow = Path("work/disk-rootfs.qcow2").read_bytes()
+          match = re.search(
+              r'\{[^{}]*["\\']filename["\\']\s*:\s*["\\']/pack-rootfs/disk-rootfs\.img["\\'][^{}]*\}',
+              old_js, re.S
+          )
+          if not match:
+              raise SystemExit("Cannot locate root disk metadata.")
+          entry = match.group(0)
+          sm = re.search(r'(["\\']start["\\']\s*:\s*)(\d+)', entry)
+          em = re.search(r'(["\\']end["\\']\s*:\s*)(\d+)', entry)
+          if not sm or not em:
+              raise SystemExit("Missing disk offsets.")
+          start, old_end = int(sm.group(2)), int(em.group(2))
+          if old_end != len(old_data):
+              raise SystemExit("The original disk is not the final Emscripten package entry.")
+          package = old_data[:start] + qcow
+          end = start + len(qcow)
+          new_entry = re.sub(r'(["\\']end["\\']\s*:\s*)\d+',
+                             lambda m: m.group(1) + str(end), entry, count=1)
+          js = old_js[:match.start()] + new_entry + old_js[match.end():]
+          js = js.replace("load-rootfs.data", "load-rootfs-qcow2.data")
+          js, count = re.subn(r'(remote_package_size["\\']?\s*[:=]\s*)\d+',
+                              lambda m: m.group(1) + str(len(package)), js, count=1)
+          if count != 1:
+              raise SystemExit("Could not update Emscripten remote_package_size.")
+          digest = "sha256-" + hashlib.sha256(package).hexdigest()
+          js, uuid_count = re.subn(
+              r'(package_uuid["\\']?\s*[:=]\s*["\\'])([^"\\']+)(["\\'])',
+              lambda m: m.group(1) + digest + m.group(3), js, count=1
+          )
+          if uuid_count == 0:
+              print("No package_uuid field in this loader; the package size and file range were updated.")
+          Path("work/load-rootfs-qcow2.data").write_bytes(package)
+          Path("work/load-rootfs-qcow2.js").write_text(js)
+          print(f"New preload package: {len(package)} bytes; qcow2 payload: {len(qcow)} bytes; uuid updated: {bool(uuid_count)}")
+          PY
+          test -s work/load-rootfs-qcow2.data
+          test -s work/load-rootfs-qcow2.js
+          ls -lh work/load-rootfs-qcow2.data work/load-rootfs-qcow2.js
+
+      - name: Publish the new versioned disk assets (leave old working assets intact)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          gh release upload V1 \
+            work/load-rootfs-qcow2.data#load-rootfs-qcow2.data \
+            work/load-rootfs-qcow2.js#load-rootfs-qcow2.js \
+            --repo "${{ github.repository }}"
+
+      - name: Enable the new disk and direct-download UI in the app
+        run: |
+          set -eux
+          python3 <<'PY'
+          import re
+          from pathlib import Path
+          p = Path("index.html")
+          s = p.read_text()
+          changes = [
+              ('rootfsData:\n        "load-rootfs.data"', 'rootfsData:\n        "load-rootfs-qcow2.data"'),
+              ('rootfsLoader:\n        "load-rootfs.js"', 'rootfsLoader:\n        "load-rootfs-qcow2.js"'),
+              ('id=test,file=/pack-rootfs/disk-rootfs.img,format=raw,if=none', 'id=test,file=/pack-rootfs/disk-rootfs.img,format=qcow2,if=none'),
+              ('webpc-runtime-assets-v1-20261011', 'webpc-runtime-assets-v2-20261011-qcow2')
+          ]
+          for old, new in changes:
+              if s.count(old) != 1:
+                  raise SystemExit(f"Expected exactly one index.html match for {old!r}, got {s.count(old)}")
+              s = s.replace(old, new)
+          size_data = Path("work/load-rootfs-qcow2.data").stat().st_size
+          size_js = Path("work/load-rootfs-qcow2.js").stat().st_size
+          s, c1 = re.subn(r'("load-rootfs-qcow2\.data"\s*:\s*)\d+', lambda m: m.group(1)+str(size_data), s, count=1)
+          if c1 != 1:
+              # Add new known-size entries beside the original ones.
+              anchor = '    "load-rootfs.js":\n        1167089,'
+              if s.count(anchor) != 1:
+                  raise SystemExit("Cannot find known-size anchor.")
+              s = s.replace(anchor, anchor + f'\n\n    "load-rootfs-qcow2.data":\n        {size_data},\n\n    "load-rootfs-qcow2.js":\n        {size_js},')
+          else:
+              raise SystemExit("Unexpected pre-existing qcow2 size entry; refusing ambiguous update.")
+          p.write_text(s)
+          PY
+          python3 <<'PY'
+          from pathlib import Path
+          p=Path("_worker.js")
+          s=p.read_text()
+          anchor='  "load-rootfs.js",'
+          if s.count(anchor) != 1:
+              raise SystemExit("Cannot find rootfs asset allowlist entry.")
+          s=s.replace(anchor, anchor+'\n  "load-rootfs-qcow2.data",\n  "load-rootfs-qcow2.js",')
+          p.write_text(s)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Enable sparse dynamic 8 GiB qcow2 guest disk"
+          INDEX_COMMIT="$(git rev-parse HEAD)"
+          python3 - "$INDEX_COMMIT" <<'PY'
+          import sys
+          from pathlib import Path
+          p=Path("_worker.js")
+          s=p.read_text()
+          old='"5a1beed1bb19baea105f165dd702423b08c0df29"'
+          new='"'+sys.argv[1]+'"'
+          if s.count(old) != 1:
+              raise SystemExit("Unexpected Worker static commit pin; refusing to overwrite.")
+          p.write_text(s.replace(old,new))
+          PY
+          git add _worker.js
+          git commit -m "Serve the dynamic disk release assets"
+          git push origin HEAD:main
+
+      - name: Verify release assets were published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          gh release view V1 --repo "${{ github.repository }}" --json assets \
+            --jq '.assets[] | select(.name == "load-rootfs-qcow2.data" or .name == "load-rootfs-qcow2.js") | {name,size}'
