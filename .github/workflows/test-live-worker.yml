@@ -12,21 +12,31 @@ permissions:
 jobs:
   live-worker:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
-      - name: Verify the live Worker serves the new desktop and disk
+      - name: Wait for the latest Worker deployment and verify its desktop
         run: |
           set -eux
           mkdir -p work
-          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --max-time 30 \
-            https://webpc.bowslicegames.workers.dev/index.html -o work/live-index.html
+          ready=0
+          for attempt in $(seq 1 24); do
+            if curl --fail --silent --show-error --location --max-time 20 \
+              https://webpc.bowslicegames.workers.dev/index.html -o work/live-index.html; then
+              if grep -Fq 'Actual used blocks still consume browser memory' work/live-index.html \
+                && grep -Fq 'webpcRunGuestForService' work/live-index.html \
+                && grep -Fq 'format=qcow2' work/live-index.html; then
+                ready=1
+                break
+              fi
+            fi
+            echo "Waiting for the newest Worker deployment (attempt $attempt/24)…"
+            sleep 5
+          done
+          test "$ready" -eq 1
           grep -F 'disk-rootfs-qcow2.img' work/live-index.html
-          grep -F 'format=qcow2' work/live-index.html
           grep -F 'id="installJava"' work/live-index.html
           grep -F 'id="fileDownloadUrl"' work/live-index.html
           grep -F 'id="networkTest"' work/live-index.html
-          grep -F 'webpcRunGuestForService' work/live-index.html
           grep -F 'webpcShellReadyNow' work/live-index.html
-          grep -F 'Actual used blocks still consume browser memory' work/live-index.html
           curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --max-time 60 -I \
             https://webpc.bowslicegames.workers.dev/assets/disk-rootfs-qcow2.img
