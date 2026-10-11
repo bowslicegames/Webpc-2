@@ -14,8 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Check live index and dynamic disk endpoints
+      - name: Verify the live Worker serves the new desktop and disk
         run: |
           set -eux
-          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --max-time 30 -I https://webpc.bowslicegames.workers.dev/index.html
-          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --max-time 60 -I https://webpc.bowslicegames.workers.dev/assets/disk-rootfs-qcow2.img
+          mkdir -p work
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --max-time 30 \
+            https://webpc.bowslicegames.workers.dev/index.html -o work/live-index.html
+          grep -F 'disk-rootfs-qcow2.img' work/live-index.html
+          grep -F 'format=qcow2' work/live-index.html
+          grep -F 'id="installJava"' work/live-index.html
+          grep -F 'id="fileDownloadUrl"' work/live-index.html
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --max-time 60 -I \
+            https://webpc.bowslicegames.workers.dev/assets/disk-rootfs-qcow2.img
