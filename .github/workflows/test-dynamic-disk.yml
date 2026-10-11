@@ -42,7 +42,17 @@ jobs:
             test -s "work/$f"
           done
           qemu-img check work/disk-rootfs-qcow2.img
-          qemu-img info work/disk-rootfs-qcow2.img
+          qemu-img info --output=json work/disk-rootfs-qcow2.img > work/disk-info.json
+          python3 <<'PY'
+          import json
+          from pathlib import Path
+          info=json.loads(Path("work/disk-info.json").read_text())
+          assert info.get("format") == "qcow2", info
+          assert info.get("virtual-size") == 8*1024*1024*1024, info
+          physical=Path("work/disk-rootfs-qcow2.img").stat().st_size
+          assert physical < 8*1024*1024*1024, physical
+          print(f"PASS: 8 GiB virtual disk, {physical} physical bytes.")
+          PY
 
       - name: Decode the actual kernel and initramfs using WebPC's LZ4 loader
         run: |
