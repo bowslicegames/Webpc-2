@@ -4679,7 +4679,6 @@ main();
   }
   function startBackgroundTask(kind, label, command, statusPath, logPath, statusTarget = fileStatus) {
     setTaskStatus(statusTarget, label + " queued in Linux background…");
-    const enqueueStart = kind === "java" ? runGuestForService : null;
     const startCallback = (err, out) => {
       if (err) { setTaskStatus(statusTarget, label + " could not start: " + err.message, true); return; }
       if (!out.includes("WEBPC_TASK_STARTED")) { setTaskStatus(statusTarget, label + " did not start. " + out.slice(-160), true); return; }
