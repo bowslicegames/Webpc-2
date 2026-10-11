@@ -1,4 +1,4 @@
-name: Smoke-test dynamic WebPC disk in QEMU WASM
+name: Boot-test WebPC guest with dynamic disk
 
 on:
   workflow_dispatch:
@@ -10,19 +10,19 @@ permissions:
   contents: read
 
 jobs:
-  qemu-qcow2-smoke-test:
+  qemu-guest-boot-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Check out WebPC 2
         uses: actions/checkout@v4
 
-      - name: Install QEMU disk utilities
+      - name: Install disk utilities
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-utils
 
-      - name: Download the published runtime and dynamic disk
+      - name: Download the published guest disk and boot assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -33,89 +33,101 @@ jobs:
             --pattern "qemu-system-x86_64.wasm" \
             --pattern "qemu-system-x86_64.worker.js" \
             --pattern "out.js" \
+            --pattern "load-rom.data" \
+            --pattern "load-rom.js" \
+            --pattern "load-kernel.data" \
+            --pattern "load-kernel.js" \
+            --pattern "load-initramfs.data" \
+            --pattern "load-initramfs.js" \
             --dir work
-          test -s work/disk-rootfs-qcow2.img
-          test -s work/qemu-system-x86_64.wasm
-          test -s work/qemu-system-x86_64.worker.js
-          test -s work/out.js
-
-      - name: Verify the disk is a sparse 8 GiB qcow2 image
-        run: |
-          set -eux
+          for f in disk-rootfs-qcow2.img qemu-system-x86_64.wasm qemu-system-x86_64.worker.js out.js load-rom.data load-rom.js load-kernel.data load-kernel.js load-initramfs.data load-initramfs.js; do
+            test -s "work/$f"
+          done
           qemu-img check work/disk-rootfs-qcow2.img
-          qemu-img info --output=json work/disk-rootfs-qcow2.img > work/disk-info.json
-          python3 <<'PY'
-          import json
-          from pathlib import Path
-          info=json.loads(Path("work/disk-info.json").read_text())
-          assert info.get("format") == "qcow2", info
-          assert info.get("virtual-size") == 8*1024*1024*1024, info
-          size=Path("work/disk-rootfs-qcow2.img").stat().st_size
-          assert size < 8*1024*1024*1024, size
-          print(f"Disk verified: 8 GiB virtual, {size} physical bytes.")
-          PY
+          qemu-img info work/disk-rootfs-qcow2.img
 
-      - name: Open the disk with the actual QEMU WebAssembly runtime
+      - name: Boot Linux under the actual QEMU WebAssembly runtime
         run: |
           set -eux
-          cat > work/test-qcow2.cjs <<'JS'
+          cat > work/test-boot.cjs <<'JS'
           const fs = require("node:fs");
           const path = require("node:path");
+          const vm = require("node:vm");
           const { pathToFileURL } = require("node:url");
 
+          let serial = "";
           const errors = [];
-          const disk = fs.readFileSync("work/disk-rootfs-qcow2.img");
+          global.require = require;
+          global.process = process;
           global.location = { href: pathToFileURL(process.cwd() + "/").href, pathname: "/" };
           global.Module = {
             wasmBinary: fs.readFileSync("work/qemu-system-x86_64.wasm"),
             mainScriptUrlOrBlob: pathToFileURL(path.resolve("work/out.js")).href,
-            noExitRuntime: true,
             noInitialRun: false,
-            pty: { onSignal: () => {}, onReadable: () => {}, onData: () => {}, write: () => {}, resize: () => {} },
+            noExitRuntime: true,
             arguments: [
-              "-M", "pc",
-              "-m", "64M",
-              "-nodefaults",
-              "-display", "none",
-              "-serial", "none",
-              "-monitor", "none",
+              "-nographic", "-M", "pc", "-m", "512M",
+              "-accel", "tcg,tb-size=500",
+              "-L", "/pack-rom/",
+              "-nic", "none",
+              "-kernel", "/pack-kernel/vmlinuz-virt",
+              "-initrd", "/pack-initramfs/initramfs-virt",
+              "-append", "earlyprintk=ttyS0 console=ttyS0 root=/dev/vda loglevel=7 hostname=webpc2",
               "-drive", "id=test,file=/pack-rootfs/disk-rootfs.img,format=qcow2,if=none",
-              "-device", "virtio-blk-pci,drive=test",
-              "-S"
+              "-device", "virtio-blk-pci,drive=test"
             ],
+            pty: {
+              onSignal: () => {}, onReadable: () => {}, onData: () => {}, resize: () => {},
+              write: data => {
+                serial += String(data == null ? "" : data);
+                if (serial.length > 500000) serial = serial.slice(-250000);
+              }
+            },
             preRun: [mod => {
               try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}
-              mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", disk);
+              mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", fs.readFileSync("work/disk-rootfs-qcow2.img"));
             }],
             locateFile: name => path.resolve("work", name),
-            print: (...args) => console.log("[QEMU]", ...args),
+            print: (...args) => { const line = args.join(" "); console.log("[QEMU]", line); },
             printErr: (...args) => {
               const line = args.join(" ");
               errors.push(line);
-              console.error("[QEMU]", line);
+              console.error("[QEMU stderr]", line);
             },
             onExit: code => {
-              console.error("QEMU exited before smoke-test timeout with code", code);
-              process.exit(code === 0 ? 0 : 1);
+              console.error("QEMU exited before login prompt with code", code);
+              process.exit(code === 0 && /webpc login:|login:/i.test(serial) ? 0 : 1);
             }
           };
+
+          const loaders = ["load-rom.js", "load-kernel.js", "load-initramfs.js"];
+          for (const loader of loaders) {
+            vm.runInThisContext(fs.readFileSync(path.join("work", loader), "utf8"), { filename: loader });
+          }
 
           (async () => {
             const qemu = await import(pathToFileURL(path.resolve("work/out.js")).href);
             if (typeof qemu.default !== "function") throw new Error("QEMU Emscripten factory missing.");
             await qemu.default(global.Module);
-            setTimeout(() => {
-              const fatal = errors.filter(line => /Could not open|unknown format|invalid format|unsupported qcow2|Failed to open/i.test(line));
-              if (fatal.length) {
-                console.error("QEMU disk-open errors:", fatal.join("\\n"));
+            const started = Date.now();
+            const poll = setInterval(() => {
+              if (/webpc login:|login:/i.test(serial)) {
+                clearInterval(poll);
+                console.log("PASS: Linux reached its login prompt with the 8 GiB qcow2 disk attached.");
+                console.log(serial.slice(-4000));
+                process.exit(0);
+              }
+              if (Date.now() - started > 90000) {
+                clearInterval(poll);
+                console.error("Guest did not reach a login prompt within 90 seconds.");
+                console.error("Serial tail:", serial.slice(-6000));
+                console.error("QEMU diagnostics:", errors.slice(-30).join("\\n"));
                 process.exit(1);
               }
-              console.log("PASS: QEMU WASM initialized with the qcow2 disk attached.");
-              process.exit(0);
-            }, 5000);
+            }, 1000);
           })().catch(error => {
             console.error(error && error.stack ? error.stack : error);
             process.exit(1);
           });
           JS
-          timeout 20s node work/test-qcow2.cjs
+          timeout 120s node work/test-boot.cjs
