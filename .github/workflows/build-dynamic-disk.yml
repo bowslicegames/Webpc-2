@@ -9,7 +9,7 @@ on:
 permissions:
   contents: write
 
-# Rebuilds are guarded and repeatable: old assets remain intact until qcow2 checks pass.
+# Rebuilds are guarded, repeatable, and followed by a Worker pin refresh.
 concurrency:
   group: webpc-dynamic-disk-release
   cancel-in-progress: false
