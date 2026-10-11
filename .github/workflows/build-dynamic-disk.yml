@@ -58,6 +58,20 @@ jobs:
           file work/load-rootfs.data
           od -An -tx1 -N16 work/load-rootfs.data
           grep -a -n -E 'remote_package_size|package_uuid|lz4|gzip|decompress|DecompressionStream|filename.*disk-rootfs' work/load-rootfs.js | head -40 || true
+          python3 <<'PY'
+          from pathlib import Path
+          source = Path("work/load-rootfs.js").read_text(errors="replace")
+          for token in ("LZ4", "lz4", "decompress", "inflate", "REMOTE_PACKAGE_SIZE", "loadPackage("):
+              start = 0
+              hits = 0
+              while hits < 3:
+                  pos = source.find(token, start)
+                  if pos < 0:
+                      break
+                  print("\\n---", token, "at", pos, "---\\n", source[max(0,pos-240):pos+560])
+                  start = pos + len(token)
+                  hits += 1
+          PY
 
       - name: Extract the actual ext4 disk from Emscripten's package
         run: |
