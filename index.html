@@ -4727,7 +4727,7 @@ main();
     const startCallback = (err, out) => {
       if (err) { setTaskStatus(statusTarget, label + " could not start: " + err.message, true); return; }
       if (!out.includes("WEBPC_TASK_STARTED")) { setTaskStatus(statusTarget, label + " did not start. " + out.slice(-160), true); return; }
-      const pm=out.match(/WEBPC_TASK_STARTED(?::|\\s+)([0-9]+)/);backgroundTasks.set(statusPath,{kind,label,statusPath,logPath,started:Date.now(),target:statusTarget,pid:pm?Number(pm[1]):null,state:"Running",lastDetail:""});renderServiceTasks();
+      const pm=out.match(/WEBPC_TASK_STARTED:([0-9]+)/);backgroundTasks.set(statusPath,{kind,label,statusPath,logPath,started:Date.now(),target:statusTarget,pid:pm?Number(pm[1]):null,state:"Running",lastDetail:""});renderServiceTasks();
       setTaskStatus(statusTarget, label + " running in the background. You can keep using the desktop or terminal.");
       pollBackgroundTask(statusPath);
     };
