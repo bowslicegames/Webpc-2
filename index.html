@@ -1297,7 +1297,22 @@ function openAssetCache() {
         return Promise.resolve(null);
     }
     if (!assetCachePromise) {
-        assetCachePromise = caches.open(ASSET_CACHE_NAME).catch(error => {
+        assetCachePromise = caches.open(ASSET_CACHE_NAME).then(async cache => {
+            /*
+             * Retire older WebPC cache generations so the previous
+             * compressed rootfs and stale runtime copies do not occupy
+             * scarce iPad storage after the dynamic qcow2 upgrade.
+             */
+            try {
+                const names = await caches.keys();
+                await Promise.all(names
+                    .filter(name => name.startsWith("webpc-runtime-assets-v") && name !== ASSET_CACHE_NAME)
+                    .map(name => caches.delete(name)));
+            } catch (error) {
+                console.warn("Could not clean older WebPC asset caches:", error);
+            }
+            return cache;
+        }).catch(error => {
             console.warn("WebPC asset cache unavailable:", error);
             return null;
         });
