@@ -4602,6 +4602,7 @@ main();
     if (id === "terminalWindow") attachTerminal();
     if (id === "fileWindow") { if (shellReadyNow()) refreshFiles(); else fileStatus.textContent="Waiting for the Alpine shell…"; }
     if (id === "minecraftWindow") checkJavaStatus(false);
+     if (id === "servicesWindow") renderServiceTasks();
      if(id==="servicesWindow")renderServiceTasks();
   }
   function resetTerminalBeforeClose() {
@@ -4694,6 +4695,8 @@ main();
     selectedFilePath=null; fileDecompress.hidden=true;
     fileList.querySelectorAll(".file-row").forEach(row=>row.classList.remove("selected"));
   }
+  function updateFileBreadcrumbs(dir){if(!fileBreadcrumbs)return;fileBreadcrumbs.replaceChildren();const root=document.createElement("button");root.type="button";root.textContent="⌂ /";root.onclick=()=>{filePath.value="/";refreshFiles();};fileBreadcrumbs.appendChild(root);let p="";dir.split("/").filter(Boolean).forEach(part=>{p+="/"+part;const target=p,sep=document.createElement("span");sep.textContent="›";fileBreadcrumbs.appendChild(sep);const b=document.createElement("button");b.type="button";b.textContent=part;b.onclick=()=>{filePath.value=target;refreshFiles();};fileBreadcrumbs.appendChild(b);});}
+  function renderFileEntries(dir){fileList.replaceChildren();const q=(fileSearch.value||"").trim().toLowerCase(),mode=fileSort.value||"name";const es=currentFileEntries.filter(e=>(e.path.split("/").pop()||"/").toLowerCase().includes(q));es.sort((a,b)=>{if(mode==="size"||mode==="size-desc")return ((a.size??-1)-(b.size??-1))*(mode==="size-desc"?-1:1);if(mode==="type")return (a.type===b.type?0:a.type==="D"?-1:1)||a.path.localeCompare(b.path);if(a.type!==b.type)return a.type==="D"?-1:1;return a.path.localeCompare(b.path,undefined,{numeric:true,sensitivity:"base"})*(mode==="name-desc"?-1:1);});if(!es.length){const e=document.createElement("div");e.className="task-empty";e.textContent=q?"No matching files in this folder.":"This folder is empty, or Linux denied access.";fileList.appendChild(e);return;}es.forEach(entry=>{const b=document.createElement("button");b.className="file-row";b.type="button";b.title=entry.path;const icon=document.createElement("span");icon.className="file-row-icon";icon.textContent=entry.type==="D"?"📁":(entry.path.split("/").pop().startsWith(".")?"⚙️":"📄");const wrap=document.createElement("span");wrap.className="file-row-name";const name=document.createElement("span");name.textContent=entry.path.slice(dir==="/" ? 1 : dir.length+1);const meta=document.createElement("span");meta.className="file-row-meta";meta.textContent=entry.type==="D"?"Folder · open folder":entry.path;wrap.append(name,meta);const size=document.createElement("span");size.className="file-row-size";size.textContent=entry.type==="D"?"Folder":formatFileSize(entry.size);b.append(icon,wrap,size);b.onclick=()=>{if(entry.type==="D"){filePath.value=entry.path;refreshFiles();return;}selectedFilePath=entry.path;fileList.querySelectorAll(".file-row").forEach(row=>row.classList.remove("selected"));b.classList.add("selected");fileName.value=entry.path.split("/").pop();if(fileDetails)fileDetails.textContent=entry.path+" · "+formatFileSize(entry.size);setFileStatus("Selected "+entry.path+" · "+formatFileSize(entry.size));probeDecompress(entry.path);};b.ondblclick=()=>{if(entry.type==="F"&&entry.size<=1024*1024)loadFile(entry.path);};fileList.appendChild(b);});}
   function refreshFiles() {
     if (!shellReadyNow()) { setFileStatus("The Alpine shell is not ready yet.",true); return; }
     let dir; try { dir=guestPath(); filePath.value=dir; } catch(e) { setFileStatus(e.message,true); return; }
@@ -4705,47 +4708,25 @@ main();
       "elif [ -f \"$p\" ]; then size=$(wc -c < \"$p\" 2>/dev/null); printf 'F:%s|%s\\n' \"$p\" \"$size\"; fi; done";
     runGuest(listCommand, (err,out) => {
       if (err) { setFileStatus("Refresh failed: " + err.message,true); return; }
-      fileList.replaceChildren();
-      const entries=out.split("\n").map(line=>line.trim()).filter(line=>/^[DF]:/.test(line)).map(line=>{
-        if(line.startsWith("F:")){const split=line.lastIndexOf("|");return {type:"F",path:line.slice(2,split),size:Number(line.slice(split+1))||0};}
-        return {type:"D",path:line.slice(2),size:null};
-      }).filter(e=>e.path);
-      if (!entries.length) {
-        const empty=document.createElement("div");empty.className="file-footer";
-        empty.textContent="This folder is empty, or Linux denied access to its contents.";
-        fileList.appendChild(empty);
-      }
-      entries.forEach(entry=>{
-        const b=document.createElement("button");b.className="file-row";b.type="button";b.title=entry.path;
-        const name=document.createElement("span");name.className="file-row-name";name.textContent=(entry.type==="D"?"📁 ":"📄 ")+entry.path.slice(dir==="/" ? 1 : dir.length+1);
-        const size=document.createElement("span");size.className="file-row-size";size.textContent=entry.type==="D"?"Folder":formatFileSize(entry.size);
-        b.append(name,size);
-        b.addEventListener("click",()=>{
-          if(entry.type==="D"){filePath.value=entry.path;refreshFiles();return;}
-          clearFileSelection(); selectedFilePath=entry.path; b.classList.add("selected");
-          fileName.value=entry.path.split("/").pop();
-          setFileStatus("Selected "+entry.path+" · "+formatFileSize(entry.size));
-          probeDecompress(entry.path);
-        });
-        b.addEventListener("dblclick",()=>{if(entry.type==="F"&&entry.size<=1024*1024)loadFile(entry.path);});
-        fileList.appendChild(b);
-      });
-      setFileStatus(entries.filter(e=>e.type==="D").length+" folder(s), "+entries.filter(e=>e.type==="F").length+" file(s) · "+dir);
+      currentFileEntries=out.split("\n").map(line=>line.trim()).filter(line=>/^[DF]:/.test(line)).map(line=>{if(line.startsWith("F:")){const split=line.lastIndexOf("|");return {type:"F",path:line.slice(2,split),size:Number(line.slice(split+1))||0};}return {type:"D",path:line.slice(2),size:null};}).filter(e=>e.path);
+      renderFileEntries(dir);
+      setFileStatus(currentFileEntries.filter(e=>e.type==="D").length+" folder(s), "+currentFileEntries.filter(e=>e.type==="F").length+" file(s) · "+dir);
     });
   }
   const fileMenu=document.getElementById("fileMenu"), fileMenuPopup=document.getElementById("fileMenuPopup"), fileDecompress=document.getElementById("fileDecompress");
   const backgroundTasks = new Map();
+  function renderServiceTasks(){const list=document.getElementById("serviceTaskList"),summary=document.getElementById("serviceSummary");if(!list||!summary)return;list.replaceChildren();const tasks=[...backgroundTasks.values()].sort((a,b)=>b.started-a.started);summary.textContent=tasks.length?tasks.length+" task(s) tracked. Long jobs run as detached Linux processes; short control messages still use the shared serial bridge.":"No background tasks started this session.";if(!tasks.length){const e=document.createElement("div");e.className="task-empty";e.textContent="No background tasks yet. Start a download, archive extraction, or Java setup to see it here.";list.appendChild(e);return;}tasks.forEach(t=>{const c=document.createElement("article");c.className="task-card";const h=document.createElement("div");h.className="task-card-head";const n=document.createElement("span");n.textContent=(t.kind==="java"?"☕ ":t.kind==="download"?"⬇️ ":t.kind==="unzip"?"📦 ":"⚙️ ")+t.label;n.style.flex="1";const p=document.createElement("span");p.className="service-pill";p.textContent=t.state||"Running";h.append(n,p);c.appendChild(h);const m=document.createElement("div");m.className="task-card-meta";m.textContent="Started "+Math.round((Date.now()-t.started)/1000)+"s ago · log: "+t.logPath;c.appendChild(m);if(t.lastDetail){const d=document.createElement("div");d.className="task-card-meta";d.textContent=t.lastDetail;c.appendChild(d);}const actions=document.createElement("div");actions.className="task-card-actions";const log=document.createElement("button");log.className="ui-button";log.textContent="View log";log.onclick=()=>runGuestForService(t.kind==="java"?"minecraft":"files","tail -n 35 "+JSON.stringify(t.logPath)+" 2>/dev/null || true",(err,out)=>{t.lastDetail=err?err.message:(out||"(empty log)").slice(-1800);renderServiceTasks();});actions.appendChild(log);if(t.pid){const stop=document.createElement("button");stop.className="ui-button";stop.textContent="Stop task";stop.onclick=()=>{if(confirm("Stop "+t.label+"?"))runGuestForService(t.kind==="java"?"minecraft":"files","kill "+Number(t.pid)+" 2>/dev/null || true; printf '143\\n' > "+JSON.stringify(t.statusPath),(err)=>{t.state="Stop requested";t.lastDetail=err?err.message:"Signal sent";renderServiceTasks();});};actions.appendChild(stop);}c.appendChild(actions);list.appendChild(c);});}
   function setTaskStatus(target, text, bad) {
     if (!target) return;
     target.textContent = text;
-    target.style.color = bad ? "#ffaaaa" : "#9cb0c6";
+    target.style.color = bad ? "#ffaaaa" : "#9cb0c6"; renderServiceTasks();
   }
   function startBackgroundTask(kind, label, command, statusPath, logPath, statusTarget = fileStatus) {
     setTaskStatus(statusTarget, label + " queued in Linux background…");
     const startCallback = (err, out) => {
       if (err) { setTaskStatus(statusTarget, label + " could not start: " + err.message, true); return; }
       if (!out.includes("WEBPC_TASK_STARTED")) { setTaskStatus(statusTarget, label + " did not start. " + out.slice(-160), true); return; }
-      backgroundTasks.set(statusPath, {kind, label, statusPath, logPath, started: Date.now(), target: statusTarget});
+      const pm=out.match(/WEBPC_TASK_STARTED(?::|\\s+)([0-9]+)/);backgroundTasks.set(statusPath,{kind,label,statusPath,logPath,started:Date.now(),target:statusTarget,pid:pm?Number(pm[1]):null,state:"Running",lastDetail:""});renderServiceTasks();
       setTaskStatus(statusTarget, label + " running in the background. You can keep using the desktop or terminal.");
       pollBackgroundTask(statusPath);
     };
@@ -4893,7 +4874,7 @@ main();
       "if command -v wget >/dev/null 2>&1; then wget -c -t 3 -T 30 -O " + targetQ + " " + urlQ + "; " +
       "elif command -v curl >/dev/null 2>&1; then curl -fL --retry 3 --connect-timeout 20 -o " + targetQ + " " + urlQ + "; " +
       "else echo 'Neither wget nor curl is installed'; false; fi; rc=$?; printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus);
-    const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED";
+    const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!";
     startBackgroundTask("download", "Downloading " + name, launch, taskStatus, taskLog);
   });
 
@@ -4979,6 +4960,7 @@ main();
   });
 
   fileSearch.addEventListener("input",()=>renderFileEntries((filePath.value||"/").trim()||"/"));fileSort.addEventListener("change",()=>renderFileEntries((filePath.value||"/").trim()||"/"));
+   fileSearch.addEventListener("input",()=>renderFileEntries((filePath.value||"/").trim()||"/"));fileSort.addEventListener("change",()=>renderFileEntries((filePath.value||"/").trim()||"/"));
    document.getElementById("fileRefresh").addEventListener("click",refreshFiles);
   document.getElementById("fileOpenPath").addEventListener("click",refreshFiles);
   document.getElementById("fileUp").addEventListener("click",()=>{
