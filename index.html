@@ -4371,8 +4371,8 @@ main();
       networkStatus.textContent = "Testing ICMP ping and HTTPS from inside Linux…";
       const command = "ping -c 1 -W 3 1.1.1.1 >/tmp/webpc-ping.log 2>&1; p=$?; " +
         "if [ \"$p\" -eq 0 ]; then echo WEBPC_PING_OK; else echo WEBPC_PING_FAIL; fi; " +
-        "if command -v wget >/dev/null 2>&1; then wget -q -T 8 -O /dev/null https://example.com; h=$?; else h=127; fi; " +
-        "if [ \"$h\" -ne 0 ] && command -v curl >/dev/null 2>&1; then curl -fsSL --max-time 8 -o /dev/null https://example.com; h=$?; fi; " +
+        "if command -v wget >/dev/null 2>&1; then wget -q -T 5 -O /dev/null https://example.com; h=$?; else h=127; fi; " +
+        "if [ \"$h\" -ne 0 ] && command -v curl >/dev/null 2>&1; then curl -fsSL --max-time 5 -o /dev/null https://example.com; h=$?; fi; " +
         "if [ \"$h\" -eq 0 ]; then echo WEBPC_HTTPS_OK; else echo WEBPC_HTTPS_FAIL; fi; " +
         "tail -n 2 /tmp/webpc-ping.log 2>/dev/null || true";
       if (!window.webpcRunGuestForService) {
