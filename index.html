@@ -700,12 +700,64 @@ button:active {
   #fileList {max-height:75px}
 }
 
+
+/* WebPC OS: minimal boot splash and Windows-style sign-in */
+#webpcBootScreen {
+  position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center;
+  flex-direction:column; gap:26px; padding:24px; background:#07111f;
+  color:#f7f9fc; font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,sans-serif;
+}
+#webpcBootBrand {font-size:clamp(30px,6vw,48px);font-weight:600;letter-spacing:.3px;text-align:center}
+#webpcBootTrack {width:min(220px,62vw);height:4px;border-radius:20px;background:#26384e;overflow:hidden}
+#webpcBootProgress {height:100%;width:35%;border-radius:inherit;background:#f4f7fb;animation:webpcBootMove 1.35s ease-in-out infinite}
+@keyframes webpcBootMove {from{transform:translateX(-110%)}to{transform:translateX(320%)}}
+#webpcLoginScreen {
+  position:fixed;inset:0;z-index:10001;display:none;align-items:center;justify-content:center;
+  padding:24px;background:linear-gradient(145deg,#123b69 0%,#172d50 42%,#0a1830 100%);
+  color:#fff;font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,sans-serif;
+}
+#webpcLoginScreen.visible {display:flex}
+#webpcLoginCard {width:min(360px,100%);display:flex;flex-direction:column;align-items:center;text-align:center}
+#webpcUserAvatar {width:104px;height:104px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);margin-bottom:18px}
+#webpcUserAvatar svg {width:62px;height:62px;fill:#fff}
+#webpcUserName {font-size:28px;font-weight:400;margin-bottom:20px}
+#webpcLoginForm {width:100%;display:flex;gap:8px}
+#webpcPassword {flex:1;min-width:0;height:44px;border:1px solid rgba(255,255,255,.65);border-radius:3px;background:rgba(255,255,255,.96);color:#17202b;padding:0 12px;font:16px "Segoe UI",sans-serif;outline:none}
+#webpcPassword:focus {border-color:#75beff;box-shadow:0 0 0 2px rgba(117,190,255,.35)}
+#webpcSignIn {width:48px;height:44px;flex:0 0 48px;border:1px solid rgba(255,255,255,.55);border-radius:3px;background:#e8f2ff;color:#15385e;font-size:23px}
+#webpcLoginHint {min-height:24px;margin-top:12px;font-size:13px;color:#e6edf7}
+#webpcLoginScreen .webpc-login-sub {margin-top:28px;font-size:12px;color:rgba(255,255,255,.72)}
+#app.webpc-login-active #desktop {display:none !important}
+@media (prefers-reduced-motion:reduce) {#webpcBootProgress{animation-duration:3s}}
+
+/* WebpcOS login intentionally keeps the guest terminal invisible until sign-in. */
+#app.webpc-login-active > #terminalWrap,
+#app.webpc-login-active > #controls {display:none !important}
+
 </style>
 </head>
 
 <body>
 
 <div id="app">
+
+    <div id="webpcBootScreen" role="status" aria-label="WebPC OS is starting">
+      <div id="webpcBootBrand">WebpcOS</div>
+      <div id="webpcBootTrack"><div id="webpcBootProgress"></div></div>
+    </div>
+    <div id="webpcLoginScreen" aria-label="WebpcOS sign in">
+      <div id="webpcLoginCard">
+        <div id="webpcUserAvatar" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M32 33c8.1 0 14-6.1 14-14S40.1 5 32 5 18 11.1 18 19s5.9 14 14 14Zm0 6C17.1 39 7 47.1 7 57v2h50v-2c0-9.9-10.1-18-25-18Z"/></svg></div>
+        <div id="webpcUserName">root</div>
+        <form id="webpcLoginForm">
+          <input id="webpcPassword" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password" required>
+          <button id="webpcSignIn" type="submit" aria-label="Sign in">➜</button>
+        </form>
+        <div id="webpcLoginHint" role="status">Enter your password to sign in</div>
+        <div class="webpc-login-sub">WebpcOS · Temporary session</div>
+      </div>
+    </div>
+
 
     <div id="header">
         <div id="title">WebPC 2</div>
@@ -2632,6 +2684,11 @@ function onShellReady() {
     }
 
     /* Reveal the HTML desktop once the guest login prompt has been detected. */
+    const loginScreen = $("webpcLoginScreen");
+    if (loginScreen) loginScreen.classList.remove("visible");
+    if (app) app.classList.remove("webpc-login-active");
+    const bootSplash = $("webpcBootScreen");
+    if (bootSplash) bootSplash.style.display = "none";
     if (typeof window.webpcDesktopShellReady === "function") {
         window.webpcDesktopShellReady();
     }
@@ -2753,12 +2810,15 @@ function noteBootSignal(data) {
         if (percentText) percentText.textContent = "READY";
         const startup = $("startup");
         if (startup) startup.classList.remove("waiting-for-login");
-        showTerminalUI();
-        /* Reveal the desktop only once Linux actually reaches its login prompt.
-           Keep it locked until the authenticated shell prompt is detected. */
-        if (typeof window.webpcRevealDesktopAtLogin === "function") {
-            window.webpcRevealDesktopAtLogin();
-        }
+        /* Switch directly from the minimal boot splash to the OS sign-in screen.
+           Keep the terminal hidden; the real guest shell remains behind the UI. */
+        const bootSplash = $("webpcBootScreen");
+        const loginScreen = $("webpcLoginScreen");
+        if (bootSplash) bootSplash.style.display = "none";
+        if (loginScreen) loginScreen.classList.add("visible");
+        if (app) app.classList.add("webpc-login-active");
+        const passwordInput = $("webpcPassword");
+        if (passwordInput) setTimeout(() => passwordInput.focus(), 60);
     }
 
     /* Detect a usable shell for guest commands and unlock only after sign-in. */
@@ -2768,6 +2828,39 @@ function noteBootSignal(data) {
     }
 }
 
+
+
+/* The UI login gates the desktop. After it succeeds, feed the guest login prompt. */
+(function setupWebpcOSLogin() {
+  const form = document.getElementById("webpcLoginForm");
+  const password = document.getElementById("webpcPassword");
+  const hint = document.getElementById("webpcLoginHint");
+  if (!form || !password || !hint) return;
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    const entered = password.value;
+    password.value = "";
+    if (entered !== "WEBPC") {
+      hint.textContent = "Incorrect password. Try again.";
+      password.focus();
+      return;
+    }
+    if (!terminal || typeof terminal.paste !== "function") {
+      hint.textContent = "Linux is still starting. Please try again in a moment.";
+      return;
+    }
+    hint.textContent = "Signing in…";
+    const button = document.getElementById("webpcSignIn");
+    if (button) button.disabled = true;
+    try {
+      terminal.paste("root\r");
+      setTimeout(() => { if (button) button.disabled = false; }, 3000);
+    } catch (error) {
+      hint.textContent = "Could not submit sign-in. Please try again.";
+      if (button) button.disabled = false;
+    }
+  });
+})();
 
 /* ============================================================
    PRE-TERMINAL -> TERMINAL TRANSITION
