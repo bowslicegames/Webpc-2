@@ -40,5 +40,6 @@ jobs:
           grep -F 'id="networkTest"' work/live-index.html
           grep -F 'webpcShellReadyNow' work/live-index.html
           grep -F 'apk add --no-cache unzip' work/live-index.html
+          grep -F 'wget -q -T 5 -O /dev/null https://example.com' work/live-index.html
           curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --max-time 60 -I \
             https://webpc.bowslicegames.workers.dev/assets/disk-rootfs-qcow2.img
