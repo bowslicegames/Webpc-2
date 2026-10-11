@@ -171,62 +171,107 @@ jobs:
           from pathlib import Path
           p = Path("index.html")
           s = p.read_text()
-
-          def once(old, new):
-              global s
-              count = s.count(old)
-              if count != 1:
-                  raise SystemExit(f"Expected one match for {old!r}, got {count}")
-              s = s.replace(old, new)
-
-          once('    rootfsData:\n        "load-rootfs.data",\n\n    rootfsLoader:\n        "load-rootfs.js",',
-               '    rootfsDisk:\n        "disk-rootfs-qcow2.img",')
-          once('    "load-rootfs.data":\n        82611515,',
-               '    "disk-rootfs-qcow2.img":\n        PLACEHOLDER_DISK_SIZE,')
           disk_size = Path("work/disk-rootfs-qcow2.img").stat().st_size
-          s = s.replace("PLACEHOLDER_DISK_SIZE", str(disk_size))
-          once('        FILES.rootfsData,\n        FILES.rootfsLoader,',
-               '        FILES.rootfsDisk,')
-          once('    await downloadAsset(\n        FILES.rootfsData,\n        "rootfs",\n        "Downloading the Alpine Linux root filesystem."\n    );',
-               '    let rootDiskBlob = await downloadAsset(\n        FILES.rootfsDisk,\n        "rootfs",\n        "Downloading the sparse 8 GiB virtual disk (only allocated blocks are transferred)."\n    );\n    let rootDiskBinary = await rootDiskBlob.arrayBuffer();\n    downloaded.delete(FILES.rootfsDisk);\n    rootDiskBlob = null;')
-          once('        FILES.rootfsLoader\n    ];',
-               '    ];')
-          once('    preRun:\n            []',
-               '    preRun:\n            [mod => {\n                try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}\n                mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", new Uint8Array(rootDiskBinary));\n                rootDiskBinary = null;\n            }]')
-          once('    await loadScript(\n        blobURL(\n            FILES.rootfsLoader\n        )\n    );',
-               '    // The qcow2 guest disk is written into MEMFS in Module.preRun; no huge raw disk is preloaded.')
-          once('const ASSET_CACHE_NAME = "webpc-runtime-assets-v1-20261011";',
-               'const ASSET_CACHE_NAME = "webpc-runtime-assets-v2-20261011-qcow2";')
+
+          old_files = '    rootfsData:\n        "load-rootfs.data",\n\n    rootfsLoader:\n        "load-rootfs.js",'
+          new_files = '    rootfsDisk:\n        "disk-rootfs-qcow2.img",'
+          if old_files in s:
+              s = s.replace(old_files, new_files, 1)
+          elif new_files not in s:
+              raise SystemExit("Cannot find a known rootfs configuration to upgrade.")
+
+          old_size = '    "load-rootfs.data":\n        82611515,'
+          if old_size in s:
+              s = s.replace(old_size, f'    "disk-rootfs-qcow2.img":\n        {disk_size},', 1)
+          else:
+              s, count = re.subn(
+                  r'("disk-rootfs-qcow2\\.img"\\s*:\\s*)\\d+',
+                  lambda m: m.group(1) + str(disk_size), s, count=1
+              )
+              if count != 1:
+                  raise SystemExit("Cannot find a known size entry for the dynamic disk.")
+
+          old_preboot = '        FILES.rootfsData,\n        FILES.rootfsLoader,'
+          if old_preboot in s:
+              s = s.replace(old_preboot, '        FILES.rootfsDisk,', 1)
+          elif '        FILES.rootfsDisk,' not in s:
+              raise SystemExit("Pre-boot asset list does not include the disk.")
+
+          old_download = '    await downloadAsset(\n        FILES.rootfsData,\n        "rootfs",\n        "Downloading the Alpine Linux root filesystem."\n    );'
+          new_download = '''    let rootDiskBlob = await downloadAsset(
+        FILES.rootfsDisk,
+        "rootfs",
+        "Downloading the sparse 8 GiB virtual disk (only allocated blocks are transferred)."
+    );
+    let rootDiskBinary = await rootDiskBlob.arrayBuffer();
+    downloaded.delete(FILES.rootfsDisk);
+    rootDiskBlob = null;'''
+          if old_download in s:
+              s = s.replace(old_download, new_download, 1)
+          elif 'let rootDiskBlob = await downloadAsset(' not in s:
+              raise SystemExit("Cannot find root disk download code.")
+
+          s = s.replace('        FILES.rootfsLoader\n    ];', '    ];', 1)
+          old_prerun = '    preRun:\n            []'
+          new_prerun = '''    preRun:
+            [mod => {
+                try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}
+                mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", new Uint8Array(rootDiskBinary));
+                rootDiskBinary = null;
+            }]'''
+          if old_prerun in s:
+              s = s.replace(old_prerun, new_prerun, 1)
+          elif 'mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", new Uint8Array(rootDiskBinary))' not in s:
+              raise SystemExit("Cannot find disk preRun initializer.")
+
+          old_loader = '    await loadScript(\n        blobURL(\n            FILES.rootfsLoader\n        )\n    );'
+          if old_loader in s:
+              s = s.replace(old_loader, '    // The qcow2 guest disk is written into MEMFS in Module.preRun; no huge raw disk is preloaded.', 1)
+          elif 'no huge raw disk is preloaded' not in s:
+              raise SystemExit("Cannot find the rootfs loader import to replace.")
+
+          s = s.replace('const ASSET_CACHE_NAME = "webpc-runtime-assets-v1-20261011";',
+                        'const ASSET_CACHE_NAME = "webpc-runtime-assets-v2-20261011-qcow2";', 1)
+          s = s.replace('id=test,file=/pack-rootfs/disk-rootfs.img,format=raw,if=none',
+                        'id=test,file=/pack-rootfs/disk-rootfs.img,format=qcow2,if=none', 1)
+          if 'disk-rootfs-qcow2.img' not in s or 'format=qcow2' not in s:
+              raise SystemExit("The dynamic disk configuration is incomplete.")
           p.write_text(s)
           PY
           python3 <<'PY'
           from pathlib import Path
           p=Path("_worker.js")
           s=p.read_text()
-          anchor='  "load-rootfs.js",'
-          if s.count(anchor) != 1:
-              raise SystemExit("Cannot find the current rootfs asset allowlist entry.")
-          s=s.replace(anchor, anchor+'\n  "disk-rootfs-qcow2.img",')
+          if '"disk-rootfs-qcow2.img"' not in s:
+              anchor='  "load-rootfs.js",'
+              if s.count(anchor) != 1:
+                  raise SystemExit("Cannot find the Worker rootfs allowlist anchor.")
+              s=s.replace(anchor, anchor+'\n  "disk-rootfs-qcow2.img",', 1)
           p.write_text(s)
           PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Enable sparse dynamic 8 GiB qcow2 guest disk"
+          if ! git diff --cached --quiet; then
+            git commit -m "Enable sparse dynamic 8 GiB qcow2 guest disk"
+          fi
           INDEX_COMMIT="$(git rev-parse HEAD)"
           python3 - "$INDEX_COMMIT" <<'PY'
+          import re
           import sys
           from pathlib import Path
           p=Path("_worker.js")
           s=p.read_text()
-          old='"5a1beed1bb19baea105f165dd702423b08c0df29"'
-          new='"'+sys.argv[1]+'"'
-          if s.count(old) != 1:
-              raise SystemExit("Unexpected Worker static commit pin; refusing to overwrite.")
-          p.write_text(s.replace(old,new))
+          match=re.search(r'(const STATIC_COMMIT =\\s*")[0-9a-f]+(")', s)
+          if not match:
+              raise SystemExit("Cannot find Worker STATIC_COMMIT pin.")
+          new=s[:match.start()] + match.group(1) + sys.argv[1] + match.group(2) + s[match.end():]
+          p.write_text(new)
           PY
           git add _worker.js
-          git commit -m "Serve the dynamic disk image"
+          if ! git diff --cached --quiet; then
+            git commit -m "Serve the dynamic disk image"
+          fi
           git push origin HEAD:main
 
       - name: Verify the published disk asset
