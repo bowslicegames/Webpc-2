@@ -3547,7 +3547,7 @@ async function bootQEMU() {
         "earlyprintk=ttyS0 console=ttyS0 root=/dev/vda loglevel=7 hostname=webpc2 ip=dhcp",
 
         "-drive",
-        "id=test,file=/pack-rootfs/disk-rootfs.img,format=raw,if=none",
+        "id=test,file=/pack-rootfs/disk-rootfs.img,format=qcow2,if=none",
 
         "-device",
         "virtio-blk-pci,drive=test",
