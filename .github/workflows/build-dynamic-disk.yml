@@ -62,6 +62,7 @@ jobs:
             noInitialRun: true,
             noExitRuntime: true,
             preRun: [],
+            pty: { onSignal: () => {}, onReadable: () => {}, onData: () => {}, write: () => {}, resize: () => {} },
             print: (...args) => console.log("[qemu]", ...args),
             printErr: (...args) => console.error("[qemu]", ...args),
             locateFile: (name) => {
