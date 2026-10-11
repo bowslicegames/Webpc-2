@@ -4366,7 +4366,7 @@ main();
   const networkStatus = document.getElementById("networkStatus");
   if (networkTestButton && networkStatus) {
     networkTestButton.addEventListener("click", () => {
-      if (!shellReadyNow()) { networkStatus.textContent = "Guest internet: wait for Linux sign-in first."; return; }
+      if (!window.webpcShellReadyNow || !window.webpcShellReadyNow()) { networkStatus.textContent = "Guest internet: wait for Linux sign-in first."; return; }
       networkTestButton.disabled = true;
       networkStatus.textContent = "Testing ICMP ping and HTTPS from inside Linux…";
       const command = "ping -c 1 -W 3 1.1.1.1 >/tmp/webpc-ping.log 2>&1; p=$?; " +
@@ -4375,7 +4375,12 @@ main();
         "if [ \"$h\" -ne 0 ] && command -v curl >/dev/null 2>&1; then curl -fsSL --max-time 8 -o /dev/null https://example.com; h=$?; fi; " +
         "if [ \"$h\" -eq 0 ]; then echo WEBPC_HTTPS_OK; else echo WEBPC_HTTPS_FAIL; fi; " +
         "tail -n 2 /tmp/webpc-ping.log 2>/dev/null || true";
-      runGuestForService("browser", command, (err, out) => {
+      if (!window.webpcRunGuestForService) {
+        networkTestButton.disabled = false;
+        networkStatus.textContent = "Guest command bridge is not ready yet. Reload after Linux has started.";
+        return;
+      }
+      window.webpcRunGuestForService("browser", command, (err, out) => {
         networkTestButton.disabled = false;
         if (err) { networkStatus.textContent = "Guest internet test failed to run: " + err.message; return; }
         const pingOk = out.includes("WEBPC_PING_OK");
@@ -4466,6 +4471,9 @@ main();
   function runGuestForService(service, command, callback) {
     return enqueueForService(SERVICE_NAMES.includes(service) ? service : "system", command, callback);
   }
+  // Expose only the small guest-command bridge needed by the earlier desktop settings UI.
+  window.webpcShellReadyNow = shellReadyNow;
+  window.webpcRunGuestForService = runGuestForService;
   function takeNextQueuedJob() {
     for (let checked = 0; checked < SERVICE_NAMES.length; checked++) {
       const index = (serviceCursor + checked) % SERVICE_NAMES.length;
