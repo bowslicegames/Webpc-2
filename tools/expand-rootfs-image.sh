@@ -28,7 +28,7 @@ src_bytes=$(wc -c < "$src" | tr -d ' ')
 umask 077
 cp --reflink=auto --sparse=always -- "$src" "$out"
 cleanup() { rm -f -- "$out"; }
-trap cleanup HUP INT TERM
+trap cleanup EXIT HUP INT TERM
 truncate -s "$target_bytes" "$out"
 e2fsck -f -p "$out" || rc=$?
 rc=${rc:-0}
@@ -38,7 +38,7 @@ rc=0
 e2fsck -f -p "$out" || rc=$?
 rc=${rc:-0}
 [ "$rc" -le 1 ] || { echo "Post-resize e2fsck failed (status $rc); output removed." >&2; exit 1; }
-trap - HUP INT TERM
+trap - EXIT HUP INT TERM
 echo "Created 4 GiB sparse ext4 image: $out"
 echo "IMPORTANT: this is not yet a deployable WebPC release asset."
 echo "Rebuild the Emscripten preload package and verify browser storage behavior before deployment."
