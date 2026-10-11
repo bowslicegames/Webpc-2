@@ -752,6 +752,7 @@ button:active {
 #app.webpc-login-active > #terminalWrap,#app.webpc-login-active > #controls {display:none !important}
 @media (prefers-reduced-motion:reduce) {#webpcBootProgress{transition:none}}
 
+@media(max-width:600px){#fileList{max-height:none;min-height:130px}}
 </style>
 </head>
 
@@ -4960,7 +4961,6 @@ main();
   });
 
   fileSearch.addEventListener("input",()=>renderFileEntries((filePath.value||"/").trim()||"/"));fileSort.addEventListener("change",()=>renderFileEntries((filePath.value||"/").trim()||"/"));
-   fileSearch.addEventListener("input",()=>renderFileEntries((filePath.value||"/").trim()||"/"));fileSort.addEventListener("change",()=>renderFileEntries((filePath.value||"/").trim()||"/"));
    document.getElementById("fileRefresh").addEventListener("click",refreshFiles);
   document.getElementById("fileOpenPath").addEventListener("click",refreshFiles);
   document.getElementById("fileUp").addEventListener("click",()=>{
