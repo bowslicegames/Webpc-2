@@ -37,6 +37,7 @@ jobs:
             --pattern "load-rootfs.js" \
             --pattern "out.js" \
             --pattern "qemu-system-x86_64.wasm" \
+            --pattern "qemu-system-x86_64.worker.js" \
             --dir work
           test -s work/load-rootfs.data
           test -s work/load-rootfs.js
