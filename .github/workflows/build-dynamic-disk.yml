@@ -61,14 +61,14 @@ jobs:
 
           js = Path("work/load-rootfs.js").read_text()
           match = re.search(
-              r'\{[^{}]*["\\']filename["\\']\s*:\s*["\\']/pack-rootfs/disk-rootfs\.img["\\'][^{}]*\}',
+              r"""\{[^{}]*["']filename["']\s*:\s*["']/pack-rootfs/disk-rootfs\.img["'][^{}]*\}""",
               js, re.S
           )
           if not match:
               raise SystemExit("Missing /pack-rootfs/disk-rootfs.img metadata.")
           entry = match.group(0)
-          start_match = re.search(r'["\\']start["\\']\s*:\s*(\d+)', entry)
-          end_match = re.search(r'["\\']end["\\']\s*:\s*(\d+)', entry)
+          start_match = re.search(r"""["']start["']\s*:\s*(\d+)""", entry)
+          end_match = re.search(r"""["']end["']\s*:\s*(\d+)""", entry)
           if not start_match or not end_match:
               raise SystemExit("Missing image start/end offsets.")
           start, end = int(start_match.group(1)), int(end_match.group(1))
@@ -158,13 +158,13 @@ jobs:
           old_js = Path("work/load-rootfs.js").read_text()
           qcow = Path("work/disk-rootfs.qcow2").read_bytes()
           match = re.search(
-              r'\{[^{}]*["\\']filename["\\']\s*:\s*["\\']/pack-rootfs/disk-rootfs\.img["\\'][^{}]*\}',
+              r"""\{[^{}]*["']filename["']\s*:\s*["']/pack-rootfs/disk-rootfs\.img["'][^{}]*\}""",
               old_js, re.S
           )
           if not match:
               raise SystemExit("Cannot locate root disk metadata.")
           entry = match.group(0)
-          sm = re.search(r'(["\\']start["\\']\s*:\s*)(\d+)', entry)
+          sm = re.search(r"""(["']start["']\s*:\s*)(\d+)""", entry)
           em = re.search(r'(["\\']end["\\']\s*:\s*)(\d+)', entry)
           if not sm or not em:
               raise SystemExit("Missing disk offsets.")
@@ -173,17 +173,17 @@ jobs:
               raise SystemExit("The original disk is not the final Emscripten package entry.")
           package = old_data[:start] + qcow
           end = start + len(qcow)
-          new_entry = re.sub(r'(["\\']end["\\']\s*:\s*)\d+',
+          new_entry = re.sub(r"""(["']end["']\s*:\s*)\d+""",
                              lambda m: m.group(1) + str(end), entry, count=1)
           js = old_js[:match.start()] + new_entry + old_js[match.end():]
           js = js.replace("load-rootfs.data", "load-rootfs-qcow2.data")
-          js, count = re.subn(r'(remote_package_size["\\']?\s*[:=]\s*)\d+',
+          js, count = re.subn(r"""(remote_package_size["']?\s*[:=]\s*)\d+""",
                               lambda m: m.group(1) + str(len(package)), js, count=1)
           if count != 1:
               raise SystemExit("Could not update Emscripten remote_package_size.")
           digest = "sha256-" + hashlib.sha256(package).hexdigest()
           js, uuid_count = re.subn(
-              r'(package_uuid["\\']?\s*[:=]\s*["\\'])([^"\\']+)(["\\'])',
+              r"""(package_uuid["']?\s*[:=]\s*["'])([^"']+)(["'])""",
               lambda m: m.group(1) + digest + m.group(3), js, count=1
           )
           if uuid_count == 0:
