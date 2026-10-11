@@ -198,12 +198,9 @@ jobs:
               raise SystemExit("Pre-boot asset list does not include the disk.")
 
           old_download = '    await downloadAsset(\n        FILES.rootfsData,\n        "rootfs",\n        "Downloading the Alpine Linux root filesystem."\n    );'
-          new_download = '    let rootDiskBlob = await downloadAsset(\n        FILES.rootfsDisk,\n        "rootfs",\n        "Downloading the sparse 8 GiB virtual disk (only allocated blocks are transferred)."\n    );\n    let rootDiskBinary = await rootDiskBlob.arrayBuffer();\n    downloaded.delete(FILES.rootfsDisk);\n    rootDiskBlob = null;'    preRun:
-            [mod => {
-                try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}
-                mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", new Uint8Array(rootDiskBinary));
-                rootDiskBinary = null;
-            }]'''
+          new_download = '    let rootDiskBlob = await downloadAsset(\n        FILES.rootfsDisk,\n        "rootfs",\n        "Downloading the sparse 8 GiB virtual disk (only allocated blocks are transferred)."\n    );\n    let rootDiskBinary = await rootDiskBlob.arrayBuffer();\n    downloaded.delete(FILES.rootfsDisk);\n    rootDiskBlob = null;'
+          old_prerun = '    preRun:\n            []'
+          new_prerun = '    preRun:\n            [mod => {\n                try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}\n                mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", new Uint8Array(rootDiskBinary));\n                rootDiskBinary = null;\n            }]'
           if old_prerun in s:
               s = s.replace(old_prerun, new_prerun, 1)
           elif 'mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", new Uint8Array(rootDiskBinary))' not in s:
