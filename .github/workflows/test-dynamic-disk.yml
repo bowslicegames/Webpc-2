@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/test-dynamic-disk.yml"
 
+# Re-run after each disk release so the exact published image is boot-tested.
 permissions:
   contents: read
 
