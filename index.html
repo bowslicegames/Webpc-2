@@ -4423,6 +4423,20 @@ main();
     setStatus("Linux shell ready · all desktop apps available");
     if(fileStatus) setFileStatus("Linux shell ready. Files are saved to the VM's /home/webpc folders.");
     if(document.getElementById("fileWindow").classList.contains("open")) refreshFiles();
+
+    /* Set the actual guest root password after the first successful root shell.
+       The VM disk is temporary, so this is re-applied for each fresh session. */
+    if (!window.webpcRootPasswordSetupStarted && typeof runGuest === "function") {
+      window.webpcRootPasswordSetupStarted = true;
+      runGuest("printf 'root:WEBPC\\n' | chpasswd", function(err) {
+        if (err) {
+          setStatus("Linux shell ready · UI sign-in active; root password setup could not be confirmed");
+          console.warn("WebPC root password setup failed:", err);
+        } else {
+          setStatus("Linux shell ready · root password set");
+        }
+      });
+    }
   };
   window.showDesktopUI = function() {
     /* The shell-ready callback is the only path that unlocks the desktop. */
