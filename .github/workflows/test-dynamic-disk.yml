@@ -79,6 +79,7 @@ jobs:
             ],
             pty: {
               onSignal: () => {}, onReadable: () => {}, onData: () => {}, resize: () => {},
+              ioctl: () => ({ iflag: 0, oflag: 0, cflag: 0, lflag: 0, cc: [] }),
               write: data => {
                 serial += String(data == null ? "" : data);
                 if (serial.length > 500000) serial = serial.slice(-250000);
