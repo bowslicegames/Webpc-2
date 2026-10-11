@@ -1042,7 +1042,7 @@ button:active {
             <div class="window-titlebar"><span>🟩</span><span class="window-title">Minecraft Java Edition</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body"><div class="info-content">
               <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Java 21 runtime from here. Setup runs as a background guest task, so the File Manager and terminal remain usable while packages download.</p><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button primary" id="installJava">Install Java 21</button></div></div>
-              <div class="info-card"><h3>Virtual computer</h3><p><b>Virtual disk:</b> 8 GiB qcow2, dynamically growing. The backing file starts small and grows as Linux writes data; it does not pre-allocate 8 GiB of browser memory. The guest disk is temporary and resets on a fresh launch.</p><p style="margin-top:8px"><b>Guest RAM:</b> 512 MiB. QEMU uses CPU emulation, with browser-side memory kept deliberately conservative.</p><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div></div>
+              <div class="info-card"><h3>Virtual computer</h3><p><b>Virtual disk:</b> 8 GiB qcow2, dynamically growing. The backing file starts small and grows as Linux writes data; it does not pre-allocate 8 GiB of browser memory. The guest disk is temporary and resets on a fresh launch.</p><p style="margin-top:8px"><b>Guest RAM:</b> 512 MiB. QEMU uses CPU emulation, with browser-side memory kept deliberately conservative.</p><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div><div style="display:flex;gap:7px;margin-top:10px"><button class="ui-button" id="networkTest">Test guest internet</button></div><div class="info-status" id="networkStatus">Guest internet: not checked</div></div>
             </div><div class="window-resize" aria-hidden="true"></div></div>
           </section>
           <section class="desktop-window browser-window" id="browserWindow" aria-label="Web Browser window">
@@ -4352,13 +4352,39 @@ main();
   const graphicsStatus = document.getElementById("graphicsStatus");
   if (graphicsStatus) {
     const canvas = document.createElement("canvas");
-    const gl2 = canvas.getContext("webgl2");
-    const gl = gl2 || canvas.getContext("webgl");
-    graphicsStatus.textContent = gl2
-      ? "Browser graphics: WebGL 2 available. The current Linux guest display still uses QEMU's serial path; this is not direct GPU passthrough."
+    let gl2 = null, gl = null;
+    try { gl2 = canvas.getContext("webgl2"); gl = gl2 || canvas.getContext("webgl"); } catch (_) {}
+    const memoryHint = navigator.deviceMemory ? " Device memory reported: " + navigator.deviceMemory + " GB." : " Device memory is not exposed by this browser.";
+    graphicsStatus.textContent = (gl2
+      ? "Browser graphics: WebGL 2 available."
       : gl
-        ? "Browser graphics: WebGL available. The current Linux guest display still uses QEMU's serial path; this is not direct GPU passthrough."
-        : "Browser graphics: WebGL unavailable in this tab; QEMU remains CPU-emulated.";
+        ? "Browser graphics: WebGL available."
+        : "Browser graphics: WebGL unavailable in this tab; QEMU remains CPU-emulated.") +
+      " The guest currently uses QEMU's serial display path; this is not direct GPU passthrough." + memoryHint;
+  }
+  const networkTestButton = document.getElementById("networkTest");
+  const networkStatus = document.getElementById("networkStatus");
+  if (networkTestButton && networkStatus) {
+    networkTestButton.addEventListener("click", () => {
+      if (!shellReadyNow()) { networkStatus.textContent = "Guest internet: wait for Linux sign-in first."; return; }
+      networkTestButton.disabled = true;
+      networkStatus.textContent = "Testing ICMP ping and HTTPS from inside Linux…";
+      const command = "ping -c 1 -W 3 1.1.1.1 >/tmp/webpc-ping.log 2>&1; p=$?; " +
+        "if [ \"$p\" -eq 0 ]; then echo WEBPC_PING_OK; else echo WEBPC_PING_FAIL; fi; " +
+        "if command -v wget >/dev/null 2>&1; then wget -q -T 8 -O /dev/null https://example.com; h=$?; else h=127; fi; " +
+        "if [ \"$h\" -ne 0 ] && command -v curl >/dev/null 2>&1; then curl -fsSL --max-time 8 -o /dev/null https://example.com; h=$?; fi; " +
+        "if [ \"$h\" -eq 0 ]; then echo WEBPC_HTTPS_OK; else echo WEBPC_HTTPS_FAIL; fi; " +
+        "tail -n 2 /tmp/webpc-ping.log 2>/dev/null || true";
+      runGuestForService("browser", command, (err, out) => {
+        networkTestButton.disabled = false;
+        if (err) { networkStatus.textContent = "Guest internet test failed to run: " + err.message; return; }
+        const pingOk = out.includes("WEBPC_PING_OK");
+        const httpsOk = out.includes("WEBPC_HTTPS_OK");
+        networkStatus.textContent = "ICMP ping: " + (pingOk ? "reachable" : "blocked or unavailable") +
+          " · HTTPS download: " + (httpsOk ? "working" : "failed") +
+          (httpsOk ? ". Guest-side large-file downloads can use the File Manager's Download URL action." : ". Check the network log in /tmp/webpc-ping.log.");
+      });
+    });
   }
   const host = document.getElementById("windowHost");
   const fileStatus = document.getElementById("fileStatus");
