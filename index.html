@@ -2596,10 +2596,20 @@ async function createTerminal() {
     if (masterPTY && typeof masterPTY.write === "function" && !masterPTY.__webpcCtrlWrapped) {
         const originalPTYWrite = masterPTY.write.bind(masterPTY);
         masterPTY.write = function(data, ...args) {
-            if (webpcCtrlModifierArmed && typeof data === "string" && /^[a-z]$/i.test(data)) {
-                webpcCtrlModifierArmed = false;
-                updateCtrlModifierButton();
-                data = String.fromCharCode(data.toLowerCase().charCodeAt(0) & 31);
+            if (webpcCtrlModifierArmed) {
+                let typed = "";
+                if (typeof data === "string") typed = data;
+                else if ((Array.isArray(data) || data instanceof Uint8Array) && data.length === 1) {
+                    typed = String.fromCharCode(data[0]);
+                }
+                if (/^[a-z]$/i.test(typed)) {
+                    webpcCtrlModifierArmed = false;
+                    updateCtrlModifierButton();
+                    const controlByte = typed.toLowerCase().charCodeAt(0) & 31;
+                    data = typeof data === "string"
+                        ? String.fromCharCode(controlByte)
+                        : (data instanceof Uint8Array ? new Uint8Array([controlByte]) : [controlByte]);
+                }
             }
             return originalPTYWrite(data, ...args);
         };
