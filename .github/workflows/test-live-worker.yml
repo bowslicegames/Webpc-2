@@ -6,7 +6,7 @@ on:
     paths:
       - ".github/workflows/test-live-worker.yml"
 
-# This runs after release rebuilds to catch stale Worker asset pins.
+# This runs after release rebuilds to catch stale Worker asset pins and stale disk bytes.
 permissions:
   contents: read
 
