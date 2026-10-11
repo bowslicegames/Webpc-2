@@ -389,7 +389,16 @@ body {
     display: flex;
     gap: 7px;
     margin-top: 7px;
+    flex-wrap: wrap;
 }
+#nanoActions {
+    display: none;
+    gap: 7px;
+    margin-top: 7px;
+}
+#nanoActions.visible { display: flex; }
+#nanoActions button { background: #245b42; }
+#nanoActions #nanoExit { background: #7b3434; }
 
 button {
     flex: 1;
@@ -971,6 +980,10 @@ button:active {
             <button id="escKey" title="Send Escape">Esc</button>
             <button id="clear">Clear</button>
         </div>
+        <div id="nanoActions" aria-label="Nano editor controls">
+            <button id="nanoSave" type="button">Save</button>
+            <button id="nanoExit" type="button">Exit nano</button>
+        </div>
 
     </div>
 
@@ -1389,6 +1402,7 @@ let shellReady = false;
 let webSetupStarted = false;
 let webpcCtrlModifierArmed = false;
 let webpcLoginAttemptPending = false;
+let webpcNanoMode = false;
 let shellOutputBuffer = "";
 let loginPromptShown = false;
 let webpcSerialStarted = false;
@@ -2630,6 +2644,7 @@ async function createTerminal() {
             if (bytes && typeof bytes.length === "number") {
                 /* noteBootSignal forwards each chunk to the desktop command broker. */
                 noteBootSignal(bytes);
+                updateNanoControls();
             }
         });
     }
@@ -2868,9 +2883,16 @@ function noteBootSignal(data) {
         if (passwordInput) setTimeout(() => passwordInput.focus(), 60);
     }
 
-    /* Detect a usable shell for guest commands and unlock only after sign-in. */
+    /* A root prompt is not proof of authentication unless it follows a submitted login. */
+    if (webpcLoginAttemptPending && /login incorrect|authentication failure|incorrect password/i.test(normalizedOutput)) {
+        webpcLoginAttemptPending = false;
+        const hint = $("webpcLoginHint");
+        if (hint) hint.textContent = "Incorrect password. Please try again.";
+        const button = $("webpcSignIn");
+        if (button) button.disabled = false;
+    }
     const rootPromptSeen = /(?:^|\n)[^\n]{0,100}#\s*$/.test(lastLine);
-    if (bootSignalReceived && rootPromptSeen) {
+    if (bootSignalReceived && webpcLoginAttemptPending && rootPromptSeen) {
         onShellReady();
     }
 }
@@ -3808,6 +3830,7 @@ function setupControls() {
         "click",
         sendCommand
     );
+    setupNanoButtons();
 
     $("command").addEventListener(
         "keydown",
@@ -3850,6 +3873,90 @@ function setupControls() {
     );
 }
 
+
+function sendTerminalControl(code) {
+    webpcCtrlModifierArmed = false;
+    updateCtrlModifierButton();
+    if (masterPTY && typeof masterPTY.write === "function") {
+        masterPTY.write(String.fromCharCode(code));
+    } else if (terminal && typeof terminal.paste === "function") {
+        terminal.paste(String.fromCharCode(code));
+    }
+    if (terminal) terminal.focus();
+}
+
+function updateNanoControls() {
+    if (!terminal || !terminal.buffer || !terminal.buffer.active) return;
+    const buf = terminal.buffer.active;
+    const lines = [];
+    const start = Math.max(0, buf.length - 12);
+    for (let i = start; i < buf.length; i++) {
+        const line = buf.getLine(i);
+        if (line) lines.push(line.translateToString(true));
+    }
+    const tail = lines.join("\n");
+    const looksLikeNano = /\^G\s*Help[\s\S]*\^X\s*Exit/i.test(tail) ||
+        /GNU nano|nano \d/i.test(tail);
+    const savePrompt = /Save modified buffer\?|File Name to Write:/i.test(tail);
+    const shellPrompt = /(?:^|\n)[^\n]{0,100}(?:~[#>$]|[#>$])\s*$/.test(tail);
+    if (looksLikeNano || savePrompt) webpcNanoMode = true;
+    else if (shellPrompt) webpcNanoMode = false;
+    const actions = $("nanoActions");
+    if (actions) actions.classList.toggle("visible", webpcNanoMode);
+    const save = $("nanoSave");
+    const exit = $("nanoExit");
+    if (save) save.textContent = /Save modified buffer\?/i.test(tail) ? "Save changes" : "Save";
+    if (exit) exit.textContent = /Save modified buffer\?/i.test(tail) ? "Exit without saving" : "Exit nano";
+}
+
+function setupNanoButtons() {
+    const save = $("nanoSave");
+    const exit = $("nanoExit");
+    if (save) save.addEventListener("click", () => {
+        if (!webpcNanoMode) return;
+        const buf = terminal && terminal.buffer && terminal.buffer.active;
+        const tail = [];
+        if (buf) {
+            for (let i = Math.max(0, buf.length - 8); i < buf.length; i++) {
+                const line = buf.getLine(i);
+                if (line) tail.push(line.translateToString(true));
+            }
+        }
+        const text = tail.join("\n");
+        if (/Save modified buffer\?/i.test(text)) {
+            if (masterPTY && masterPTY.write) masterPTY.write("y\r");
+            else if (terminal) terminal.paste("y\r");
+        } else {
+            sendTerminalControl(15); // Ctrl+O: nano Write Out
+            setTimeout(() => {
+                if (masterPTY && masterPTY.write) masterPTY.write("\r");
+                else if (terminal) terminal.paste("\r");
+                if (terminal) terminal.focus();
+            }, 180);
+        }
+        if (terminal) terminal.focus();
+    });
+    if (exit) exit.addEventListener("click", () => {
+        if (!webpcNanoMode) return;
+        const buf = terminal && terminal.buffer && terminal.buffer.active;
+        const tail = [];
+        if (buf) {
+            for (let i = Math.max(0, buf.length - 8); i < buf.length; i++) {
+                const line = buf.getLine(i);
+                if (line) tail.push(line.translateToString(true));
+            }
+        }
+        const text = tail.join("\n");
+        if (/Save modified buffer\?/i.test(text)) {
+            if (masterPTY && masterPTY.write) masterPTY.write("n\r");
+            else if (terminal) terminal.paste("n\r");
+        } else {
+            sendTerminalControl(24); // Ctrl+X: nano Exit
+        }
+        if (terminal) terminal.focus();
+        setTimeout(updateNanoControls, 80);
+    });
+}
 
 function updateCtrlModifierButton() {
     const button = $("ctrlKey");
