@@ -1289,7 +1289,7 @@ function assetURL(filename) {
  * Cache storage is best-effort: if Safari/iOS evicts it or denies
  * quota, WebPC simply downloads the assets again from the network.
  */
-const ASSET_CACHE_NAME = "webpc-runtime-assets-v1-20261011";
+const ASSET_CACHE_NAME = "webpc-runtime-assets-v2-20261011-qcow2";
 let assetCachePromise = null;
 
 function openAssetCache() {
@@ -1362,11 +1362,8 @@ const FILES = {
     initramfsLoader:
         "load-initramfs.js",
 
-    rootfsData:
-        "load-rootfs.data",
-
-    rootfsLoader:
-        "load-rootfs.js",
+    rootfsDisk:
+        "disk-rootfs-qcow2.img",
 
     stack:
         "stack.js",
@@ -1397,8 +1394,8 @@ const KNOWN_SIZES = {
     "load-initramfs.data":
         9699151,
 
-    "load-rootfs.data":
-        82611515,
+    "disk-rootfs-qcow2.img":
+        63176704,
 
     "c2w-net-proxy.wasm.gzip":
         4328785,
@@ -1718,8 +1715,7 @@ async function prebootCheck() {
         FILES.kernelLoader,
         FILES.initramfsData,
         FILES.initramfsLoader,
-        FILES.rootfsData,
-        FILES.rootfsLoader,
+        FILES.rootfsDisk,
         FILES.stack,
         FILES.stackWorker,
         FILES.netProxy
@@ -3216,11 +3212,14 @@ async function bootQEMU() {
         "Downloading the Alpine Linux initramfs."
     );
 
-    await downloadAsset(
-        FILES.rootfsData,
+    let rootDiskBlob = await downloadAsset(
+        FILES.rootfsDisk,
         "rootfs",
-        "Downloading the Alpine Linux root filesystem."
+        "Downloading the sparse 8 GiB virtual disk (only allocated blocks are transferred)."
     );
+    let rootDiskBinary = await rootDiskBlob.arrayBuffer();
+    downloaded.delete(FILES.rootfsDisk);
+    rootDiskBlob = null;
 
 
     /*
@@ -3243,7 +3242,6 @@ async function bootQEMU() {
         FILES.romLoader,
         FILES.kernelLoader,
         FILES.initramfsLoader,
-        FILES.rootfsLoader
     ];
 
     for (
@@ -3353,7 +3351,11 @@ async function bootQEMU() {
             QEMU's socket netdev connects to that endpoint.
         */
         preRun:
-            []
+            [mod => {
+                try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}
+                mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", new Uint8Array(rootDiskBinary));
+                rootDiskBinary = null;
+            }]
     };
 
 
@@ -3390,11 +3392,7 @@ async function bootQEMU() {
         )
     );
 
-    await loadScript(
-        blobURL(
-            FILES.rootfsLoader
-        )
-    );
+    // The qcow2 guest disk is written into MEMFS in Module.preRun; no huge raw disk is preloaded.
 
 
     /*
