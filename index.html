@@ -675,7 +675,11 @@ button:active {
 .file-editor {flex:1;min-height:90px;width:100%;resize:none;border:1px solid #34485e;border-radius:8px;background:#090f17;color:#dce9f8;padding:10px;
   font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;outline:none}
 .file-footer {display:flex;align-items:center;gap:8px;min-height:18px;color:#9cb0c6;font-size:11px;overflow-wrap:anywhere}
-#fileList {display:flex;flex-direction:column;gap:3px;align-content:stretch;flex:1 1 150px;min-height:110px;overflow:auto;padding:4px;border:1px solid #293b50;border-radius:8px;background:#0a111a}
+#fileList {display:flex;flex-direction:column;gap:3px;align-content:stretch;flex:1 1 220px;min-height:150px;overflow:auto;padding:5px;border:1px solid #293b50;border-radius:8px;background:#0a111a}
+.file-location{display:flex;gap:5px;align-items:center;flex-wrap:wrap;min-height:27px;color:#9db4cc;font-size:11px}.file-location button{border:0;background:transparent;color:#bcdcff;padding:3px 4px;border-radius:4px;font-size:11px}
+.file-search-row{display:flex;gap:6px;align-items:center}.file-search{height:34px;min-width:0;flex:1;border:1px solid #34485e;border-radius:7px;background:#0a111a;color:#e7f1ff;padding:0 9px;font-size:12px}.file-sort{height:34px;max-width:130px;border:1px solid #34485e;border-radius:7px;background:#0a111a;color:#e7f1ff;padding:0 6px;font-size:11px}
+.file-row{grid-template-columns:28px minmax(0,1fr) 88px;min-height:43px}.file-row-icon{font-size:20px;text-align:center}.file-row-meta{display:block;color:#849bb4;font-size:10px;margin-top:3px;overflow-wrap:anywhere}.file-detail{padding:8px 10px;border:1px solid #293b50;border-radius:8px;background:#111e2e;color:#b8cce1;font-size:11px;line-height:1.5;overflow-wrap:anywhere}.file-detail b{color:#f0f6ff}
+.task-list{display:flex;flex-direction:column;gap:8px;padding:12px;overflow:auto;min-height:0;flex:1}.task-card{border:1px solid #31475f;background:#111e2e;border-radius:10px;padding:11px}.task-card-head{display:flex;align-items:center;gap:8px;font-weight:700;font-size:12px}.task-card-meta{font-size:11px;color:#9eb3ca;margin-top:5px;overflow-wrap:anywhere}.task-card-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.task-empty{padding:24px 12px;text-align:center;color:#9db2c9;font-size:12px;line-height:1.6}.service-pill{display:inline-block;border-radius:99px;padding:3px 7px;background:#1e3852;color:#b8dcff;font-size:10px}
 .file-row {display:grid;grid-template-columns:minmax(0,1fr) 90px;align-items:center;gap:10px;width:100%;min-height:38px;height:auto;flex:0 0 auto;padding:7px 10px;text-align:left;border:1px solid transparent;border-radius:6px;background:transparent;color:#dce9f8;font-size:12px;font-weight:500}
 .file-row:hover,.file-row:focus {background:#172b40;border-color:#304a65;outline:none}
 .file-row.selected {background:#21476b;border-color:#4b8bc4}
@@ -1022,12 +1026,15 @@ button:active {
               <div class="file-layout">
                 <aside class="file-sidebar"><button class="file-nav active" data-folder="Desktop">🖥 Desktop</button><button class="file-nav" data-folder="Documents">📄 Documents</button><button class="file-nav" data-folder="Downloads">⬇ Downloads</button><button class="file-nav" data-folder="">⌂ Home</button></aside>
                 <div class="file-main">
+                  <div class="file-location" id="fileBreadcrumbs" aria-label="Folder breadcrumbs"><span>Filesystem</span></div>
                   <input class="file-path" id="filePath" value="/" aria-label="Current folder path">
+                  <div class="file-search-row"><input class="file-search" id="fileSearch" type="search" placeholder="Search this folder…" aria-label="Search files"><select class="file-sort" id="fileSort" aria-label="Sort files"><option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="size">Smallest first</option><option value="size-desc">Largest first</option><option value="type">Folders first</option></select></div>
                   <div class="file-toolbar"><button class="ui-button" id="fileUp">↑ Up</button><button class="ui-button" id="fileNew">＋ New</button><button class="ui-button" id="fileRefresh">↻ Refresh</button><button class="ui-button" id="fileUpload">⇧ Upload file</button><button class="ui-button" id="fileDownloadUrl">↓ Download URL</button><button class="ui-button primary" id="fileSave">Save to disk</button><button class="ui-button" id="fileOpenPath">Open path</button><button class="ui-button" id="fileDelete">Delete selected</button><span class="file-menu-wrap"><button class="ui-button" id="fileMenu" aria-label="More file actions" aria-expanded="false" title="More actions">⋮</button><span id="fileMenuPopup" hidden><button id="fileDecompress" hidden>📦 Decompress</button></span></span></div>
                   <input id="fileUploadInput" type="file" hidden>
                   <input class="file-name" id="fileName" value="hello.txt" aria-label="File name">
                   <textarea class="file-editor" id="fileEditor" spellcheck="false" placeholder="Write a file here. Save to disk writes it to the Linux virtual disk using a hidden shell command."></textarea>
                   <div id="fileList" aria-label="Files in current folder"></div>
+                  <div class="file-detail" id="fileDetails"><b>No item selected</b><br>Choose a file to see its path, type, and size.</div>
                   <div class="file-footer" id="fileStatus">Waiting for the Alpine shell…</div>
                 </div>
               </div>
@@ -1044,6 +1051,10 @@ button:active {
               <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Java 21 runtime from here. Setup runs as a background guest task, so the File Manager and terminal remain usable while packages download.</p><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button primary" id="installJava">Install Java 21</button></div></div>
               <div class="info-card"><h3>Virtual computer</h3><p><b>Virtual disk:</b> 8 GiB qcow2, dynamically growing. The backing file starts small and grows as Linux writes data; it does not pre-allocate 8 GiB of browser memory. Actual used blocks still consume browser memory, so avoid filling multiple GiB in an iPad tab. Guest-side downloads avoid a second full-file JavaScript buffer, and the guest disk resets on a fresh launch.</p><p style="margin-top:8px"><b>Guest RAM:</b> 512 MiB. QEMU uses CPU emulation, with browser-side memory kept deliberately conservative.</p><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div><div style="display:flex;gap:7px;margin-top:10px"><button class="ui-button" id="networkTest">Test guest internet</button></div><div class="info-status" id="networkStatus">Guest internet: not checked</div></div>
             </div><div class="window-resize" aria-hidden="true"></div></div>
+          </section>
+          <section class="desktop-window" id="servicesWindow" aria-label="Services and task manager window">
+            <div class="window-titlebar"><span>⚙️</span><span class="window-title">Services & Background Tasks</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
+            <div class="window-body" style="flex-direction:column"><div class="info-content" style="padding:12px 14px 4px"><div class="info-card"><h3>Linux task supervisor</h3><p>Long downloads, archive extraction and Java setup run as detached Linux processes. Short control/status commands still use the shared serial bridge.</p><div class="info-status" id="serviceSummary">No background tasks started this session.</div></div></div><div class="task-list" id="serviceTaskList"><div class="task-empty">No background tasks yet. Start a download, archive extraction, or Java setup to see it here.</div></div></div>
           </section>
           <section class="desktop-window browser-window" id="browserWindow" aria-label="Web Browser window">
             <div class="window-titlebar"><span>🌐</span><span class="window-title">Web Browser</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
@@ -1065,7 +1076,7 @@ button:active {
           </section>
         </div>
       </div>
-      <div id="appDock" aria-label="App dock"><button class="dock-app" data-open-app="files" aria-label="Files" title="File Manager">📁</button><button class="dock-app" data-open-app="terminal" aria-label="Terminal" title="Terminal">▣</button><button class="dock-app" data-open-app="minecraft" aria-label="Minecraft" title="Minecraft Java Edition">🟩</button><button class="dock-app" data-open-app="browser" aria-label="Browser" title="Web Browser">🌐</button></div>
+      <div id="appDock" aria-label="App dock"><button class="dock-app" data-open-app="files" aria-label="Files" title="File Manager">📁</button><button class="dock-app" data-open-app="terminal" aria-label="Terminal" title="Terminal">▣</button><button class="dock-app" data-open-app="minecraft" aria-label="Minecraft" title="Minecraft Java Edition">🟩</button><button class="dock-app" data-open-app="browser" aria-label="Browser" title="Web Browser">🌐</button><button class="dock-app" data-open-app="services" aria-label="Services" title="Services & Tasks">⚙️</button></div>
     </div>
 
 </div>
@@ -4397,6 +4408,8 @@ main();
   const fileName = document.getElementById("fileName");
   const editor = document.getElementById("fileEditor");
   const fileList = document.getElementById("fileList");
+  const fileSearch=document.getElementById("fileSearch"),fileSort=document.getElementById("fileSort"),fileDetails=document.getElementById("fileDetails"),fileBreadcrumbs=document.getElementById("fileBreadcrumbs");
+  let currentFileEntries=[];
   const terminalWindow = document.getElementById("terminalWindow");
   const terminalBody = document.getElementById("terminalWindowBody");
   const terminalWrap = document.getElementById("terminalWrap");
@@ -4589,6 +4602,7 @@ main();
     if (id === "terminalWindow") attachTerminal();
     if (id === "fileWindow") { if (shellReadyNow()) refreshFiles(); else fileStatus.textContent="Waiting for the Alpine shell…"; }
     if (id === "minecraftWindow") checkJavaStatus(false);
+     if(id==="servicesWindow")renderServiceTasks();
   }
   function resetTerminalBeforeClose() {
     if (!terminal || typeof terminal.paste !== "function") return;
@@ -4635,7 +4649,7 @@ main();
   }
   document.querySelectorAll("[data-open-app]").forEach(el => el.addEventListener("click", () => {
     const which = el.getAttribute("data-open-app");
-    showWindow(which === "files" ? "fileWindow" : which === "terminal" ? "terminalWindow" : which === "browser" ? "browserWindow" : "minecraftWindow");
+    showWindow(which === "files" ? "fileWindow" : which === "terminal" ? "terminalWindow" : which === "browser" ? "browserWindow" : which === "services" ? "servicesWindow" : "minecraftWindow");
   }));
   document.querySelectorAll(".desktop-window").forEach(win => {
     win.addEventListener("pointerdown", () => { win.style.zIndex = ++zTop; });
@@ -4800,7 +4814,7 @@ main();
     const taskId = "wpc-unzip-" + Date.now().toString(36);
     const taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
     const inner = command + " > " + shellQuote(taskLog) + " 2>&1; rc=$?; printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus);
-    const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null >/dev/null 2>&1 & echo WEBPC_TASK_STARTED";
+    const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null >/dev/null 2>&1 & echo WEBPC_TASK_STARTED:$!";
     startBackgroundTask("unzip", "Decompressing " + path.split("/").pop(), launch, taskStatus, taskLog);
   });
   function loadFile(path) {
@@ -4964,7 +4978,8 @@ main();
     }
   });
 
-  document.getElementById("fileRefresh").addEventListener("click",refreshFiles);
+  fileSearch.addEventListener("input",()=>renderFileEntries((filePath.value||"/").trim()||"/"));fileSort.addEventListener("change",()=>renderFileEntries((filePath.value||"/").trim()||"/"));
+   document.getElementById("fileRefresh").addEventListener("click",refreshFiles);
   document.getElementById("fileOpenPath").addEventListener("click",refreshFiles);
   document.getElementById("fileUp").addEventListener("click",()=>{
     let dir; try { dir=guestPath(); } catch(e) { setFileStatus(e.message,true); return; }
