@@ -25,7 +25,9 @@ jobs:
               https://webpc.bowslicegames.workers.dev/index.html -o work/live-index.html; then
               if grep -Fq 'Actual used blocks still consume browser memory' work/live-index.html \
                 && grep -Fq 'webpcRunGuestForService' work/live-index.html \
-                && grep -Fq 'format=qcow2' work/live-index.html; then
+                && grep -Fq 'format=qcow2' work/live-index.html \
+                && grep -Fq 'apk add --no-cache unzip' work/live-index.html \
+                && grep -Fq 'wget -q -T 5 -O /dev/null https://example.com' work/live-index.html; then
                 ready=1
                 break
               fi
