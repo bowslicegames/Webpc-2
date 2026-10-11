@@ -1894,6 +1894,11 @@ function updateOverall() {
         percent.toFixed(2) +
         "%";
 
+    const bootProgress = $("webpcBootProgress");
+    if (bootProgress) {
+        bootProgress.style.width = percent.toFixed(2) + "%";
+    }
+
     percentText.textContent =
         percent.toFixed(1) +
         "%";
