@@ -9,7 +9,7 @@ on:
 permissions:
   contents: write
 
-# Rebuilds are guarded, repeatable, and followed by a Worker pin refresh.
+# Rebuilds are guarded, repeatable, and followed by a Worker pin refresh and live check.
 concurrency:
   group: webpc-dynamic-disk-release
   cancel-in-progress: false
