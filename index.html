@@ -969,10 +969,7 @@ button:active {
             <button id="send">Send</button>
             <button id="ctrlKey" aria-pressed="false" title="Arm Ctrl, then press a letter in the terminal">Ctrl</button>
             <button id="escKey" title="Send Escape">Esc</button>
-            <button id="ctrlc">Ctrl+C</button>
             <button id="clear">Clear</button>
-            <button id="webtest" disabled>Web Test</button>
-            <button id="java" disabled>Java</button>
         </div>
 
     </div>
@@ -3792,20 +3789,6 @@ function setupControls() {
         sendCommand
     );
 
-    $("webtest").addEventListener(
-        "click",
-        () => {
-            sendGuestCommand(webTestCommand());
-        }
-    );
-
-    $("java").addEventListener(
-        "click",
-        () => {
-            sendGuestCommand(javaSetupCommand());
-        }
-    );
-
     $("command").addEventListener(
         "keydown",
         event => {
@@ -3832,15 +3815,6 @@ function setupControls() {
         updateCtrlModifierButton();
         if (terminal) terminal.focus();
     });
-
-    $("ctrlc").addEventListener(
-        "click",
-        () => {
-            if (terminal && typeof terminal.paste === "function") terminal.paste("\x03");
-            webpcCtrlModifierArmed = false;
-            updateCtrlModifierButton();
-        }
-    );
 
     $("clear").addEventListener(
         "click",
