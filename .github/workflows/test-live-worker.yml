@@ -1,0 +1,21 @@
+name: Check deployed WebPC Worker assets
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/test-live-worker.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check live index and dynamic disk endpoints
+        run: |
+          set -eux
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --max-time 30 -I https://webpc.bowslicegames.workers.dev/index.html
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --max-time 60 -I https://webpc.bowslicegames.workers.dev/assets/disk-rootfs-qcow2.img
