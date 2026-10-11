@@ -52,6 +52,13 @@ jobs:
           fi
           echo "qcow2 driver marker found in the actual QEMU WASM binary."
 
+      - name: Inspect Emscripten package compression and metadata
+        run: |
+          set -eux
+          file work/load-rootfs.data
+          od -An -tx1 -N16 work/load-rootfs.data
+          grep -a -n -E 'remote_package_size|package_uuid|lz4|gzip|decompress|DecompressionStream|filename.*disk-rootfs' work/load-rootfs.js | head -40 || true
+
       - name: Extract the actual ext4 disk from Emscripten's package
         run: |
           set -eux
