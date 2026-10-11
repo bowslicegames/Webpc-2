@@ -45,6 +45,7 @@ jobs:
           done
           qemu-img check work/disk-rootfs-qcow2.img
           qemu-img info work/disk-rootfs-qcow2.img
+          sed -n '1325,1340p' work/out.js
 
       - name: Boot Linux under the actual QEMU WebAssembly runtime
         run: |
