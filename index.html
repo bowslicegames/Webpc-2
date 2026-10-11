@@ -2586,19 +2586,39 @@ async function createTerminal() {
      */
     terminal.loadAddon(masterPTY);
 
-    /* On-screen Ctrl modifier for iPad/soft keyboards. The next letter
-       typed in xterm is translated to its ASCII control character. */
+    /* On-screen Ctrl modifier for iPad/soft keyboards.
+       Send the control byte straight to the PTY; terminal.paste() treats
+       its argument as pasted text and is not reliable for control bytes. */
     if (typeof terminal.attachCustomKeyEventHandler === "function") {
         terminal.attachCustomKeyEventHandler(event => {
             if (!webpcCtrlModifierArmed || event.type !== "keydown") return true;
-            if (event.key && event.key.length === 1) {
-                const code = event.key.toLowerCase().charCodeAt(0);
+
+            const key = event.key || "";
+            if (key.length === 1) {
+                const code = key.toLowerCase().charCodeAt(0);
                 if (code >= 97 && code <= 122) {
+                    event.preventDefault();
+                    event.stopPropagation();
+
                     webpcCtrlModifierArmed = false;
                     updateCtrlModifierButton();
-                    terminal.paste(String.fromCharCode(code & 31));
+
+                    const controlByte = String.fromCharCode(code & 31);
+                    if (masterPTY && typeof masterPTY.write === "function") {
+                        masterPTY.write(controlByte);
+                    } else if (terminal && typeof terminal.paste === "function") {
+                        terminal.paste(controlByte);
+                    }
                     return false;
                 }
+            }
+
+            /* Escape cancels the modifier without sending an accidental key. */
+            if (key === "Escape") {
+                event.preventDefault();
+                webpcCtrlModifierArmed = false;
+                updateCtrlModifierButton();
+                return false;
             }
             return true;
         });
@@ -3810,9 +3830,13 @@ function setupControls() {
     });
 
     $("escKey").addEventListener("click", () => {
-        if (terminal && typeof terminal.paste === "function") terminal.paste("\x1b");
         webpcCtrlModifierArmed = false;
         updateCtrlModifierButton();
+        if (masterPTY && typeof masterPTY.write === "function") {
+            masterPTY.write("\x1b");
+        } else if (terminal && typeof terminal.paste === "function") {
+            terminal.paste("\x1b");
+        }
         if (terminal) terminal.focus();
     });
 
