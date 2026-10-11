@@ -1,0 +1,121 @@
+name: Smoke-test dynamic WebPC disk in QEMU WASM
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/test-dynamic-disk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  qemu-qcow2-smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out WebPC 2
+        uses: actions/checkout@v4
+
+      - name: Install QEMU disk utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-utils
+
+      - name: Download the published runtime and dynamic disk
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          mkdir -p work
+          gh release download V1 --repo "${{ github.repository }}" \
+            --pattern "disk-rootfs-qcow2.img" \
+            --pattern "qemu-system-x86_64.wasm" \
+            --pattern "qemu-system-x86_64.worker.js" \
+            --pattern "out.js" \
+            --dir work
+          test -s work/disk-rootfs-qcow2.img
+          test -s work/qemu-system-x86_64.wasm
+          test -s work/qemu-system-x86_64.worker.js
+          test -s work/out.js
+
+      - name: Verify the disk is a sparse 8 GiB qcow2 image
+        run: |
+          set -eux
+          qemu-img check work/disk-rootfs-qcow2.img
+          qemu-img info --output=json work/disk-rootfs-qcow2.img > work/disk-info.json
+          python3 <<'PY'
+          import json
+          from pathlib import Path
+          info=json.loads(Path("work/disk-info.json").read_text())
+          assert info.get("format") == "qcow2", info
+          assert info.get("virtual-size") == 8*1024*1024*1024, info
+          size=Path("work/disk-rootfs-qcow2.img").stat().st_size
+          assert size < 8*1024*1024*1024, size
+          print(f"Disk verified: 8 GiB virtual, {size} physical bytes.")
+          PY
+
+      - name: Open the disk with the actual QEMU WebAssembly runtime
+        run: |
+          set -eux
+          cat > work/test-qcow2.cjs <<'JS'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const { pathToFileURL } = require("node:url");
+
+          const errors = [];
+          const disk = fs.readFileSync("work/disk-rootfs-qcow2.img");
+          global.location = { href: pathToFileURL(process.cwd() + "/").href, pathname: "/" };
+          global.Module = {
+            wasmBinary: fs.readFileSync("work/qemu-system-x86_64.wasm"),
+            mainScriptUrlOrBlob: pathToFileURL(path.resolve("work/out.js")).href,
+            noExitRuntime: true,
+            noInitialRun: false,
+            pty: { onSignal: () => {}, onReadable: () => {}, onData: () => {}, write: () => {}, resize: () => {} },
+            arguments: [
+              "-M", "pc",
+              "-m", "64M",
+              "-nodefaults",
+              "-display", "none",
+              "-serial", "none",
+              "-monitor", "none",
+              "-drive", "id=test,file=/pack-rootfs/disk-rootfs.img,format=qcow2,if=none",
+              "-device", "virtio-blk-pci,drive=test",
+              "-S"
+            ],
+            preRun: [mod => {
+              try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}
+              mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", disk);
+            }],
+            locateFile: name => path.resolve("work", name),
+            print: (...args) => console.log("[QEMU]", ...args),
+            printErr: (...args) => {
+              const line = args.join(" ");
+              errors.push(line);
+              console.error("[QEMU]", line);
+            },
+            onExit: code => {
+              console.error("QEMU exited before smoke-test timeout with code", code);
+              process.exit(code === 0 ? 0 : 1);
+            }
+          };
+
+          (async () => {
+            const qemu = await import(pathToFileURL(path.resolve("work/out.js")).href);
+            if (typeof qemu.default !== "function") throw new Error("QEMU Emscripten factory missing.");
+            await qemu.default(global.Module);
+            setTimeout(() => {
+              const fatal = errors.filter(line => /Could not open|unknown format|invalid format|unsupported qcow2|Failed to open/i.test(line));
+              if (fatal.length) {
+                console.error("QEMU disk-open errors:", fatal.join("\\n"));
+                process.exit(1);
+              }
+              console.log("PASS: QEMU WASM initialized with the qcow2 disk attached.");
+              process.exit(0);
+            }, 5000);
+          })().catch(error => {
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          });
+          JS
+          timeout 20s node work/test-qcow2.cjs
