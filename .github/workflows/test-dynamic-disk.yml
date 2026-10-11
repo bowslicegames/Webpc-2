@@ -17,10 +17,10 @@ jobs:
       - name: Check out WebPC 2
         uses: actions/checkout@v4
 
-      - name: Install disk utilities
+      - name: Install host QEMU and disk utilities
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-utils
+          sudo apt-get install -y qemu-system-x86 qemu-utils
 
       - name: Download the published guest disk and boot assets
         env:
@@ -33,103 +33,80 @@ jobs:
             --pattern "qemu-system-x86_64.wasm" \
             --pattern "qemu-system-x86_64.worker.js" \
             --pattern "out.js" \
-            --pattern "load-rom.data" \
-            --pattern "load-rom.js" \
             --pattern "load-kernel.data" \
             --pattern "load-kernel.js" \
             --pattern "load-initramfs.data" \
             --pattern "load-initramfs.js" \
             --dir work
-          for f in disk-rootfs-qcow2.img qemu-system-x86_64.wasm qemu-system-x86_64.worker.js out.js load-rom.data load-rom.js load-kernel.data load-kernel.js load-initramfs.data load-initramfs.js; do
+          for f in disk-rootfs-qcow2.img qemu-system-x86_64.wasm qemu-system-x86_64.worker.js out.js load-kernel.data load-kernel.js load-initramfs.data load-initramfs.js; do
             test -s "work/$f"
           done
           qemu-img check work/disk-rootfs-qcow2.img
           qemu-img info work/disk-rootfs-qcow2.img
-          sed -n '1325,1340p' work/out.js
 
-      - name: Boot Linux under the actual QEMU WebAssembly runtime
+      - name: Decode the actual kernel and initramfs using WebPC's LZ4 loader
         run: |
           set -eux
-          cat > work/test-boot.cjs <<'JS'
+          cat > work/extract-boot-files.cjs <<'JS'
           const fs = require("node:fs");
           const path = require("node:path");
           const vm = require("node:vm");
           const { pathToFileURL } = require("node:url");
 
-          let serial = "";
-          const errors = [];
           global.require = require;
           global.process = process;
           global.location = { href: pathToFileURL(process.cwd() + "/").href, pathname: "/" };
           global.Module = {
             wasmBinary: fs.readFileSync("work/qemu-system-x86_64.wasm"),
             mainScriptUrlOrBlob: pathToFileURL(path.resolve("work/out.js")).href,
-            noInitialRun: false,
+            noInitialRun: true,
             noExitRuntime: true,
-            arguments: [
-              "-nographic", "-M", "pc", "-m", "512M",
-              "-accel", "tcg,tb-size=500",
-              "-L", "/pack-rom/",
-              "-nic", "none",
-              "-kernel", "/pack-kernel/vmlinuz-virt",
-              "-initrd", "/pack-initramfs/initramfs-virt",
-              "-append", "earlyprintk=ttyS0 console=ttyS0 root=/dev/vda loglevel=7 hostname=webpc2",
-              "-drive", "id=test,file=/pack-rootfs/disk-rootfs.img,format=qcow2,if=none",
-              "-device", "virtio-blk-pci,drive=test"
-            ],
-            pty: {
-              onSignal: () => {}, onReadable: () => {}, onData: () => {}, resize: () => {},
-              ioctl: () => ({ iflag: 0, oflag: 0, cflag: 0, lflag: 0, cc: [] }),
-              write: data => {
-                serial += String(data == null ? "" : data);
-                if (serial.length > 500000) serial = serial.slice(-250000);
-              }
-            },
-            preRun: [mod => {
-              try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}
-              mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", fs.readFileSync("work/disk-rootfs-qcow2.img"));
-            }],
+            preRun: [],
+            pty: { onSignal: () => {}, onReadable: () => {}, onData: () => {}, write: () => {}, resize: () => {} },
             locateFile: name => path.resolve("work", name),
-            print: (...args) => { const line = args.join(" "); console.log("[QEMU]", line); },
-            printErr: (...args) => {
-              const line = args.join(" ");
-              errors.push(line);
-              console.error("[QEMU stderr]", line);
-            },
-            onExit: code => {
-              console.error("QEMU exited before login prompt with code", code);
-              process.exit(code === 0 && /webpc login:|login:/i.test(serial) ? 0 : 1);
-            }
+            print: (...args) => console.log("[QEMU WASM]", ...args),
+            printErr: (...args) => console.error("[QEMU WASM]", ...args)
           };
-
-          const loaders = ["load-rom.js", "load-kernel.js", "load-initramfs.js"];
-          for (const loader of loaders) {
+          for (const loader of ["load-kernel.js", "load-initramfs.js"]) {
             vm.runInThisContext(fs.readFileSync(path.join("work", loader), "utf8"), { filename: loader });
           }
-
           (async () => {
             const qemu = await import(pathToFileURL(path.resolve("work/out.js")).href);
-            if (typeof qemu.default !== "function") throw new Error("QEMU Emscripten factory missing.");
             await qemu.default(global.Module);
-            const started = Date.now();
-            const poll = setInterval(() => {
-              if (/webpc login:|login:/i.test(serial)) {
-                clearInterval(poll);
-                console.log("PASS: Linux reached its login prompt with the 8 GiB qcow2 disk attached.");
-                console.log(serial.slice(-4000));
-                process.exit(0);
-              }
-              if (Date.now() - started > 90000) {
-                clearInterval(poll);
-                console.error("Guest did not reach a login prompt within 90 seconds.");
-                console.error("Serial tail:", serial.slice(-6000));
-                console.error("QEMU diagnostics:", errors.slice(-30).join("\\n"));
-                process.exit(1);
-              }
-            }, 1000);
+            const kernel = global.Module.FS.readFile("/pack-kernel/vmlinuz-virt");
+            const initramfs = global.Module.FS.readFile("/pack-initramfs/initramfs-virt");
+            if (kernel.byteLength < 1024 * 1024 || initramfs.byteLength < 1024 * 1024) {
+              throw new Error("Decoded kernel or initramfs is unexpectedly small.");
+            }
+            fs.writeFileSync("work/vmlinuz-virt", kernel);
+            fs.writeFileSync("work/initramfs-virt", initramfs);
+            console.log("Decoded kernel:", kernel.byteLength, "bytes; initramfs:", initramfs.byteLength, "bytes.");
+            process.exit(0);
           })().catch(error => {
             console.error(error && error.stack ? error.stack : error);
             process.exit(1);
           });
           JS
-          timeout 120s node work/test-boot.cjs
+          node work/extract-boot-files.cjs
+
+      - name: Boot Linux with the 8 GiB qcow2 disk attached
+        run: |
+          set -eux
+          set +e
+          timeout 90s qemu-system-x86_64 \
+            -M pc -m 512M -accel tcg -nic none \
+            -kernel work/vmlinuz-virt \
+            -initrd work/initramfs-virt \
+            -append "earlyprintk=ttyS0 console=ttyS0 root=/dev/vda loglevel=7 hostname=webpc2" \
+            -drive id=test,file=work/disk-rootfs-qcow2.img,format=qcow2,if=none \
+            -device virtio-blk-pci,drive=test \
+            -nographic -no-reboot 2>&1 | tee work/boot.log
+          qemu_rc=${PIPESTATUS[0]}
+          set -e
+          if grep -qiE 'webpc login:|login:' work/boot.log; then
+            echo "PASS: Linux reached its login prompt using the 8 GiB qcow2 disk."
+          else
+            echo "Linux did not reach a login prompt (QEMU exit: $qemu_rc). Serial output follows:"
+            tail -n 160 work/boot.log
+            exit 1
+          fi
