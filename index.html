@@ -555,6 +555,14 @@ button:active {
     background: #444;
 }
 
+/* Nano-only actions replace the normal command controls while the editor is active. */
+#nanoActions { display:none; flex:1 1 100%; gap:8px; width:100%; }
+#nanoActions button { flex:1 1 0; min-width:0; height:42px; border:1px solid #53677d; border-radius:8px; background:#23415e; color:#fff; font-weight:700; touch-action:manipulation; }
+#nanoActions #nanoExit { background:#4b2930; border-color:#86505a; }
+#controls.webpc-nano-mode #command { display:none !important; }
+#controls.webpc-nano-mode #buttons { display:none !important; }
+#controls.webpc-nano-mode #nanoActions { display:flex !important; }
+
 #bootLog {
     position: absolute;
     left: 18px;
@@ -970,6 +978,11 @@ button:active {
             <button id="ctrlKey" aria-pressed="false" title="Arm Ctrl, then press a letter in the terminal">Ctrl</button>
             <button id="escKey" title="Send Escape">Esc</button>
             <button id="clear">Clear</button>
+        </div>
+
+        <div id="nanoActions" aria-label="Nano editor actions">
+            <button id="nanoSave" type="button">Save</button>
+            <button id="nanoExit" type="button">Exit</button>
         </div>
 
     </div>
@@ -2869,6 +2882,8 @@ function noteBootSignal(data) {
     }
 
     /* Detect a usable shell for guest commands and unlock only after sign-in. */
+    updateNanoUiFromOutput(text, lastLine);
+
     const rootPromptSeen = /(?:^|\n)[^\n]{0,100}#\s*$/.test(lastLine);
     if (bootSignalReceived && rootPromptSeen) {
         onShellReady();
@@ -3799,10 +3814,106 @@ async function bootQEMU() {
 
 
 /* ============================================================
+   NANO EDITOR CONTROLS — isolated to the HTML terminal UI
+   ============================================================ */
+let webpcNanoUiActive = false;
+let webpcNanoOutputTail = "";
+let webpcNanoExitConfirm = false;
+let webpcNanoPromptState = "";
+
+function setNanoUiActive(active) {
+    webpcNanoUiActive = active;
+    const controls = $("controls");
+    if (controls) controls.classList.toggle("webpc-nano-mode", active);
+    const exitButton = $("nanoExit");
+    if (exitButton) exitButton.textContent = webpcNanoExitConfirm ? "Discard & Exit" : "Exit";
+}
+
+function updateNanoUiFromOutput(chunk, lastLine) {
+    const clean = String(chunk || "")
+        .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+        .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+        .replace(/\x1b[@-_]/g, "")
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+    const candidate = (webpcNanoOutputTail + clean).slice(-700);
+    webpcNanoOutputTail = candidate;
+    const nanoScreen = /GNU nano|nano [0-9]+(?:\.[0-9]+)*|\^G\s*Help[\s\S]{0,240}\^X\s*Exit/i.test(candidate);
+    const savePrompt = /Save modified buffer\?/i.test(clean);
+    const filenamePrompt = /File Name to Write:/i.test(clean);
+    if (savePrompt) {
+        webpcNanoExitConfirm = true;
+        webpcNanoPromptState = "save-confirm";
+        setNanoUiActive(true);
+    } else if (filenamePrompt) {
+        webpcNanoPromptState = "filename";
+        setNanoUiActive(true);
+    } else if (nanoScreen) {
+        setNanoUiActive(true);
+    }
+    const shellPrompt = /(?:^|\n)[^\n]{0,100}(?:#|\$)\s*$/.test(lastLine || "");
+    if (webpcNanoUiActive && shellPrompt && !savePrompt && !filenamePrompt && !nanoScreen) {
+        webpcNanoExitConfirm = false;
+        webpcNanoPromptState = "";
+        webpcNanoOutputTail = "";
+        setNanoUiActive(false);
+    }
+}
+
+function writeNanoInput(value) {
+    if (masterPTY && typeof masterPTY.write === "function") masterPTY.write(value);
+    else if (terminal && typeof terminal.paste === "function") terminal.paste(value);
+    else return false;
+    return true;
+}
+
+function setupNanoButtons() {
+    const save = $("nanoSave");
+    const exit = $("nanoExit");
+    if (!save || !exit || save.dataset.nanoBound === "1") return;
+    save.dataset.nanoBound = "1";
+    exit.dataset.nanoBound = "1";
+    save.addEventListener("click", () => {
+        if (!webpcNanoUiActive) return;
+        webpcNanoOutputTail = "";
+        if (webpcNanoPromptState === "save-confirm") {
+            writeNanoInput("y\r");
+            webpcNanoPromptState = "filename";
+            setTimeout(() => writeNanoInput("\r"), 180);
+            return;
+        }
+        if (webpcNanoPromptState === "filename") {
+            writeNanoInput("\r");
+            webpcNanoPromptState = "";
+            return;
+        }
+        writeNanoInput("\x0f");
+        webpcNanoPromptState = "filename";
+        setTimeout(() => {
+            if (webpcNanoUiActive) writeNanoInput("\r");
+        }, 180);
+    });
+    exit.addEventListener("click", () => {
+        if (!webpcNanoUiActive) return;
+        webpcNanoOutputTail = "";
+        if (webpcNanoExitConfirm || webpcNanoPromptState === "save-confirm") {
+            writeNanoInput("n\r");
+            webpcNanoExitConfirm = false;
+            webpcNanoPromptState = "";
+            exit.textContent = "Exit";
+            return;
+        }
+        writeNanoInput("\x18");
+        webpcNanoPromptState = "";
+    });
+}
+
+/* ============================================================
    TERMINAL CONTROLS
    ============================================================ */
 
 function setupControls() {
+
+    setupNanoButtons();
 
     $("send").addEventListener(
         "click",
