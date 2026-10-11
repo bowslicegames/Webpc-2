@@ -4519,8 +4519,10 @@ main();
     let dir; try { dir=guestPath(); filePath.value=dir; } catch(e) { setFileStatus(e.message,true); return; }
     clearFileSelection(); closeFileMenu();
     setFileStatus("Reading folder and file sizes from the Linux disk…");
-    const listCommand = "{ find " + JSON.stringify(dir) + " -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sed 's|^|D:|'; " +
-      "find " + JSON.stringify(dir) + " -mindepth 1 -maxdepth 1 -type f -exec stat -c 'F:%n|%s' {} \\; 2>/dev/null; } | sort";
+    const listCommand = "dir=" + JSON.stringify(dir) + "; for p in \"$dir\"/* \"$dir\"/.[!.]* \"$dir\"/..?*; do " +
+      "[ -e \"$p\" ] || [ -L \"$p\" ] || continue; " +
+      "if [ -d \"$p\" ]; then printf 'D:%s\\n' \"$p\"; " +
+      "elif [ -f \"$p\" ]; then size=$(wc -c < \"$p\" 2>/dev/null); printf 'F:%s|%s\\n' \"$p\" \"$size\"; fi; done";
     runGuest(listCommand, (err,out) => {
       if (err) { setFileStatus("Refresh failed: " + err.message,true); return; }
       fileList.replaceChildren();
