@@ -2600,6 +2600,32 @@ async function createTerminal() {
      */
     terminal.loadAddon(masterPTY);
 
+    /*
+     * iOS software keyboards can bypass xterm's keydown handler. Translate
+     * the next letter at the PTY input boundary so Ctrl+X/Ctrl+C work even
+     * when the keyboard only emits text input. The regular keydown handler
+     * disarms Ctrl before writing its byte, so this fallback will not double it.
+     */
+    if (masterPTY && typeof masterPTY.write === "function" && !masterPTY.__webpcCtrlWrapped) {
+        const originalPTYWrite = masterPTY.write.bind(masterPTY);
+        masterPTY.write = function(data, ...args) {
+            if (webpcCtrlModifierArmed) {
+                let typed = "";
+                if (typeof data === "string") typed = data;
+                else if ((Array.isArray(data) || data instanceof Uint8Array) && data.length === 1) typed = String.fromCharCode(data[0]);
+                if (/^[a-z]$/i.test(typed)) {
+                    webpcCtrlModifierArmed = false;
+                    updateCtrlModifierButton();
+                    const code = typed.toLowerCase().charCodeAt(0) & 31;
+                    data = typeof data === "string" ? String.fromCharCode(code) :
+                        (data instanceof Uint8Array ? new Uint8Array([code]) : [code]);
+                }
+            }
+            return originalPTYWrite(data, ...args);
+        };
+        masterPTY.__webpcCtrlWrapped = true;
+    }
+
     /* On-screen Ctrl modifier for iPad/soft keyboards.
        Send the control byte straight to the PTY; terminal.paste() treats
        its argument as pasted text and is not reliable for control bytes. */
