@@ -4334,6 +4334,17 @@ main();
   const desktop = document.getElementById("desktop");
   if (!desktop) return;
   const status = document.getElementById("desktopStatus");
+  const graphicsStatus = document.getElementById("graphicsStatus");
+  if (graphicsStatus) {
+    const canvas = document.createElement("canvas");
+    const gl2 = canvas.getContext("webgl2");
+    const gl = gl2 || canvas.getContext("webgl");
+    graphicsStatus.textContent = gl2
+      ? "Browser graphics: WebGL 2 available. The current Linux guest display still uses QEMU's serial path; this is not direct GPU passthrough."
+      : gl
+        ? "Browser graphics: WebGL available. The current Linux guest display still uses QEMU's serial path; this is not direct GPU passthrough."
+        : "Browser graphics: WebGL unavailable in this tab; QEMU remains CPU-emulated.";
+  }
   const host = document.getElementById("windowHost");
   const fileStatus = document.getElementById("fileStatus");
   const filePath = document.getElementById("filePath");
@@ -4668,13 +4679,16 @@ main();
   }
   function startBackgroundTask(kind, label, command, statusPath, logPath, statusTarget = fileStatus) {
     setTaskStatus(statusTarget, label + " queued in Linux background…");
-    runGuest(command, (err, out) => {
+    const enqueueStart = kind === "java" ? runGuestForService : null;
+    const startCallback = (err, out) => {
       if (err) { setTaskStatus(statusTarget, label + " could not start: " + err.message, true); return; }
       if (!out.includes("WEBPC_TASK_STARTED")) { setTaskStatus(statusTarget, label + " did not start. " + out.slice(-160), true); return; }
       backgroundTasks.set(statusPath, {kind, label, statusPath, logPath, started: Date.now(), target: statusTarget});
       setTaskStatus(statusTarget, label + " running in the background. You can keep using the desktop or terminal.");
       pollBackgroundTask(statusPath);
-    });
+    };
+    if (kind === "java") runGuestForService("minecraft", command, startCallback);
+    else runGuest(command, startCallback);
   }
   function pollBackgroundTask(statusPath) {
     const task = backgroundTasks.get(statusPath); if (!task) return;
@@ -4686,11 +4700,14 @@ main();
         backgroundTasks.delete(statusPath);
         if (code === "0") {
           setTaskStatus(task.target, task.label + " completed successfully. Details: " + task.logPath);
-          refreshFiles();
+          if (task.kind === "java") checkJavaStatus(false);
+          else refreshFiles();
         } else {
-          runGuest("tail -n 8 " + JSON.stringify(task.logPath) + " 2>/dev/null || true", (logErr, logOut) => {
+          const showTaskLog = (logErr, logOut) => {
             setTaskStatus(task.target, task.label + " failed (exit " + (code || "unknown") + "). " + (logOut || "Open the task log: " + task.logPath).slice(-500), true);
-          });
+          };
+          if (task.kind === "java") runGuestForService("minecraft", "tail -n 8 " + JSON.stringify(task.logPath) + " 2>/dev/null || true", showTaskLog);
+          else runGuest("tail -n 8 " + JSON.stringify(task.logPath) + " 2>/dev/null || true", showTaskLog);
         }
         return;
       }
