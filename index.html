@@ -967,6 +967,8 @@ button:active {
 
         <div id="buttons">
             <button id="send">Send</button>
+            <button id="ctrlKey" aria-pressed="false" title="Arm Ctrl, then press a letter in the terminal">Ctrl</button>
+            <button id="escKey" title="Send Escape">Esc</button>
             <button id="ctrlc">Ctrl+C</button>
             <button id="clear">Clear</button>
             <button id="webtest" disabled>Web Test</button>
@@ -1388,6 +1390,8 @@ let terminal = null;
 
 let shellReady = false;
 let webSetupStarted = false;
+let webpcCtrlModifierArmed = false;
+let webpcLoginAttemptPending = false;
 let shellOutputBuffer = "";
 let loginPromptShown = false;
 let webpcSerialStarted = false;
@@ -2585,6 +2589,24 @@ async function createTerminal() {
      */
     terminal.loadAddon(masterPTY);
 
+    /* On-screen Ctrl modifier for iPad/soft keyboards. The next letter
+       typed in xterm is translated to its ASCII control character. */
+    if (typeof terminal.attachCustomKeyEventHandler === "function") {
+        terminal.attachCustomKeyEventHandler(event => {
+            if (!webpcCtrlModifierArmed || event.type !== "keydown") return true;
+            if (event.key && event.key.length === 1) {
+                const code = event.key.toLowerCase().charCodeAt(0);
+                if (code >= 97 && code <= 122) {
+                    webpcCtrlModifierArmed = false;
+                    updateCtrlModifierButton();
+                    terminal.paste(String.fromCharCode(code & 31));
+                    return false;
+                }
+            }
+            return true;
+        });
+    }
+
     if (masterPTY && typeof masterPTY.onWrite === "function") {
         masterPTY.onWrite(event => {
             const bytes = Array.isArray(event) ? event[0] : event;
@@ -2679,6 +2701,7 @@ function onShellReady() {
     if (shellReady) return;
 
     shellReady = true;
+    webpcLoginAttemptPending = false;
     const loginScreen = $("webpcLoginScreen");
     if (loginScreen) loginScreen.classList.remove("visible");
     if (app) app.classList.remove("webpc-login-active");
@@ -2837,7 +2860,7 @@ function noteBootSignal(data) {
 
 
 
-/* UI sign-in gate. Guest root password is configured to WEBPC by existing startup logic. */
+/* Pass credentials to Linux itself; no expected password is embedded in this HTML. */
 (function setupWebpcOSLogin() {
   const form = document.getElementById("webpcLoginForm");
   const password = document.getElementById("webpcPassword");
@@ -2847,8 +2870,8 @@ function noteBootSignal(data) {
     event.preventDefault();
     const entered = password.value;
     password.value = "";
-    if (entered !== "WEBPC") {
-      hint.textContent = "Incorrect password. Try again.";
+    if (!entered) {
+      hint.textContent = "Enter the root password to continue.";
       password.focus();
       return;
     }
@@ -2856,13 +2879,25 @@ function noteBootSignal(data) {
       hint.textContent = "Linux is still starting. Please try again in a moment.";
       return;
     }
-    hint.textContent = "Signing in…";
+    hint.textContent = "Signing in to Linux…";
+    webpcLoginAttemptPending = true;
     const button = document.getElementById("webpcSignIn");
     if (button) button.disabled = true;
     try {
       terminal.paste("root\r");
-      setTimeout(() => { if (button) button.disabled = false; }, 3000);
+      /* Allow getty time to display its password prompt before sending it. */
+      setTimeout(() => {
+        try { terminal.paste(entered + "\r"); }
+        catch (_) { hint.textContent = "Could not submit sign-in. Please try again."; }
+        if (button) button.disabled = false;
+      }, 350);
+      setTimeout(() => {
+        if (webpcLoginAttemptPending && hint.textContent === "Signing in to Linux…") {
+          hint.textContent = "Linux has not confirmed sign-in yet. Check the password and try again if needed.";
+        }
+      }, 4500);
     } catch (error) {
+      webpcLoginAttemptPending = false;
       hint.textContent = "Could not submit sign-in. Please try again.";
       if (button) button.disabled = false;
     }
@@ -3785,18 +3820,25 @@ function setupControls() {
         }
     );
 
+    $("ctrlKey").addEventListener("click", () => {
+        webpcCtrlModifierArmed = !webpcCtrlModifierArmed;
+        updateCtrlModifierButton();
+        if (webpcCtrlModifierArmed && terminal) terminal.focus();
+    });
+
+    $("escKey").addEventListener("click", () => {
+        if (terminal && typeof terminal.paste === "function") terminal.paste("\x1b");
+        webpcCtrlModifierArmed = false;
+        updateCtrlModifierButton();
+        if (terminal) terminal.focus();
+    });
+
     $("ctrlc").addEventListener(
         "click",
         () => {
-
-            if (
-                terminal && typeof terminal.paste === "function"
-            ) {
-
-                terminal.paste(
-                    "\x03"
-                );
-            }
+            if (terminal && typeof terminal.paste === "function") terminal.paste("\x03");
+            webpcCtrlModifierArmed = false;
+            updateCtrlModifierButton();
         }
     );
 
@@ -3810,6 +3852,14 @@ function setupControls() {
     );
 }
 
+
+function updateCtrlModifierButton() {
+    const button = $("ctrlKey");
+    if (!button) return;
+    button.textContent = webpcCtrlModifierArmed ? "Ctrl ✓" : "Ctrl";
+    button.setAttribute("aria-pressed", webpcCtrlModifierArmed ? "true" : "false");
+    button.style.background = webpcCtrlModifierArmed ? "#236442" : "";
+}
 
 function sendCommand() {
 
@@ -4149,7 +4199,26 @@ main();
     if (id === "fileWindow") { if (shellReadyNow()) refreshFiles(); else fileStatus.textContent="Waiting for the Alpine shell…"; }
     if (id === "minecraftWindow") checkJavaStatus(false);
   }
-  function closeWindow(win) { win.classList.remove("open"); }
+  function resetTerminalBeforeClose() {
+    if (!terminal || typeof terminal.paste !== "function") return;
+    webpcCtrlModifierArmed = false;
+    updateCtrlModifierButton();
+    /* Best-effort: interrupt the foreground task, leave nano without saving,
+       then restore a clean, recognisable shell prompt. */
+    try { terminal.paste("\x03"); } catch (_) {}
+    setTimeout(() => { try { terminal.paste("\x1b\x18"); } catch (_) {} }, 100);
+    setTimeout(() => { try { terminal.paste("n\r\x03"); } catch (_) {} }, 220);
+    setTimeout(() => {
+      try {
+        terminal.clear();
+        terminal.paste("export PS1='webpc~# '; clear\r");
+      } catch (_) {}
+    }, 360);
+  }
+  function closeWindow(win) {
+    if (win && win.id === "terminalWindow") resetTerminalBeforeClose();
+    win.classList.remove("open");
+  }
   function attachTerminal() {
     if (!terminalWrap || !terminalBody) return;
     if (terminalWrap.parentElement !== terminalBody) terminalBody.insertBefore(terminalWrap, terminalBody.firstChild);
