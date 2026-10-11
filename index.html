@@ -2586,6 +2586,26 @@ async function createTerminal() {
      */
     terminal.loadAddon(masterPTY);
 
+    /*
+     * iOS/iPadOS software keyboards do not consistently emit the keydown
+     * events seen by attachCustomKeyEventHandler. xterm-pty can still pass
+     * the typed character straight to masterPTY.write(), so translate it
+     * there as a fallback when Ctrl is armed. The normal keydown path below
+     * clears the modifier before writing its control byte, avoiding doubles.
+     */
+    if (masterPTY && typeof masterPTY.write === "function" && !masterPTY.__webpcCtrlWrapped) {
+        const originalPTYWrite = masterPTY.write.bind(masterPTY);
+        masterPTY.write = function(data, ...args) {
+            if (webpcCtrlModifierArmed && typeof data === "string" && /^[a-z]$/i.test(data)) {
+                webpcCtrlModifierArmed = false;
+                updateCtrlModifierButton();
+                data = String.fromCharCode(data.toLowerCase().charCodeAt(0) & 31);
+            }
+            return originalPTYWrite(data, ...args);
+        };
+        masterPTY.__webpcCtrlWrapped = true;
+    }
+
     /* On-screen Ctrl modifier for iPad/soft keyboards.
        Send the control byte straight to the PTY; terminal.paste() treats
        its argument as pasted text and is not reliable for control bytes. */
