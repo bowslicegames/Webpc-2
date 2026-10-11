@@ -19,6 +19,7 @@ const ALLOWED_ASSETS = new Set([
   "load-rom.js",
   "load-rootfs.data",
   "load-rootfs.js",
+  "disk-rootfs-qcow2.img",
   "out.js",
   "qemu-system-x86_64.wasm",
   "qemu-system-x86_64.worker.js",
@@ -45,7 +46,7 @@ const RELEASE_BASE =
  * Worker itself is already new.
  */
 const STATIC_COMMIT =
-  "5a1beed1bb19baea105f165dd702423b08c0df29";
+  "40bcdd8e1f75bd2010e880ccf9acc456bce0a060";
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
