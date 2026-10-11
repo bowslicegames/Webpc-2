@@ -4619,9 +4619,9 @@ main();
   document.getElementById("fileOpenPath").addEventListener("click",refreshFiles);
   document.getElementById("fileUp").addEventListener("click",()=>{
     let dir; try { dir=guestPath(); } catch(e) { setFileStatus(e.message,true); return; }
-    if(dir===BASE_HOME){setFileStatus("Already at the WebPC home folder.");return;}
-    const parent=dir.slice(0,dir.lastIndexOf("/"))||BASE_HOME;
-    filePath.value=parent.startsWith(BASE_HOME)?parent:BASE_HOME;
+    if(dir==="/"){setFileStatus("Already at the filesystem root.");return;}
+    const parent=dir.slice(0,dir.lastIndexOf("/"))||"/";
+    filePath.value=parent;
     refreshFiles();
   });
   document.getElementById("fileDelete").addEventListener("click",()=>{
