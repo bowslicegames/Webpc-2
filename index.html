@@ -4701,11 +4701,11 @@ main();
       if (win.id==="terminalWindow") attachTerminal();
     });
     const handle=win.querySelector(".window-resize"); let resize=null;
-    // Some compact app windows intentionally have no resize grip.
+    // Track movement on document as well as the grip: this is more reliable for touch/pointer capture on iPad Safari.
     if (handle) {
       handle.addEventListener("pointerdown",e=>{if(win.classList.contains("maximized"))return;e.preventDefault();e.stopPropagation();resize={x:e.clientX,y:e.clientY,w:win.offsetWidth,h:win.offsetHeight};try{handle.setPointerCapture(e.pointerId)}catch(_){}});
-      handle.addEventListener("pointermove",e=>{if(!resize)return;e.preventDefault();const area=document.getElementById("desktopArea").getBoundingClientRect();const minW=window.matchMedia("(max-width:600px)").matches?180:280;const minH=150;win.style.width=Math.max(minW,Math.min(area.width-win.offsetLeft,resize.w+e.clientX-resize.x))+"px";win.style.height=Math.max(minH,Math.min(area.height-win.offsetTop,resize.h+e.clientY-resize.y))+"px";if(win.id==="terminalWindow")attachTerminal();});
-      const stopResize=()=>{resize=null};handle.addEventListener("pointerup",stopResize);handle.addEventListener("pointercancel",stopResize);
+      document.addEventListener("pointermove",e=>{if(!resize)return;e.preventDefault();const area=document.getElementById("desktopArea").getBoundingClientRect();const minW=window.matchMedia("(max-width:600px)").matches?180:280;const minH=150;const maxW=Math.max(minW,area.width-win.offsetLeft);const maxH=Math.max(minH,area.height-win.offsetTop);win.style.width=Math.max(minW,Math.min(maxW,resize.w+e.clientX-resize.x))+"px";win.style.height=Math.max(minH,Math.min(maxH,resize.h+e.clientY-resize.y))+"px";if(win.id==="terminalWindow")attachTerminal();},{passive:false});
+      const stopResize=()=>{resize=null};document.addEventListener("pointerup",stopResize);document.addEventListener("pointercancel",stopResize);
     }
   });
   function setFileStatus(text, bad) { fileStatus.textContent=text; fileStatus.style.color=bad?"#ffaaaa":"#9cb0c6"; }
