@@ -713,7 +713,7 @@ button:active {
 .browser-toolbar {display:flex;align-items:center;gap:6px;padding:8px;border-bottom:1px solid #293849;background:#101923}
 .browser-address {min-width:0;flex:1;height:36px;border:1px solid #3a4c61;border-radius:7px;background:#09111a;color:#eaf2fb;padding:0 9px;font-size:13px}
 .browser-note {flex:0 0 auto;padding:6px 10px;font-size:11px;color:#9db2c9;background:#0b131d;border-bottom:1px solid #293849}
-#browserFrame {display:block;flex:1 1 auto;width:100%;height:100%;min-height:0;border:0;background:#fff}
+#browserLanding {display:flex;flex:1 1 auto;min-height:0;overflow:auto;align-items:center;justify-content:center;padding:24px;background:radial-gradient(ellipse at top,#20354b,#0b131d 72%);color:#eaf2fb;text-align:center} #browserLanding .browser-landing-card {width:min(560px,100%);padding:26px;border:1px solid #344a60;border-radius:16px;background:rgba(12,22,34,.88);box-shadow:0 18px 55px #0005} #browserLanding h3 {margin:0 0 10px;font-size:22px} #browserLanding p {margin:0 0 18px;color:#b5c7d9;line-height:1.55} #browserLaunch {min-height:42px;padding:0 18px;border:1px solid #5d9ee8;border-radius:8px;background:#2469a8;color:#fff;font-weight:600}
 @media(max-width:600px) {
   #desktop {inset:50px 0 0}
   #desktopArea {inset:34px 0 76px}
@@ -1071,8 +1071,8 @@ button:active {
                 <button class="ui-button" type="button" id="browserHome" title="Home" aria-label="Home">⌂</button>
                 <button class="ui-button" type="button" id="browserExternal">Open tab</button>
               </form>
-              <div class="browser-note" id="browserStatus">Public pages are loaded through WebPC's safe embedded-browser proxy. Some interactive sites still need Open tab.</div>
-              <iframe id="browserFrame" title="WebPC web browser" src="./browser-proxy?url=https%3A%2F%2Fexample.com%2F" sandbox="allow-scripts allow-forms allow-popups allow-downloads" referrerpolicy="no-referrer" loading="lazy"></iframe>
+              <div class="browser-note" id="browserStatus">Real browser mode: websites open directly in a normal browser tab, without an embedded frame or page-rewriting proxy.</div>
+              <div id="browserLanding"><div class="browser-landing-card"><div style="font-size:42px;margin-bottom:10px">🌐</div><h3>WebPC Browser</h3><p>Enter a URL or search above and choose Go. The site opens in your actual browser, so its normal JavaScript, sign-in, cookies, downloads and navigation work without WebPC trying to embed or rewrite the page.</p><button type="button" id="browserLaunch">Open website in real browser tab</button></div></div>
               <div class="window-resize" aria-hidden="true"></div>
             </div>
           </section>
@@ -5048,89 +5048,95 @@ main();
     if (!window.confirm("Install the OpenJDK 21 runtime inside the temporary Linux disk? This downloads packages into the guest and may take several minutes.")) return;
     const taskId = "wpc-java-" + Date.now().toString(36);
     const taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
-    const inner = "if command -v java >/dev/null 2>&1; then java -version; rc=$?; else apk update && (apk add --no-cache openjdk21-jre-headless || apk add --no-cache openjdk21-jre); rc=$?; fi; " +
-      "if command -v java >/dev/null 2>&1; then java -version; rc=$?; fi; printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus);
+    const inner = "rc=1; if command -v java >/dev/null 2>&1; then java -version; rc=$?; " +
+      "else " +
+      "echo '[1/4] Alpine release and current APK repositories'; cat /etc/alpine-release 2>/dev/null || true; cat /etc/apk/repositories 2>/dev/null || true; " +
+      "echo '[2/4] Enabling the community repository'; " +
+      "if [ -f /etc/apk/repositories ]; then sed -i 's|^[[:space:]]*#*[[:space:]]*\\(https://[^ ]*/community\\)$|\\1|' /etc/apk/repositories; " +
+      "if ! grep -q '^[[:space:]]*https://[^ ]*/community' /etc/apk/repositories; then " +
+      "sed -n '/^[[:space:]]*https:\\/\\/[^ ]*\\/main$/s|/main$|/community|p' /etc/apk/repositories > /tmp/webpc-community-repos; " +
+      "if [ -s /tmp/webpc-community-repos ]; then cat /tmp/webpc-community-repos >> /etc/apk/repositories; fi; rm -f /tmp/webpc-community-repos; fi; fi; " +
+      "echo '[3/4] Updating APK indexes (network/DNS/TLS errors will be recorded in this task log)'; apk update; update_rc=$?; " +
+      "if [ \"$update_rc\" -eq 0 ]; then echo '[4/4] Installing Java 21'; apk add --no-cache openjdk21-jre-headless || apk add --no-cache openjdk21-jre; rc=$?; else rc=$update_rc; fi; " +
+      "fi; " +
+      "if command -v java >/dev/null 2>&1; then echo '[verify] java -version'; java -version; java_rc=$?; if [ \"$java_rc\" -eq 0 ]; then rc=0; else rc=$java_rc; fi; fi; " +
+      "if [ \"$rc\" -ne 0 ]; then echo '[diagnostics] repositories after attempt'; cat /etc/apk/repositories 2>/dev/null || true; echo '[diagnostics] package candidates'; apk search -x openjdk21-jre-headless openjdk21-jre 2>&1 || true; fi; " +
+      "printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus);
     const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!";
     startBackgroundTask("java", "Installing Java 21", launch, taskStatus, taskLog, document.getElementById("minecraftStatus"));
   });
 
   const browserForm = document.getElementById("browserForm");
   const browserAddress = document.getElementById("browserAddress");
-  const browserFrame = document.getElementById("browserFrame");
   const browserStatus = document.getElementById("browserStatus");
-  let browserHistory = [], browserHistoryIndex = -1;
-  let browserStopped = false;
-  let browserLoading = false;
-  let webpcHiddenAt = 0;
+  let browserHistory = [], browserHistoryIndex = -1, browserTab = null;
   function normalizeBrowserAddress(raw) {
     let value = String(raw || "").trim();
     if (!value) throw new Error("Enter a website address or search phrase.");
     const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
-    if (/\s/.test(value) && !hasScheme) {
-      return "https://duckduckgo.com/?q=" + encodeURIComponent(value);
-    }
+    if (/\s/.test(value) && !hasScheme) return "https://duckduckgo.com/?q=" + encodeURIComponent(value);
     if (!hasScheme) value = "https://" + value;
     const url = new URL(value);
     if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only HTTP and HTTPS websites are supported.");
+    if (url.username || url.password) throw new Error("For safety, remove usernames and passwords from the address.");
     return url.href;
+  }
+  function openRealBrowserTab(url) {
+    try {
+      if (browserTab && !browserTab.closed) {
+        browserTab.location.href = url;
+        browserTab.focus();
+      } else {
+        browserTab = window.open(url, "webpc-real-browser");
+        if (browserTab) { try { browserTab.opener = null; } catch (_) {} }
+      }
+    } catch (_) {
+      browserTab = window.open(url, "_blank");
+      if (browserTab) { try { browserTab.opener = null; } catch (_) {} }
+    }
+    if (!browserTab) {
+      browserStatus.textContent = "Your browser blocked the new tab. Allow pop-ups for this WebPC site, then press Open website.";
+      return false;
+    }
+    browserStatus.textContent = "Opened in your real browser tab. That tab uses the browser's own engine, cookies, JavaScript, downloads and security rules; use its native controls for site-specific features.";
+    return true;
   }
   function navigateBrowser(raw, remember = true) {
     let url;
     try { url = normalizeBrowserAddress(raw); }
     catch (e) { browserStatus.textContent = e.message; return; }
     browserAddress.value = url;
-    browserStopped = false;
-    browserLoading = true;
-    browserStatus.textContent = "Loading " + url + " through WebPC's safe embedded-browser proxy…";
-    browserFrame.src = "./browser-proxy?url=" + encodeURIComponent(url);
     if (remember) {
       browserHistory = browserHistory.slice(0, browserHistoryIndex + 1);
       browserHistory.push(url);
       if (browserHistory.length > 40) browserHistory.shift();
       browserHistoryIndex = browserHistory.length - 1;
     }
+    openRealBrowserTab(url);
   }
   browserForm.addEventListener("submit", event => { event.preventDefault(); navigateBrowser(browserAddress.value); });
+  document.getElementById("browserLaunch").addEventListener("click", () => navigateBrowser(browserAddress.value));
   document.getElementById("browserReload").addEventListener("click", () => {
-    browserStopped = false;
-    browserLoading = true;
-    browserFrame.src = "./browser-proxy?url=" + encodeURIComponent(browserAddress.value);
-    browserStatus.textContent = "Reloading through WebPC's embedded-browser proxy…";
+    if (browserHistoryIndex < 0) { navigateBrowser(browserAddress.value); return; }
+    navigateBrowser(browserHistory[browserHistoryIndex], false);
   });
   document.getElementById("browserBack").addEventListener("click", () => {
     if (browserHistoryIndex > 0) {
       browserHistoryIndex--;
       navigateBrowser(browserHistory[browserHistoryIndex], false);
-    } else browserStatus.textContent = "No previous page in this browser session.";
+    } else browserStatus.textContent = "No earlier address in WebPC's navigation history. Use the real browser tab's Back button for navigation performed directly on the website.";
   });
   document.getElementById("browserForward").addEventListener("click", () => {
     if (browserHistoryIndex < browserHistory.length - 1) {
       browserHistoryIndex++;
       navigateBrowser(browserHistory[browserHistoryIndex], false);
-    } else browserStatus.textContent = "No forward page in this browser session.";
+    } else browserStatus.textContent = "No later address in WebPC's navigation history.";
   });
   document.getElementById("browserStop").addEventListener("click", () => {
-    browserStopped = true;
-    browserLoading = false;
-    browserFrame.src = "about:blank";
-    browserStatus.textContent = "Stopped loading. Press Reload or enter another address to continue.";
+    browserStatus.textContent = "WebPC cannot stop a cross-origin page from the desktop shell. Use Stop in the real browser tab.";
   });
   document.getElementById("browserHome").addEventListener("click", () => navigateBrowser("https://example.com/"));
-  document.getElementById("browserExternal").addEventListener("click", () => {
-    let url;
-    try { url = normalizeBrowserAddress(browserAddress.value); }
-    catch (e) { browserStatus.textContent = e.message; return; }
-    window.open(url, "_blank", "noopener,noreferrer");
-  });
-  browserFrame.addEventListener("load", () => {
-    browserLoading = false;
-    if (browserStopped) {
-      browserStatus.textContent = "Loading stopped. Enter an address or press Home to continue.";
-      return;
-    }
-    browserStatus.textContent = "Proxy response loaded. If the page reports an unsupported site or interactive features fail, choose Open tab.";
-  });
-
+  document.getElementById("browserExternal").addEventListener("click", () => navigateBrowser(browserAddress.value));
   function noteWebPCResume() {
     if (shellReadyNow()) {
       if (typeof commandChannelStalled !== "undefined" && commandChannelStalled) {
