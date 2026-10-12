@@ -5096,7 +5096,7 @@ main();
       "rm -f /tmp/webpc-apk-repositories.orig /tmp/webpc-apk-repositories",
       "printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus),
       "exit \"$rc\""
-    ].join("; ");
+    ].join("\n");
     const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!";
     startBackgroundTask("java", "Installing Java 21", launch, taskStatus, taskLog, document.getElementById("minecraftStatus"));
   });
