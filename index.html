@@ -4555,24 +4555,43 @@ main();
       try { s = dec.decode(data instanceof Uint8Array ? data : new Uint8Array(data)); } catch (_) {}
     }
     if (!s) return;
-    outputBuffer = (outputBuffer + s).slice(-500000);
     const p = pending;
+    let incoming = s;
     if (!p.found) {
-      const i = outputBuffer.lastIndexOf(p.begin);
-      if (i < 0) { outputBuffer = outputBuffer.slice(-Math.max(2000,p.begin.length)); return; }
+      outputBuffer = (outputBuffer + incoming).slice(-500000);
+      incoming = "";
+      const beginIndex = outputBuffer.lastIndexOf(p.begin);
+      if (beginIndex < 0) {
+        outputBuffer = outputBuffer.slice(-Math.max(2000, p.begin.length));
+        return;
+      }
       p.found = true;
-      outputBuffer = outputBuffer.slice(i + p.begin.length);
-    }
-    const endIndex = outputBuffer.indexOf(p.end);
-    if (endIndex >= 0) {
-      p.text += outputBuffer.slice(0,endIndex);
-      outputBuffer = outputBuffer.slice(endIndex + p.end.length);
-      p.finish(null, cleanOutput(p.text).trim());
-    } else {
-      p.text += outputBuffer;
+      incoming = outputBuffer.slice(beginIndex + p.begin.length);
       outputBuffer = "";
-      if (p.text.length > 450000) p.finish(new Error("File response was too large."), "");
     }
+
+    /*
+     * Keep a rolling suffix while collecting output. PTY chunks may split
+     * the end marker at any byte boundary, so never discard the possible
+     * beginning of that marker before the next chunk arrives.
+     */
+    const combined = outputBuffer + incoming;
+    const endIndex = combined.indexOf(p.end);
+    if (endIndex >= 0) {
+      p.text += combined.slice(0, endIndex);
+      outputBuffer = combined.slice(endIndex + p.end.length);
+      p.finish(null, cleanOutput(p.text).trim());
+      return;
+    }
+
+    const keep = Math.max(0, p.end.length - 1);
+    if (combined.length > keep) {
+      p.text += combined.slice(0, combined.length - keep);
+      outputBuffer = combined.slice(-keep);
+    } else {
+      outputBuffer = combined;
+    }
+    if (p.text.length > 450000) p.finish(new Error("File response was too large."), "");
   };
   function guestPath() {
     let raw = (filePath.value || "").trim().replace(/\\/g,"/");
