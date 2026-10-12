@@ -19,6 +19,32 @@ jobs:
       - name: Check Worker JavaScript syntax
         run: node --check _worker.js
 
+      - name: Check streaming network bridge syntax and invariants
+        run: |
+          node --input-type=module --check < stack.js
+          node <<'NODE'
+          const fs = require("fs");
+          const source = fs.readFileSync("stack.js", "utf8");
+          const required = [
+            "MAX_RESPONSE_BUFFER_BYTES",
+            "serveResponseChunks",
+            "pumpResponseBody",
+            "respBodyBytes >= MAX_RESPONSE_BUFFER_BYTES",
+            "Never report a truncated transfer as clean EOF"
+          ];
+          for (const marker of required) {
+            if (!source.includes(marker)) {
+              throw new Error("Streaming bridge invariant missing: " + marker);
+            }
+          }
+          if (source.includes("resp.arrayBuffer()")) {
+            throw new Error("Response body must not be fully buffered with arrayBuffer()");
+          }
+          if (source.includes("appendData(s, req_.body)")) {
+            throw new Error("Request body must not be repeatedly concatenated");
+          }
+          NODE
+
       - name: Extract and check browser startup script
         run: |
           node <<'NODE'
