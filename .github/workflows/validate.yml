@@ -44,6 +44,7 @@ jobs:
             throw new Error("Request body must not be repeatedly concatenated");
           }
           NODE
+          node tools/test-network-stream.mjs
 
       - name: Extract and check browser startup script
         run: |
