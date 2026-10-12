@@ -4532,7 +4532,7 @@ main();
       pumpGuestQueue();
     }
     p.finish = finish;
-    const commandTimeoutMs = job.command.includes("WEBPC_DECOMPRESS_OK") ? 180000 : 20000;
+    const commandTimeoutMs = job.command.includes("WEBPC_DECOMPRESS_OK") ? 180000 : (job.command.includes("WEBPC_TASK_STARTED") ? 60000 : 20000);
     p.timeout = setTimeout(() => {
       if (pending !== p) return;
       commandChannelStalled = true;
@@ -4917,7 +4917,13 @@ main();
       "if command -v wget >/dev/null 2>&1; then wget -c -t 3 -T 30 -O " + targetQ + " " + urlQ + "; " +
       "elif command -v curl >/dev/null 2>&1; then curl -fL --retry 3 --connect-timeout 20 -o " + targetQ + " " + urlQ + "; " +
       "else echo 'Neither wget nor curl is installed'; false; fi; rc=$?; printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus);
-    const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!";
+    const taskScript = "/tmp/" + taskId + ".sh";
+    /* Stage the installer as a script instead of nesting a large multiline
+       script inside several layers of shell quoting. This keeps the initial
+       PTY command short and lets the installer detach cleanly. */
+    const launch = "printf '%s' " + shellQuote(b64(inner)) + " | base64 -d > " + shellQuote(taskScript) +
+      " && chmod 700 " + shellQuote(taskScript) +
+      " && (nohup /bin/sh " + shellQuote(taskScript) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!)";
     startBackgroundTask("download", "Downloading " + name, launch, taskStatus, taskLog);
   });
 
