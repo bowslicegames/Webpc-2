@@ -4961,9 +4961,9 @@ main();
     startDirectGuestDownload(raw.trim(), null, true);
   });
   document.getElementById("fileGetJava").addEventListener("click", () => {
-    const url = "https://download.bell-sw.com/java/21.0.9+15/bellsoft-jdk21.0.9+15-linux-x64-musl.apk";
+    const url = "https://download.bell-sw.com/java/21.0.12+10/bellsoft-jdk21.0.12+10-linux-x64-musl.apk";
     if (!window.confirm("Download the official BellSoft Liberica Java 21 Alpine/musl x86-64 APK into the current folder? The file is large. After it finishes, select it and use ⋮ → Install APK package.")) return;
-    startDirectGuestDownload(url, "bellsoft-jdk21-alpine-x86_64.apk", false);
+    startDirectGuestDownload(url, "bellsoft-jdk21.0.12-alpine-x86_64.apk", false);
   });
 
   fileUploadButton.addEventListener("click", () => {
