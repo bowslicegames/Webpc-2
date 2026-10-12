@@ -5045,23 +5045,58 @@ main();
   const installJavaButton = document.getElementById("installJava");
   installJavaButton.addEventListener("click", () => {
     if (!shellReadyNow()) { document.getElementById("minecraftStatus").textContent = "Linux is still starting."; return; }
-    if (!window.confirm("Install the OpenJDK 21 runtime inside the temporary Linux disk? This downloads packages into the guest and may take several minutes.")) return;
+    if (!window.confirm("Install or repair the OpenJDK 21 runtime inside the temporary Linux disk? The installer will retry package-index downloads and verify Java before reporting success.")) return;
     const taskId = "wpc-java-" + Date.now().toString(36);
     const taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
-    const inner = "rc=1; if command -v java >/dev/null 2>&1; then java -version; rc=$?; " +
-      "else " +
-      "echo '[1/4] Alpine release and current APK repositories'; cat /etc/alpine-release 2>/dev/null || true; cat /etc/apk/repositories 2>/dev/null || true; " +
-      "echo '[2/4] Enabling the community repository'; " +
-      "if [ -f /etc/apk/repositories ]; then sed -i 's|^[[:space:]]*#*[[:space:]]*\\(https://[^ ]*/community\\)$|\\1|' /etc/apk/repositories; " +
-      "if ! grep -q '^[[:space:]]*https://[^ ]*/community' /etc/apk/repositories; then " +
-      "sed -n '/^[[:space:]]*https:\\/\\/[^ ]*\\/main$/s|/main$|/community|p' /etc/apk/repositories > /tmp/webpc-community-repos; " +
-      "if [ -s /tmp/webpc-community-repos ]; then cat /tmp/webpc-community-repos >> /etc/apk/repositories; fi; rm -f /tmp/webpc-community-repos; fi; fi; " +
-      "echo '[3/4] Updating APK indexes (network/DNS/TLS errors will be recorded in this task log)'; apk update; update_rc=$?; " +
-      "if [ \"$update_rc\" -eq 0 ]; then echo '[4/4] Installing Java 21'; apk add --no-cache openjdk21-jre-headless || apk add --no-cache openjdk21-jre; rc=$?; else rc=$update_rc; fi; " +
-      "fi; " +
-      "if command -v java >/dev/null 2>&1; then echo '[verify] java -version'; java -version; java_rc=$?; if [ \"$java_rc\" -eq 0 ]; then rc=0; else rc=$java_rc; fi; fi; " +
-      "if [ \"$rc\" -ne 0 ]; then echo '[diagnostics] repositories after attempt'; cat /etc/apk/repositories 2>/dev/null || true; echo '[diagnostics] package candidates'; apk search -x openjdk21-jre-headless openjdk21-jre 2>&1 || true; fi; " +
-      "printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus);
+    const inner = [
+      "set +e",
+      "rc=1",
+      "echo '=== WebPC OpenJDK 21 installer ==='",
+      "echo '[1/6] Guest and network diagnostics'",
+      "cat /etc/alpine-release 2>/dev/null || true",
+      "uname -a 2>/dev/null || true",
+      "if command -v getent >/dev/null 2>&1; then getent hosts dl-cdn.alpinelinux.org 2>&1 || true; fi",
+      "echo '[2/6] Preparing APK repositories'",
+      "mkdir -p /etc/apk",
+      "touch /etc/apk/repositories",
+      "cp /etc/apk/repositories /tmp/webpc-apk-repositories.orig",
+      "sed 's/^[[:space:]]*#[[:space:]]*\\(https:\\/\\/[^[:space:]]*\\/community[[:space:]]*\\)$/\\1/' /tmp/webpc-apk-repositories.orig > /tmp/webpc-apk-repositories",
+      "while IFS= read -r repo || [ -n \"$repo\" ]; do case \"$repo\" in *'/main') community=\"\${repo%/main}/community\"; grep -Fqx \"$community\" /tmp/webpc-apk-repositories || printf '%s\\n' \"$community\" >> /tmp/webpc-apk-repositories ;; esac; done < /tmp/webpc-apk-repositories.orig",
+      "if [ ! -s /tmp/webpc-apk-repositories ]; then echo 'ERROR: no APK repositories are configured'; rc=2; else cp /tmp/webpc-apk-repositories /etc/apk/repositories; cat /etc/apk/repositories; fi",
+      "if [ \"$rc\" -ne 2 ]; then",
+      "  echo '[3/6] Updating APK indexes (up to 3 attempts)'",
+      "  update_rc=1; attempt=1",
+      "  while [ \"$attempt\" -le 3 ]; do echo \"APK update attempt $attempt/3\"; apk update; update_rc=$?; [ \"$update_rc\" -eq 0 ] && break; sleep $((attempt * 2)); attempt=$((attempt + 1)); done",
+      "  if [ \"$update_rc\" -eq 0 ]; then",
+      "    echo '[4/6] Installing OpenJDK 21 (up to 3 attempts)'",
+      "    install_rc=1; attempt=1",
+      "    while [ \"$attempt\" -le 3 ]; do",
+      "      apk add --no-cache --update-cache openjdk21-jre-headless; install_rc=$?",
+      "      if [ \"$install_rc\" -eq 0 ]; then break; fi",
+      "      echo \"Headless package attempt $attempt failed (exit $install_rc). Trying standard JRE package.\"",
+      "      apk add --no-cache --update-cache openjdk21-jre; install_rc=$?",
+      "      if [ \"$install_rc\" -eq 0 ]; then break; fi",
+      "      if [ \"$attempt\" -lt 3 ]; then echo 'Refreshing indexes before retry…'; apk update; fi",
+      "      sleep $((attempt * 2)); attempt=$((attempt + 1))",
+      "    done",
+      "    rc=$install_rc",
+      "  else",
+      "    rc=$update_rc; echo \"ERROR: apk update failed after 3 attempts (exit $update_rc). Check DNS, TLS, network gateway, and repository URLs above.\"",
+      "  fi",
+      "fi",
+      "echo '[5/6] Verifying the installed Java runtime'",
+      "if command -v java >/dev/null 2>&1; then java -version 2>&1; java_rc=$?; else echo 'ERROR: java executable is not on PATH'; java_rc=127; fi",
+      "if [ \"$java_rc\" -eq 0 ] && java -version 2>&1 | grep -Eq 'version \"?21([. +\"-]|$)|openjdk 21'; then rc=0; echo 'SUCCESS: OpenJDK 21 is installed and runnable.'; else",
+      "  echo 'ERROR: Java verification did not confirm a runnable Java 21 runtime.'; rc=1",
+      "  echo '[6/6] Package and network diagnostics'",
+      "  echo 'Configured repositories:'; cat /etc/apk/repositories 2>/dev/null || true",
+      "  echo 'APK package candidates:'; apk search -x openjdk21-jre-headless openjdk21-jre 2>&1 || true",
+      "  echo 'Disk space:'; df -h / 2>&1 || true",
+      "fi",
+      "rm -f /tmp/webpc-apk-repositories.orig /tmp/webpc-apk-repositories",
+      "printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus),
+      "exit \"$rc\""
+    ].join("; ");
     const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!";
     startBackgroundTask("java", "Installing Java 21", launch, taskStatus, taskLog, document.getElementById("minecraftStatus"));
   });
