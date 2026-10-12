@@ -1,7 +1,6 @@
 // Exercise the real stack.js HTTP message protocol with a synthetic 40 MiB
 // response. The stream is deliberately much larger than the 1 MiB bridge queue.
 import fs from "node:fs";
-import { pathToFileURL } from "node:url";
 
 class FakeWorker {
   constructor() {
