@@ -401,6 +401,119 @@ function connect(name, shared, toNet, certbuf) {
         streamData.set(buf, 0);
         return;
     }
+
+    // Keep only a bounded amount of each response in memory. The guest's
+    // http_readbody calls drain these chunks while the upstream reader pauses
+    // automatically when the queue reaches the high-water mark.
+    const MAX_RESPONSE_BUFFER_BYTES = 1024 * 1024;
+
+    function queueResponseChunk(connObj, chunk) {
+        if (!chunk || chunk.byteLength === 0) return;
+        connObj.respBodyChunks.push(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk));
+        connObj.respBodyBytes += chunk.byteLength;
+    }
+
+    function serveResponseChunks(connObj, requestedLength) {
+        const limit = Math.min(
+            streamData.byteLength,
+            Math.max(0, Number(requestedLength) || 0)
+        );
+        let written = 0;
+
+        while (written < limit && connObj.respBodyChunks.length > 0) {
+            const chunk = connObj.respBodyChunks[0];
+            const offset = connObj.respBodyOffset || 0;
+            const count = Math.min(limit - written, chunk.byteLength - offset);
+
+            if (count <= 0) {
+                connObj.respBodyChunks.shift();
+                connObj.respBodyOffset = 0;
+                continue;
+            }
+
+            streamData.set(chunk.subarray(offset, offset + count), written);
+            written += count;
+            connObj.respBodyBytes -= count;
+            connObj.respBodyOffset = offset + count;
+
+            if (connObj.respBodyOffset >= chunk.byteLength) {
+                connObj.respBodyChunks.shift();
+                connObj.respBodyOffset = 0;
+            }
+        }
+
+        streamLen[0] = written;
+        return written;
+    }
+
+    function joinChunks(chunks, totalLength) {
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+            result.set(chunk, offset);
+            offset += chunk.byteLength;
+        }
+        return result;
+    }
+
+    function makeResponseMetadata(resp, address) {
+        const headers = {};
+        for (const key of resp.headers.keys()) {
+            // Fetch may transparently decompress upstream content. Forwarding
+            // its original encoding/length would make the guest parse a false
+            // length or try to decompress bytes that are already decoded.
+            if (key.toLowerCase() === "content-encoding" ||
+                key.toLowerCase() === "content-length") {
+                continue;
+            }
+            headers[key] = resp.headers.get(key);
+        }
+        return new TextEncoder().encode(JSON.stringify({
+            bodyUsed: resp.bodyUsed,
+            headers,
+            redirected: resp.redirected,
+            status: resp.status,
+            statusText: resp.statusText,
+            type: resp.type,
+            url: resp.url || address
+        }));
+    }
+
+    async function pumpResponseBody(id, connObj) {
+        const reader = connObj.respReader;
+        try {
+            while (httpConnections[id] === connObj) {
+                // Backpressure: do not read another upstream chunk while the
+                // guest has not drained the bounded queue.
+                while (connObj.respBodyBytes >= MAX_RESPONSE_BUFFER_BYTES &&
+                       httpConnections[id] === connObj) {
+                    await new Promise(resolve => setTimeout(resolve, 4));
+                }
+
+                if (httpConnections[id] !== connObj) {
+                    try { await reader.cancel(); } catch (_) {}
+                    return;
+                }
+
+                const item = await reader.read();
+                if (item.done) {
+                    connObj.done = true;
+                    connObj.respReader = null;
+                    return;
+                }
+                if (item.value && item.value.byteLength) {
+                    queueResponseChunk(connObj, item.value);
+                }
+            }
+        } catch (error) {
+            if (httpConnections[id] === connObj) {
+                connObj.respError = error;
+                connObj.done = true;
+                connObj.respReader = null;
+                console.error("[WebPC network relay] response stream failed:", connObj.address, error);
+            }
+        }
+    }
     var timeoutHandler = null;
     var timeoutDeadlineMilli = null;
     let toNetCtrl = new Int32Array(toNet, 0, 1);
@@ -496,95 +609,63 @@ function connect(name, shared, toNet, certbuf) {
                         address: new TextDecoder().decode(req_.address),
                         request: reqObj,
                         requestSent: false,
-                        reqBodybuf: new Uint8Array(0),
+                        reqBodyChunks: [],
+                        reqBodySize: 0,
                         reqBodyEOF: false,
 
                         response: null,
-                        done: null,
-                        respBodybuf: null,
+                        done: false,
+                        respBodyChunks: [],
+                        respBodyOffset: 0,
+                        respBodyBytes: 0,
+                        respReader: null,
+                        respError: null,
                     };
                     httpConnections[reqID] = connObj;
                     streamStatus[0] = reqID;
                     break;
-                case "http_writebody":
-                    var s;
-                    if (httpConnections[req_.id] == undefined) {
-                        s = newUint8Array(0);
-                    } else {
-                        s = httpConnections[req_.id].reqBodybuf;
+                case "http_writebody": {
+                    const connObj = httpConnections[req_.id];
+                    if (!connObj) {
+                        streamStatus[0] = -1;
+                        break;
                     }
-                    httpConnections[req_.id].reqBodybuf = appendData(s, req_.body)
-                    httpConnections[req_.id].reqBodyEOF = req_.isEOF;
+
+                    if (req_.body && req_.body.byteLength) {
+                        const chunk = req_.body instanceof Uint8Array
+                            ? req_.body.slice()
+                            : new Uint8Array(req_.body);
+                        connObj.reqBodyChunks.push(chunk);
+                        connObj.reqBodySize += chunk.byteLength;
+                    }
+                    connObj.reqBodyEOF = req_.isEOF;
                     streamStatus[0] = 0;
-                    if (req_.isEOF && !httpConnections[req_.id].requestSent) {
-                        httpConnections[req_.id].requestSent = true;
-                        var connObj = httpConnections[req_.id];
-                        if ((connObj.request.method != "HEAD") && (connObj.request.method != "GET")) {
-                            connObj.request.body = connObj.reqBodybuf;
+
+                    if (req_.isEOF && !connObj.requestSent) {
+                        connObj.requestSent = true;
+                        if (connObj.request.method !== "HEAD" &&
+                            connObj.request.method !== "GET") {
+                            connObj.request.body = joinChunks(
+                                connObj.reqBodyChunks,
+                                connObj.reqBodySize
+                            );
                         }
+                        connObj.reqBodyChunks = [];
+                        connObj.reqBodySize = 0;
+
                         fetchWebPCRequest(connObj.address, connObj.request).then((resp) => {
+                            // Make status and headers available immediately; body bytes
+                            // are streamed separately with bounded memory and backpressure.
+                            connObj.response = makeResponseMetadata(resp, connObj.address);
                             connObj.done = false;
-                            connObj.respBodybuf = new Uint8Array(0);
-                            if (resp.ok) {
-                                resp.arrayBuffer().then((data) => {
-                                    var headers = {};
-                                    for (const key of resp.headers.keys()) {
-                                        if (data.byteLength > 0) {
-                                            if (key == "content-encoding") {
-                                                continue;
-                                            }
-                                            if (key == "content-length") {
-                                                headers[key] = data.byteLength.toString();
-                                                continue;
-                                            }
-                                        }
-                                        headers[key] = resp.headers.get(key);
-                                    }
-                                    connObj.response = new TextEncoder().encode(JSON.stringify({
-                                        bodyUsed: resp.bodyUsed,
-                                        headers: headers,
-                                        redirected: resp.redirected,
-                                        status: resp.status,
-                                        statusText: resp.statusText,
-                                        type: resp.type,
-                                        url: resp.url
-                                    }));
-                                    connObj.respBodybuf = new Uint8Array(data);
-                                    connObj.done = true;
-                                }).catch((error) => {
-                                    var headers = {};
-                                    for (const key of resp.headers.keys()) {
-                                        headers[key] = resp.headers.get(key);
-                                    }
-                                    connObj.response = new TextEncoder().encode(JSON.stringify({
-                                        bodyUsed: resp.bodyUsed,
-                                        headers: headers,
-                                        redirected: resp.redirected,
-                                        status: resp.status,
-                                        statusText: resp.statusText,
-                                        type: resp.type,
-                                        url: resp.url
-                                    }));
-                                    connObj.respBodybuf = new Uint8Array(0);
-                                    connObj.done = true;
-                                    console.log("failed to fetch body: " + error);
-                                });
-                            } else {
-                                var headers = {};
-                                for (const key of resp.headers.keys()) {
-                                    headers[key] = resp.headers.get(key);
-                                }
-                                connObj.response = new TextEncoder().encode(JSON.stringify({
-                                    bodyUsed: resp.bodyUsed,
-                                    headers: headers,
-                                    redirected: resp.redirected,
-                                    status: resp.status,
-                                    statusText: resp.statusText,
-                                    type: resp.type,
-                                    url: resp.url
-                                }));
+
+                            if (!resp.body) {
                                 connObj.done = true;
+                                return;
                             }
+
+                            connObj.respReader = resp.body.getReader();
+                            pumpResponseBody(req_.id, connObj);
                         }).catch((error) => {
                             const reason = String(
                                 error && error.message ? error.message : error
@@ -599,13 +680,17 @@ function connect(name, shared, toNet, certbuf) {
                                 statusText: "WebPC relay fetch failed: " + reason,
                                 url: connObj.address
                             }));
-                            connObj.respBodybuf = new TextEncoder().encode(
-                                "WebPC relay fetch failed for " + connObj.address + ": " + reason + "\n"
+                            queueResponseChunk(
+                                connObj,
+                                new TextEncoder().encode(
+                                    "WebPC relay fetch failed for " + connObj.address + ": " + reason + "\n"
+                                )
                             );
                             connObj.done = true;
                         });
                     }
                     break;
+                }
                 case "http_isreadable":
                     if ((httpConnections[req_.id] != undefined) && (httpConnections[req_.id].response != null)) {
                         streamData[0] = 1; // ready for reading
@@ -626,19 +711,29 @@ function connect(name, shared, toNet, certbuf) {
                         streamStatus[0] = 1; // isEOF
                     }
                     break;
-                case "http_readbody":
-                    if ((httpConnections[req_.id] == undefined) || (httpConnections[req_.id].response == null)) {
+                case "http_readbody": {
+                    const connObj = httpConnections[req_.id];
+                    if (!connObj || connObj.response == null) {
                         console.log(name + ":" + "response body is not available");
                         streamStatus[0] = -1;
                         break;
                     }
-                    httpConnections[req_.id].respBodybuf = serveData(httpConnections[req_.id].respBodybuf, req_.len);
+
+                    serveResponseChunks(connObj, req_.len);
                     streamStatus[0] = 0;
-                    if ((httpConnections[req_.id].done) && (httpConnections[req_.id].respBodybuf.byteLength == 0)) {
-                        streamStatus[0] = 1;
-                        delete httpConnections[req_.id]; // connection done
+
+                    if (connObj.done && connObj.respBodyBytes === 0) {
+                        if (connObj.respError) {
+                            // Never report a truncated transfer as clean EOF:
+                            // let the guest fail/retry rather than install corrupt bytes.
+                            streamStatus[0] = -1;
+                        } else {
+                            streamStatus[0] = 1;
+                        }
+                        delete httpConnections[req_.id];
                     }
                     break;
+                }
                 case "send_cert":
                     certbuf.buf = appendData(certbuf.buf, req_.buf);
                     certbuf.readyCallback(certbuf.buf);
