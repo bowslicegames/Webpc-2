@@ -45,6 +45,24 @@ jobs:
           grep -F 'webpcShellReadyNow' work/live-index.html
           grep -F 'apk add --no-cache unzip' work/live-index.html
           grep -F 'wget -q -T 5 -O /dev/null https://example.com' work/live-index.html
+          # Wait for the Worker script itself to deploy, not just the static
+          # HTML asset bundle. A small request verifies the new streaming marker.
+          proxy_ready=0
+          for attempt in $(seq 1 24); do
+            proxy_status="$(curl --silent --show-error --location --max-time 20 \
+              -D work/proxy-probe-headers.txt \
+              -H 'X-WebPC-Proxy-Target: https://example.com' \
+              https://webpc.bowslicegames.workers.dev/net-proxy \
+              -o work/proxy-probe.txt -w '%{http_code}' || true)"
+            if [ "$proxy_status" = "200" ] && grep -Fiq 'X-WebPC-Proxy-Body: streamed' work/proxy-probe-headers.txt; then
+              proxy_ready=1
+              break
+            fi
+            echo "Waiting for the streaming proxy Worker (attempt $attempt/24, HTTP $proxy_status)…"
+            sleep 5
+          done
+          test "$proxy_ready" -eq 1
+
           # Compare the same 40 MB immutable release asset through the direct
           # asset route and the guest-network relay. This verifies full-body
           # length and byte-for-byte integrity without depending on a third-party
