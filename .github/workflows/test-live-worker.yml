@@ -45,28 +45,22 @@ jobs:
           grep -F 'webpcShellReadyNow' work/live-index.html
           grep -F 'apk add --no-cache unzip' work/live-index.html
           grep -F 'wget -q -T 5 -O /dev/null https://example.com' work/live-index.html
-          # Exercise a multi-megabyte binary response through the same-origin
-          # network relay. The /range endpoint has a deterministic byte pattern,
-          # so this checks both exact length and payload integrity, not just HTTP 200.
-          curl --fail --silent --show-error --location --retry 2 --retry-delay 2 --max-time 120 \
+          # Compare the same 40 MB immutable release asset through the direct
+          # asset route and the guest-network relay. This verifies full-body
+          # length and byte-for-byte integrity without depending on a third-party
+          # test endpoint's availability or rate limits.
+          curl --fail --silent --show-error --location --retry 2 --retry-delay 2 --max-time 180 \
+            https://webpc.bowslicegames.workers.dev/assets/qemu-system-x86_64.wasm \
+            -o work/direct-large.bin
+          curl --fail --silent --show-error --location --retry 2 --retry-delay 2 --max-time 180 \
             -D work/proxy-headers.txt \
-            -H 'X-WebPC-Proxy-Target: https://httpbin.org/range/8388608' \
+            -H 'X-WebPC-Proxy-Target: https://github.com/bowslicegames/Webpc-2/releases/download/V1/qemu-system-x86_64.wasm' \
             https://webpc.bowslicegames.workers.dev/net-proxy \
             -o work/proxy-large.bin
           grep -Fiq 'X-WebPC-Proxy-Body: streamed' work/proxy-headers.txt
-          test "$(wc -c < work/proxy-large.bin | tr -d ' ')" -eq 8388608
-          node <<'NODE'
-          const fs = require("fs");
-          const actual = fs.readFileSync("work/proxy-large.bin");
-          const expected = Buffer.alloc(8388608);
-          for (let i = 0; i < expected.length; i++) expected[i] = i % 256;
-          if (!actual.equals(expected)) {
-            let first = 0;
-            while (first < Math.min(actual.length, expected.length) && actual[first] === expected[first]) first++;
-            throw new Error("Large proxy payload differs at byte " + first + " (actual size " + actual.length + ")");
-          }
-          console.log("Verified 8 MiB proxy payload byte-for-byte");
-          NODE
+          test "$(wc -c < work/proxy-large.bin | tr -d ' ')" -eq "$(wc -c < work/direct-large.bin | tr -d ' ')"
+          cmp work/direct-large.bin work/proxy-large.bin
+          echo "Verified large proxy payload byte-for-byte"
 
           curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --max-time 60 -I \
             https://webpc.bowslicegames.workers.dev/assets/disk-rootfs-qcow2.img
