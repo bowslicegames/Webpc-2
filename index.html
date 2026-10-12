@@ -660,8 +660,8 @@ button:active {
 .window-action {width:29px;height:27px;flex:0 0 29px;border:1px solid #ffffff20;border-radius:6px;background:#ffffff0b;color:#eef5ff;padding:0;font-size:13px}
 .window-action.close {background:#9c3942;border-color:#c75b64}
 .window-body {position:relative;display:flex;flex:1;min-height:0;min-width:0;overflow:hidden;background:#0e1622}
-.window-resize {position:absolute;right:0;bottom:0;width:24px;height:24px;z-index:5;touch-action:none;cursor:nwse-resize;
-  background:linear-gradient(135deg,transparent 50%,#8ca2bb 51%,#8ca2bb 57%,transparent 58%,transparent 68%,#8ca2bb 69%,#8ca2bb 75%,transparent 76%)}
+.window-resize {position:absolute;right:0;bottom:0;width:36px;height:36px;z-index:30;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;cursor:nwse-resize;
+  background:linear-gradient(135deg,transparent 43%,#b7cce3 44%,#b7cce3 49%,transparent 50%,transparent 61%,#b7cce3 62%,#b7cce3 67%,transparent 68%);border-bottom-right-radius:10px}
 #fileWindow {left:clamp(12px,13vw,150px);top:clamp(12px,7vh,45px);width:min(780px,calc(100% - 24px));height:min(570px,calc(100% - 24px))}
 .file-layout {display:flex;flex:1;min-width:0;min-height:0}
 .file-sidebar {width:132px;flex:0 0 132px;padding:12px 8px;background:#111e2e;border-right:1px solid #26374b}
@@ -2897,18 +2897,17 @@ function javaSetupCommand() {
         "if command -v java >/dev/null 2>&1; then",
         "echo '[WebPC] Java already installed'; java -version",
         "else",
+        "echo '[WebPC] Switching Alpine CDN repositories to HTTPS where possible...'",
+        "if [ -f /etc/apk/repositories ]; then sed -i 's#http://dl-cdn.alpinelinux.org#https://dl-cdn.alpinelinux.org#g' /etc/apk/repositories; fi",
         "echo '[WebPC] Refreshing Alpine package indexes...'",
-        "if apk update; then",
+        "apk update || echo '[WebPC] WARNING: index refresh failed; trying available cached indexes anyway.'",
         "echo '[WebPC] Installing OpenJDK 21 runtime...'",
-        "apk add --no-cache openjdk21-jre-headless || apk add --no-cache openjdk21-jre",
-        "else",
-        "echo '[WebPC] apk update failed. Repository configuration:'",
-        "cat /etc/apk/repositories",
-        "fi",
+        "if ! apk add --no-cache openjdk21-jre-headless; then echo '[WebPC] Headless package failed; trying openjdk21-jre...'; apk add --no-cache openjdk21-jre; fi",
         "if command -v java >/dev/null 2>&1; then",
         "echo '[WebPC] OpenJDK runtime installed'; java -version",
         "else",
-        "echo '[WebPC] Java installation failed; keep the APK error above for diagnosis'",
+        "echo '[WebPC] Java installation failed. Check network access and the APK errors above.'",
+        "cat /etc/apk/repositories",
         "fi",
         "fi"
     ].join("; ");
@@ -4369,11 +4368,11 @@ main();
     try { gl2 = canvas.getContext("webgl2"); gl = gl2 || canvas.getContext("webgl"); } catch (_) {}
     const memoryHint = navigator.deviceMemory ? " Device memory reported: " + navigator.deviceMemory + " GB." : " Device memory is not exposed by this browser.";
     graphicsStatus.textContent = (gl2
-      ? "Browser graphics: WebGL 2 available."
+      ? "Host renderer: WebGL 2 available."
       : gl
-        ? "Browser graphics: WebGL available."
-        : "Browser graphics: WebGL unavailable in this tab; QEMU remains CPU-emulated.") +
-      " The guest currently uses QEMU's serial display path; this is not direct GPU passthrough." + memoryHint;
+        ? "Host renderer: WebGL available."
+        : "Host renderer: WebGL unavailable in this tab; browser-side GPU rendering cannot be used.") +
+      " Guest GPU bridge: not active yet. The guest currently uses QEMU's existing display path; real guest GPU acceleration needs a QEMU virtio-gpu/renderer backend and a Linux guest driver, not just a browser WebGL context." + memoryHint;
   }
   const networkTestButton = document.getElementById("networkTest");
   const networkStatus = document.getElementById("networkStatus");
@@ -4701,11 +4700,31 @@ main();
       if (win.id==="terminalWindow") attachTerminal();
     });
     const handle=win.querySelector(".window-resize"); let resize=null;
-    // Track movement on document as well as the grip: this is more reliable for touch/pointer capture on iPad Safari.
     if (handle) {
-      handle.addEventListener("pointerdown",e=>{if(win.classList.contains("maximized"))return;e.preventDefault();e.stopPropagation();resize={x:e.clientX,y:e.clientY,w:win.offsetWidth,h:win.offsetHeight};try{handle.setPointerCapture(e.pointerId)}catch(_){}});
-      document.addEventListener("pointermove",e=>{if(!resize)return;e.preventDefault();const area=document.getElementById("desktopArea").getBoundingClientRect();const minW=window.matchMedia("(max-width:600px)").matches?180:280;const minH=150;const maxW=Math.max(minW,area.width-win.offsetLeft);const maxH=Math.max(minH,area.height-win.offsetTop);win.style.width=Math.max(minW,Math.min(maxW,resize.w+e.clientX-resize.x))+"px";win.style.height=Math.max(minH,Math.min(maxH,resize.h+e.clientY-resize.y))+"px";if(win.id==="terminalWindow")attachTerminal();},{passive:false});
-      const stopResize=()=>{resize=null};document.addEventListener("pointerup",stopResize);document.addEventListener("pointercancel",stopResize);
+      // Make the grip a direct child of the window so its hit target stays at the actual
+      // bottom-right corner (not 40px above it inside the window body). This matters on iPad.
+      win.appendChild(handle);
+      handle.addEventListener("pointerdown",e=>{
+        if(win.classList.contains("maximized"))return;
+        e.preventDefault();e.stopPropagation();
+        resize={pointerId:e.pointerId,x:e.clientX,y:e.clientY,w:win.offsetWidth,h:win.offsetHeight};
+        try{handle.setPointerCapture(e.pointerId)}catch(_){}
+      });
+      document.addEventListener("pointermove",e=>{
+        if(!resize || (e.pointerId!==undefined && e.pointerId!==resize.pointerId))return;
+        e.preventDefault();
+        const area=document.getElementById("desktopArea").getBoundingClientRect();
+        const minW=window.matchMedia("(max-width:600px)").matches?180:280;
+        const minH=150;
+        const maxW=Math.max(minW,area.width-win.offsetLeft);
+        const maxH=Math.max(minH,area.height-win.offsetTop);
+        win.style.width=Math.max(minW,Math.min(maxW,resize.w+e.clientX-resize.x))+"px";
+        win.style.height=Math.max(minH,Math.min(maxH,resize.h+e.clientY-resize.y))+"px";
+        if(win.id==="terminalWindow")attachTerminal();
+      },{passive:false});
+      const stopResize=e=>{if(!resize || (e && e.pointerId!==undefined && e.pointerId!==resize.pointerId))return;resize=null};
+      document.addEventListener("pointerup",stopResize);
+      document.addEventListener("pointercancel",stopResize);
     }
   });
   function setFileStatus(text, bad) { fileStatus.textContent=text; fileStatus.style.color=bad?"#ffaaaa":"#9cb0c6"; }
