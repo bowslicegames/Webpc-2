@@ -154,7 +154,8 @@ function isAllowedProxyHost(host) {
     host === "pypi.org" || host.endsWith(".pypi.org") ||
     host === "files.pythonhosted.org" ||
     host === "sourceforge.net" || host.endsWith(".sourceforge.net") ||
-    host === "eclipse.org" || host.endsWith(".eclipse.org");
+    host === "eclipse.org" || host.endsWith(".eclipse.org") ||
+    host === "bell-sw.com" || host.endsWith(".bell-sw.com");
 }
 
 export default {
@@ -369,9 +370,16 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         headers.set("X-WebPC-Worker","active");
         headers.set("X-WebPC-Proxy","server-fetch");
         headers.set("X-WebPC-Proxy-URL",upstream.url || targetURL.toString());
+        headers.set("X-WebPC-Proxy-Body", "streamed");
+        // Fetch may transparently decompress upstream bodies. Do not forward
+        // stale wire-level framing/encoding headers, and avoid caching or
+        // transformation of arbitrary guest HTTP responses.
         headers.delete("content-length");
         headers.delete("content-encoding");
+        headers.set("Cache-Control", "no-store, no-transform");
 
+        // Pass the readable stream through unchanged; never buffer a full
+        // download in Worker memory.
         return new Response(upstream.body,{status:upstream.status,statusText:upstream.statusText,headers});
       } catch (error) {
         return new Response("WebPC network relay error: " + errorText(error),{status:502,headers:corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store","X-WebPC-Worker":"active"})});
