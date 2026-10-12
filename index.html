@@ -1050,7 +1050,7 @@ button:active {
           <section class="desktop-window" id="minecraftWindow" aria-label="Minecraft launcher window">
             <div class="window-titlebar"><span>🟩</span><span class="window-title">Minecraft Java Edition</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body"><div class="info-content">
-              <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Java 21 runtime from here. Setup runs as a background guest task, so the File Manager and terminal remain usable while packages download.</p><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button primary" id="installJava">Install Java 21</button></div></div>
+              <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Java 21 runtime from here. Setup runs as a background guest task, so the File Manager and terminal remain usable while packages download.</p><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button" id="repairApk">Repair APK / install nano</button><button class="ui-button primary" id="installJava">Install Java 21</button><div class="info-status" id="apkStatus" style="flex-basis:100%">APK package manager: not checked</div></div></div>
               <div class="info-card"><h3>Virtual computer</h3><p><b>Virtual disk:</b> 8 GiB qcow2, dynamically growing. The backing file starts small and grows as Linux writes data; it does not pre-allocate 8 GiB of browser memory. Actual used blocks still consume browser memory, so avoid filling multiple GiB in an iPad tab. Guest-side downloads avoid a second full-file JavaScript buffer, and the guest disk resets on a fresh launch.</p><p style="margin-top:8px"><b>Guest RAM:</b> 512 MiB. QEMU uses CPU emulation, with browser-side memory kept deliberately conservative.</p><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div><div style="display:flex;gap:7px;margin-top:10px"><button class="ui-button" id="networkTest">Test guest internet</button></div><div class="info-status" id="networkStatus">Guest internet: not checked</div></div>
             </div><div class="window-resize" aria-hidden="true"></div></div>
           </section>
@@ -4544,9 +4544,35 @@ main();
     // Otherwise the broker can mistake the echoed command for its real output and
     // finish before file operations have actually run.
     const payload = "printf '\\n" + begin + "\\n'; " + job.command + "; printf '\\n" + end + "\\n'";
-    const wrapped = "printf '%s' '" + b64(payload) + "' | base64 -d | sh";
-    try { terminal.paste(wrapped + "\r"); }
-    catch (e) { finish(e, ""); }
+    const encodedPayload = b64(payload);
+    const wrapped = "printf '%s' '" + encodedPayload + "' | base64 -d | sh";
+    try {
+      if (wrapped.length <= 1400) {
+        terminal.paste(wrapped + "\r");
+      } else {
+        /*
+         * iOS terminals can truncate very long pasted shell lines. Transport
+         * large commands as small base64 chunks, then execute the staged script.
+         * Each line is short enough for the guest's interactive shell.
+         */
+        const commandFile = "/tmp/.webpc-command-" + id + ".sh";
+        const commands = [": > " + shellQuote(commandFile)];
+        for (let offset = 0; offset < encodedPayload.length; offset += 800) {
+          const chunk = encodedPayload.slice(offset, offset + 800);
+          commands.push("printf '%s' '" + chunk + "' | base64 -d >> " + shellQuote(commandFile));
+        }
+        commands.push("sh " + shellQuote(commandFile) + "; rm -f " + shellQuote(commandFile));
+        let transportIndex = 0;
+        const sendNextTransportLine = () => {
+          if (pending !== p || transportIndex >= commands.length) return;
+          try {
+            terminal.paste(commands[transportIndex++] + "\r");
+            if (transportIndex < commands.length) setTimeout(sendNextTransportLine, 90);
+          } catch (e) { finish(e, ""); }
+        };
+        sendNextTransportLine();
+      }
+    } catch (e) { finish(e, ""); }
   }
   window.webpcDesktopConsumeOutput = function (data) {
     if (!pending) return;
@@ -5103,6 +5129,50 @@ main();
       " && chmod 700 " + shellQuote(taskScript) +
       " && (nohup /bin/sh " + shellQuote(taskScript) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!)";
     startBackgroundTask("java", "Installing Java 21", launch, taskStatus, taskLog, document.getElementById("minecraftStatus"));
+  });
+
+  const repairApkButton = document.getElementById("repairApk");
+  repairApkButton.addEventListener("click", () => {
+    if (!shellReadyNow()) { document.getElementById("apkStatus").textContent = "APK package manager: Linux is still starting."; return; }
+    if (!window.confirm("Refresh Alpine package indexes, check disk health, and try installing nano? This does not change the VM disk image or release assets.")) return;
+    const taskId = "wpc-apk-" + Date.now().toString(36);
+    const taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
+    const inner = [
+      "set +e",
+      "echo '=== WebPC APK repair and storage diagnostics ==='",
+      "echo '[1/4] Alpine version and repositories'",
+      "cat /etc/alpine-release 2>&1 || true",
+      "cat /etc/apk/repositories 2>&1 || true",
+      "echo '[2/4] Disk and inode space'",
+      "df -h / /tmp /var 2>&1 || true",
+      "df -i / /tmp /var 2>&1 || true",
+      "echo '[3/4] Refreshing package indexes'",
+      "apk update",
+      "update_rc=$?",
+      "if [ \"$update_rc\" -eq 0 ]; then",
+      "  echo '[4/4] Installing nano with no persistent package cache'",
+      "  apk add --no-cache nano",
+      "  rc=$?",
+      "else",
+      "  rc=$update_rc",
+      "  echo 'APK index refresh failed; package installation was skipped.'",
+      "fi",
+      "if [ \"$rc\" -ne 0 ]; then",
+      "  echo '=== Failure diagnostics ==='",
+      "  echo 'Writable paths:'",
+      "  for d in /tmp /var/tmp /var/cache/apk /lib/apk/db /etc/apk; do ls -ld \"$d\" 2>&1; done",
+      "  echo 'Kernel storage messages:'; dmesg 2>&1 | tail -n 12 || true",
+      "  echo 'Final disk status:'; df -h / 2>&1 || true",
+      "fi",
+      "printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus),
+      "exit \"$rc\""
+    ].join("\n");
+    const taskScript = "/tmp/" + taskId + ".sh";
+    const launch = "printf '%s' " + shellQuote(b64(inner)) + " | base64 -d > " + shellQuote(taskScript) +
+      " && chmod 700 " + shellQuote(taskScript) +
+      " && (nohup /bin/sh " + shellQuote(taskScript) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!)";
+    const status = document.getElementById("apkStatus");
+    startBackgroundTask("java", "Repairing APK and installing nano", launch, taskStatus, taskLog, status);
   });
 
   const browserForm = document.getElementById("browserForm");
