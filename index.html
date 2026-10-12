@@ -688,7 +688,7 @@ button:active {
 .file-menu-wrap {position:relative;display:inline-flex;flex:0 0 auto}
 #fileMenu {width:36px;min-width:36px;padding:0;font-size:19px;line-height:1}
 #fileMenuPopup {position:absolute;z-index:50;right:0;top:38px;min-width:155px;padding:5px;border:1px solid #425a74;border-radius:9px;background:#142235;box-shadow:0 12px 30px #0009}
-#fileMenuPopup[hidden],#fileDecompress[hidden] {display:none!important}
+#fileMenuPopup[hidden],#fileDecompress[hidden],#fileInstallPackage[hidden] {display:none!important}
 #fileMenuPopup button {width:100%;height:36px;text-align:left;padding:0 10px;border-radius:6px;background:transparent;color:#e8f2ff;font-size:12px}
 #fileMenuPopup button:not(:disabled):hover {background:#294967}
 .file-toolbar {align-items:center}
@@ -1031,7 +1031,7 @@ button:active {
                   <div class="file-location" id="fileBreadcrumbs" aria-label="Folder breadcrumbs"><span>Filesystem</span></div>
                   <input class="file-path" id="filePath" value="/" aria-label="Current folder path">
                   <div class="file-search-row"><input class="file-search" id="fileSearch" type="search" placeholder="Search this folder…" aria-label="Search files"><select class="file-sort" id="fileSort" aria-label="Sort files"><option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="size">Smallest first</option><option value="size-desc">Largest first</option><option value="type">Folders first</option></select></div>
-                  <div class="file-toolbar"><button class="ui-button" id="fileUp">↑ Up</button><button class="ui-button" id="fileNew">＋ New</button><button class="ui-button" id="fileRefresh">↻ Refresh</button><button class="ui-button" id="fileUpload">⇧ Upload file</button><button class="ui-button" id="fileDownloadUrl">↓ Download URL</button><button class="ui-button primary" id="fileSave">Save to disk</button><button class="ui-button" id="fileOpenPath">Open path</button><button class="ui-button" id="fileDelete">Delete selected</button><span class="file-menu-wrap"><button class="ui-button" id="fileMenu" aria-label="More file actions" aria-expanded="false" title="More actions">⋮</button><span id="fileMenuPopup" hidden><button id="fileDecompress" hidden>📦 Decompress</button></span></span></div>
+                  <div class="file-toolbar"><button class="ui-button" id="fileUp">↑ Up</button><button class="ui-button" id="fileNew">＋ New</button><button class="ui-button" id="fileRefresh">↻ Refresh</button><button class="ui-button" id="fileUpload">⇧ Upload file</button><button class="ui-button" id="fileDownloadUrl">↓ Download URL</button><button class="ui-button" id="fileGetJava">☕ Get Java 21 APK</button><button class="ui-button primary" id="fileSave">Save to disk</button><button class="ui-button" id="fileOpenPath">Open path</button><button class="ui-button" id="fileDelete">Delete selected</button><span class="file-menu-wrap"><button class="ui-button" id="fileMenu" aria-label="More file actions" aria-expanded="false" title="More actions">⋮</button><span id="fileMenuPopup" hidden><button id="fileInstallPackage" hidden>📦 Install APK package</button><button id="fileDecompress" hidden>📂 Decompress archive</button></span></span></div>
                   <input id="fileUploadInput" type="file" hidden>
                   <input class="file-name" id="fileName" value="hello.txt" aria-label="File name">
                   <textarea class="file-editor" id="fileEditor" spellcheck="false" placeholder="Write a file here. Save to disk writes it to the Linux virtual disk using a hidden shell command."></textarea>
@@ -4761,7 +4761,7 @@ main();
     return (n/1024/1024/1024).toFixed(2)+" GB";
   }
   function clearFileSelection() {
-    selectedFilePath=null; fileDecompress.hidden=true;
+    selectedFilePath=null; fileDecompress.hidden=true; fileInstallPackage.hidden=true;
     fileList.querySelectorAll(".file-row").forEach(row=>row.classList.remove("selected"));
   }
   function updateFileBreadcrumbs(dir){if(!fileBreadcrumbs)return;fileBreadcrumbs.replaceChildren();const root=document.createElement("button");root.type="button";root.textContent="⌂ /";root.onclick=()=>{filePath.value="/";refreshFiles();};fileBreadcrumbs.appendChild(root);let p="";dir.split("/").filter(Boolean).forEach(part=>{p+="/"+part;const target=p,sep=document.createElement("span");sep.textContent="›";fileBreadcrumbs.appendChild(sep);const b=document.createElement("button");b.type="button";b.textContent=part;b.onclick=()=>{filePath.value=target;refreshFiles();};fileBreadcrumbs.appendChild(b);});}
@@ -4782,7 +4782,7 @@ main();
       setFileStatus(currentFileEntries.filter(e=>e.type==="D").length+" folder(s), "+currentFileEntries.filter(e=>e.type==="F").length+" file(s) · "+dir);
     });
   }
-  const fileMenu=document.getElementById("fileMenu"), fileMenuPopup=document.getElementById("fileMenuPopup"), fileDecompress=document.getElementById("fileDecompress");
+  const fileMenu=document.getElementById("fileMenu"), fileMenuPopup=document.getElementById("fileMenuPopup"), fileDecompress=document.getElementById("fileDecompress"), fileInstallPackage=document.getElementById("fileInstallPackage");
   const backgroundTasks = new Map();
   function renderServiceTasks(){const list=document.getElementById("serviceTaskList"),summary=document.getElementById("serviceSummary");if(!list||!summary)return;list.replaceChildren();const tasks=[...backgroundTasks.values()].sort((a,b)=>b.started-a.started);summary.textContent=tasks.length?tasks.length+" task(s) tracked. Long jobs run as detached Linux processes; short control messages still use the shared serial bridge.":"No background tasks started this session.";if(!tasks.length){const e=document.createElement("div");e.className="task-empty";e.textContent="No background tasks yet. Start a download, archive extraction, or Java setup to see it here.";list.appendChild(e);return;}tasks.forEach(t=>{const c=document.createElement("article");c.className="task-card";const h=document.createElement("div");h.className="task-card-head";const n=document.createElement("span");n.textContent=(t.kind==="java"?"☕ ":t.kind==="download"?"⬇️ ":t.kind==="unzip"?"📦 ":"⚙️ ")+t.label;n.style.flex="1";const p=document.createElement("span");p.className="service-pill";p.textContent=t.state||"Running";h.append(n,p);c.appendChild(h);const m=document.createElement("div");m.className="task-card-meta";m.textContent="Started "+Math.round((Date.now()-t.started)/1000)+"s ago · log: "+t.logPath;c.appendChild(m);if(t.lastDetail){const d=document.createElement("div");d.className="task-card-meta";d.textContent=t.lastDetail;c.appendChild(d);}const actions=document.createElement("div");actions.className="task-card-actions";const log=document.createElement("button");log.className="ui-button";log.textContent="View log";log.onclick=()=>runGuestForService(t.kind==="java"?"minecraft":"files","tail -n 35 "+JSON.stringify(t.logPath)+" 2>/dev/null || true",(err,out)=>{t.lastDetail=err?err.message:(out||"(empty log)").slice(-1800);renderServiceTasks();});actions.appendChild(log);const restart=document.createElement("button");restart.className="ui-button";restart.textContent="Restart";restart.disabled=!t.pid;restart.onclick=()=>{if(!confirm("Restart "+t.label+"? This will stop the current process and relaunch it."))return;t.state="Restarting";t.lastDetail="Sending restart request…";renderServiceTasks();const svc=t.kind==="java"?"minecraft":"files";const restartCmd="pkill -TERM -P "+Number(t.pid||0)+" 2>/dev/null || true; kill "+Number(t.pid||0)+" 2>/dev/null || true; rm -f "+JSON.stringify(t.statusPath)+"; : > "+JSON.stringify(t.logPath)+"; "+t.command;runGuestForService(svc,restartCmd,(err,out)=>{const pm=(out||"").match(/WEBPC_TASK_STARTED:([0-9]+)/);if(err||!pm){t.state="Restart failed";t.lastDetail=err?err.message:(out||"No start confirmation returned").slice(-500);renderServiceTasks();return;}t.pid=Number(pm[1]);t.started=Date.now();t.state="Running";t.lastDetail="Restarted";renderServiceTasks();pollBackgroundTask(t.statusPath);});};actions.appendChild(restart);if(t.pid){const stop=document.createElement("button");stop.className="ui-button";stop.textContent="Stop task";stop.onclick=()=>{if(confirm("Stop "+t.label+"?"))runGuestForService(t.kind==="java"?"minecraft":"files","pkill -TERM -P "+Number(t.pid)+" 2>/dev/null || true; kill "+Number(t.pid)+" 2>/dev/null || true; printf '143\\n' > "+JSON.stringify(t.statusPath),(err)=>{t.state="Stop requested";t.lastDetail=err?err.message:"Signal sent";renderServiceTasks();});};actions.appendChild(stop);}c.appendChild(actions);list.appendChild(c);});}
   function setTaskStatus(target, text, bad) {
@@ -4830,8 +4830,9 @@ main();
   }
   function closeFileMenu(){if(fileMenuPopup){fileMenuPopup.hidden=true;fileMenu.setAttribute("aria-expanded","false");}}
   function probeDecompress(path) {
-    fileDecompress.hidden=true;
+    fileDecompress.hidden=true; fileInstallPackage.hidden=true;
     const name=path.split("/").pop().toLowerCase();
+    if (name.endsWith(".apk")) fileInstallPackage.hidden=false;
     let test=null;
     if(name.endsWith(".tar.gz")||name.endsWith(".tgz")) test="tar -tzf "+JSON.stringify(path)+" >/dev/null 2>&1";
     else if(name.endsWith(".tar")) test="tar -tf "+JSON.stringify(path)+" >/dev/null 2>&1";
@@ -4848,6 +4849,18 @@ main();
   }
   fileMenu.addEventListener("click",()=>{fileMenuPopup.hidden=!fileMenuPopup.hidden;fileMenu.setAttribute("aria-expanded",String(!fileMenuPopup.hidden));});
   document.addEventListener("pointerdown",e=>{if(!e.target.closest(".file-menu-wrap"))closeFileMenu();});
+  fileInstallPackage.addEventListener("click",()=>{
+    const path=selectedFilePath;if(!path||!path.toLowerCase().endsWith(".apk"))return;
+    closeFileMenu();
+    if(!window.confirm("Install the selected Alpine Linux APK package? This changes the current temporary Linux guest only. The package must match Alpine Linux and x86_64."))return;
+    const taskId="wpc-apkinstall-"+Date.now().toString(36),taskStatus="/tmp/"+taskId+".status",taskLog="/tmp/"+taskId+".log";
+    const command="echo '=== Local APK install ==='; echo 'Package: "+path.replace(/['"\\]/g,"")+"'; df -h / /tmp 2>&1; " +
+      "apk add --allow-untrusted "+shellQuote(path)+"; rc=$?; " +
+      "if [ \"$rc\" -ne 0 ]; then echo \"Install failed with exit code $rc\"; echo 'APK database files:'; ls -la /lib/apk/db 2>&1; echo 'Disk status:'; df -h / 2>&1; fi; " +
+      "printf '%s\\n' \"$rc\" > "+shellQuote(taskStatus);
+    const launch="nohup sh -c "+shellQuote(command)+" </dev/null > "+shellQuote(taskLog)+" 2>&1 & echo WEBPC_TASK_STARTED:$!";
+    startBackgroundTask("download","Installing "+path.split("/").pop(),launch,taskStatus,taskLog);
+  });
   fileDecompress.addEventListener("click",()=>{
     const path=selectedFilePath;if(!path)return;
     const name=path.split("/").pop().toLowerCase(), parent=path.slice(0,path.lastIndexOf("/"))||"/";
@@ -4919,32 +4932,38 @@ main();
     });
   }
 
-  fileDownloadUrlButton.addEventListener("click", () => {
+  function startDirectGuestDownload(rawUrl, fixedName, requireConfirm=true) {
     if (!shellReadyNow()) { setFileStatus("Wait until Linux has logged in before downloading.", true); return; }
-    let url;
-    try { url = new URL(window.prompt("Enter a direct HTTP/HTTPS download URL. The Linux guest downloads it directly, so large files do not pass through browser memory:", "https://")); }
-    catch (_) { return; }
-    if (url.protocol !== "https:" && url.protocol !== "http:") { setFileStatus("Only HTTP and HTTPS download URLs are supported.", true); return; }
+    let url; try { url = new URL(rawUrl); } catch (_) { setFileStatus("The download URL is invalid.",true); return; }
+    if (url.protocol !== "https:" && url.protocol !== "http:") { setFileStatus("Only HTTP or HTTPS download URLs are supported.", true); return; }
     if (url.username || url.password) { setFileStatus("URLs containing login credentials are not supported.", true); return; }
     let suggested;
-    try { suggested = decodeURIComponent(url.pathname.split("/").pop() || "download.bin").replace(/[^A-Za-z0-9._ -]/g, "_"); }
-    catch (_) { suggested = "download.bin"; }
+    try { suggested = decodeURIComponent(url.pathname.split("/").pop() || "download.bin").replace(/[^A-Za-z0-9._ -]/g, "_"); } catch (_) { suggested = "download.bin"; }
     if (!suggested || suggested === "." || suggested === "..") suggested = "download.bin";
-    const name = window.prompt("Save download as (in the current folder):", suggested);
+    const name = fixedName || window.prompt("Save download as (in the current folder):", suggested);
     if (name === null) return;
     if (!name || name === "." || name === ".." || !/^[A-Za-z0-9._ -]+$/.test(name) || name.includes("/")) { setFileStatus("Choose a simple filename without slashes.", true); return; }
     let dir; try { dir = guestPath(); } catch (e) { setFileStatus(e.message, true); return; }
     const destination = (dir === "/" ? "" : dir) + "/" + name;
-    if (!window.confirm("Download directly inside Linux to " + destination + "? Existing files will be resumed/replaced depending on server support.")) return;
-    const taskId = "wpc-download-" + Date.now().toString(36);
-    const taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
-    const targetQ = shellQuote(destination), urlQ = shellQuote(url.href);
+    if (requireConfirm && !window.confirm("Download directly inside Linux to " + destination + "? Existing files will be resumed/replaced depending on server support.")) return;
+    const taskId = "wpc-download-" + Date.now().toString(36), taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
     const inner = "mkdir -p " + shellQuote(dir) + " || exit $?; " +
-      "if command -v wget >/dev/null 2>&1; then wget -c -t 3 -T 30 -O " + targetQ + " " + urlQ + "; " +
-      "elif command -v curl >/dev/null 2>&1; then curl -fL --retry 3 --connect-timeout 20 -o " + targetQ + " " + urlQ + "; " +
+      "if command -v wget >/dev/null 2>&1; then wget -c -t 3 -T 30 -O " + shellQuote(destination) + " " + shellQuote(url.href) + "; " +
+      "elif command -v curl >/dev/null 2>&1; then curl -fL --retry 3 --connect-timeout 20 -o " + shellQuote(destination) + " " + shellQuote(url.href) + "; " +
       "else echo 'Neither wget nor curl is installed'; false; fi; rc=$?; printf '%s\\n' \"$rc\" > " + shellQuote(taskStatus);
     const launch = "nohup sh -c " + shellQuote(inner) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!";
     startBackgroundTask("download", "Downloading " + name, launch, taskStatus, taskLog);
+  }
+  fileDownloadUrlButton.addEventListener("click", () => {
+    if (!shellReadyNow()) { setFileStatus("Wait until Linux has logged in before downloading.", true); return; }
+    const raw = window.prompt("Enter a direct HTTP/HTTPS download URL. Large files download directly inside Linux:", "https://");
+    if (raw === null || !raw.trim()) return;
+    startDirectGuestDownload(raw.trim(), null, true);
+  });
+  document.getElementById("fileGetJava").addEventListener("click", () => {
+    const url = "https://download.bell-sw.com/java/21.0.9+15/bellsoft-jdk21.0.9+15-linux-x64-musl.apk";
+    if (!window.confirm("Download the official BellSoft Liberica Java 21 Alpine/musl x86-64 APK into the current folder? The file is large. After it finishes, select it and use ⋮ → Install APK package.")) return;
+    startDirectGuestDownload(url, "bellsoft-jdk21-alpine-x86_64.apk", false);
   });
 
   fileUploadButton.addEventListener("click", () => {
@@ -5143,14 +5162,17 @@ main();
       "echo '[1/4] Alpine version and repositories'",
       "cat /etc/alpine-release 2>&1 || true",
       "cat /etc/apk/repositories 2>&1 || true",
-      "echo '[2/4] Disk and inode space'",
+      "echo '[2/4] Disk, mount flags, and filesystem write probes'",
       "df -h / /tmp /var 2>&1 || true",
       "df -i / /tmp /var 2>&1 || true",
+      "mount 2>&1 | grep -E ' on / | on /tmp | on /var ' || true",
+      "for d in /tmp /lib/apk/db /etc/apk; do if [ -d \"$d\" ]; then probe=\"$d/.webpc-write-test-$\"; if printf 'ok\\n' > \"$probe\" 2>/tmp/webpc-write-test.err; then rm -f \"$probe\"; echo \"WRITE_OK $d\"; else echo \"WRITE_FAILED $d: $(cat /tmp/webpc-write-test.err 2>/dev/null)\"; fi; fi; done",
       "echo '[3/4] Refreshing package indexes'",
       "apk update",
       "update_rc=$?",
       "if [ \"$update_rc\" -eq 0 ]; then",
-      "  echo '[4/4] Installing nano with no persistent package cache'",
+      "  echo '[4/4] Repairing APK metadata, then installing nano'",
+      "  apk fix --no-scripts apk-tools 2>&1 || echo 'apk-tools repair was unsuccessful; continuing with nano attempt'",
       "  apk add --no-cache nano",
       "  rc=$?",
       "else",
