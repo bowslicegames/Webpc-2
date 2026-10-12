@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - ".github/workflows/test-live-worker.yml"
+      - "_worker.js"
+      - "stack.js"
 
 # This runs after release rebuilds to catch stale Worker asset pins and stale disk bytes.
 permissions:
@@ -13,7 +15,7 @@ permissions:
 jobs:
   live-worker:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 6
     steps:
       - name: Wait for the latest Worker deployment and verify its desktop
         run: |
@@ -43,5 +45,28 @@ jobs:
           grep -F 'webpcShellReadyNow' work/live-index.html
           grep -F 'apk add --no-cache unzip' work/live-index.html
           grep -F 'wget -q -T 5 -O /dev/null https://example.com' work/live-index.html
+          # Exercise a multi-megabyte binary response through the same-origin
+          # network relay. The /range endpoint has a deterministic byte pattern,
+          # so this checks both exact length and payload integrity, not just HTTP 200.
+          curl --fail --silent --show-error --location --retry 2 --retry-delay 2 --max-time 120 \
+            -D work/proxy-headers.txt \
+            -H 'X-WebPC-Proxy-Target: https://httpbin.org/range/8388608' \
+            https://webpc.bowslicegames.workers.dev/net-proxy \
+            -o work/proxy-large.bin
+          grep -Fiq 'X-WebPC-Proxy-Body: streamed' work/proxy-headers.txt
+          test "$(wc -c < work/proxy-large.bin | tr -d ' ')" -eq 8388608
+          node <<'NODE'
+          const fs = require("fs");
+          const actual = fs.readFileSync("work/proxy-large.bin");
+          const expected = Buffer.alloc(8388608);
+          for (let i = 0; i < expected.length; i++) expected[i] = i % 256;
+          if (!actual.equals(expected)) {
+            let first = 0;
+            while (first < Math.min(actual.length, expected.length) && actual[first] === expected[first]) first++;
+            throw new Error("Large proxy payload differs at byte " + first + " (actual size " + actual.length + ")");
+          }
+          console.log("Verified 8 MiB proxy payload byte-for-byte");
+          NODE
+
           curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --max-time 60 -I \
             https://webpc.bowslicegames.workers.dev/assets/disk-rootfs-qcow2.img
