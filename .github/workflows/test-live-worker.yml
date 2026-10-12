@@ -63,6 +63,18 @@ jobs:
           done
           test "$proxy_ready" -eq 1
 
+          # Confirm the live Worker serves the new bridge module, not a stale
+          # pinned copy that still buffers whole responses.
+          curl --fail --silent --show-error --location --max-time 30 \
+            https://webpc.bowslicegames.workers.dev/assets/stack.js \
+            -o work/live-stack.js
+          grep -Fq 'MAX_RESPONSE_BUFFER_BYTES' work/live-stack.js
+          grep -Fq 'pumpResponseBody' work/live-stack.js
+          if grep -Fq 'resp.arrayBuffer()' work/live-stack.js; then
+            echo "Live stack.js still buffers complete HTTP responses"
+            exit 1
+          fi
+
           # Compare the same 40 MB immutable release asset through the direct
           # asset route and the guest-network relay. This verifies full-body
           # length and byte-for-byte integrity without depending on a third-party
