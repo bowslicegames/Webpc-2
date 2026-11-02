@@ -10,6 +10,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -52,6 +54,19 @@ jobs:
           node <<'NODE'
           const fs = require("fs");
           const html = fs.readFileSync("index.html", "utf8");
+          const worker = fs.readFileSync("_worker.js", "utf8");
+          const stack = fs.readFileSync("stack.js");
+          const sizeMatch = html.match(/const KNOWN_SIZES = \{([\s\S]*?)\n\};/);
+          if (!sizeMatch) throw new Error("Runtime asset size manifest was not found");
+          const stackSizeMatch = sizeMatch[1].match(/"stack.js":\s*(\d+)/);
+          if (!stackSizeMatch || Number(stackSizeMatch[1]) !== stack.length) {
+            throw new Error("KNOWN_SIZES stack.js does not match the checked-in bridge bytes");
+          }
+          const pinMatch = worker.match(/const STATIC_COMMIT =\s*"([0-9a-f]+)"/);
+          if (!pinMatch) throw new Error("Worker STATIC_COMMIT pin was not found");
+          const { execFileSync } = require("child_process");
+          const pinnedStack = execFileSync("git", ["show", pinMatch[1] + ":stack.js"]);
+          if (!pinnedStack.equals(stack)) throw new Error("Worker STATIC_COMMIT does not contain the checked-in stack.js");
           const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
           if (!scripts.length) throw new Error("No inline scripts found");
           let written = 0;
