@@ -341,6 +341,14 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
       if (targetURL.protocol !== "http:" && targetURL.protocol !== "https:") {
         return new Response("Only HTTP(S) targets are allowed",{status:400,headers:corsHeaders({"Content-Type":"text/plain; charset=utf-8"})});
       }
+      if (targetURL.username || targetURL.password ||
+          (targetURL.port && !((targetURL.protocol === "https:" && targetURL.port === "443") ||
+            (targetURL.protocol === "http:" && targetURL.port === "80")))) {
+        return new Response("Proxy target credentials or non-standard ports are not allowed", {
+          status: 403,
+          headers: corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"})
+        });
+      }
 
       const host = targetURL.hostname.toLowerCase();
       if (!isAllowedProxyHost(host)) {
