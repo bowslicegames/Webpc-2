@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
+      - name: Check out the expected Worker revision
+        uses: actions/checkout@v4
+
       - name: Wait for the latest Worker deployment and verify its desktop
         run: |
           set -eux
