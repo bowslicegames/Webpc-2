@@ -4514,8 +4514,8 @@ main();
     commandBusy = true;
     outputBuffer = "";
     updateRuntimeStatus();
-    const id = unique(), begin = "__" + id + "_BEGIN__", end = "__" + id + "_END__";
-    const p = {begin, end, callback:job.callback, text:"", found:false, timeout:null, service:job.service};
+    const id = unique(), begin = "__" + id + "_BEGIN__", end = "__" + id + "_END_OK__", fail = "__" + id + "_END_FAIL__";
+    const p = {begin, end, fail, callback:job.callback, text:"", found:false, timeout:null, service:job.service};
     pending = p;
     function finish(err, result) {
       if (p.timeout) clearTimeout(p.timeout);
@@ -4540,7 +4540,9 @@ main();
     // Keep the markers out of the command line echoed by the interactive shell.
     // Otherwise the broker can mistake the echoed command for its real output and
     // finish before file operations have actually run.
-    const payload = "printf '\\n" + begin + "\\n'; " + job.command + "; printf '\\n" + end + "\\n'";
+    const payload = "printf '\\n" + begin + "\\n'; " + job.command +
+      "; __webpc_exit_code=$?; if [ \"$__webpc_exit_code\" -eq 0 ]; then printf '\\n" + end +
+      "\\n'; else printf '\\n" + fail + "\\n'; fi";
     const encodedPayload = b64(payload);
     const wrapped = "printf '%s' '" + encodedPayload + "' | base64 -d | sh";
     try {
@@ -4600,14 +4602,23 @@ main();
      */
     const combined = outputBuffer + incoming;
     const endIndex = combined.indexOf(p.end);
-    if (endIndex >= 0) {
-      p.text += combined.slice(0, endIndex);
-      outputBuffer = combined.slice(endIndex + p.end.length);
-      p.finish(null, cleanOutput(p.text).trim());
+    const failIndex = combined.indexOf(p.fail);
+    const failed = failIndex >= 0 && (endIndex < 0 || failIndex < endIndex);
+    const markerIndex = failed ? failIndex : endIndex;
+    const marker = failed ? p.fail : p.end;
+    if (markerIndex >= 0) {
+      p.text += combined.slice(0, markerIndex);
+      outputBuffer = combined.slice(markerIndex + marker.length);
+      const result = cleanOutput(p.text).trim();
+      const commandError = failed
+        ? new Error("Guest command failed with a non-zero exit status." +
+            (result ? " " + result.slice(-500) : ""))
+        : null;
+      p.finish(commandError, result);
       return;
     }
 
-    const keep = Math.max(0, p.end.length - 1);
+    const keep = Math.max(0, p.end.length, p.fail.length) - 1;
     if (combined.length > keep) {
       p.text += combined.slice(0, combined.length - keep);
       outputBuffer = combined.slice(-keep);
