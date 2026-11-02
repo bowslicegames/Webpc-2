@@ -60,6 +60,14 @@ jobs:
           PY
           qemu-img convert -f qcow2 -O raw -S 4k work/disk-rootfs-qcow2.img work/disk-rootfs.raw
           sudo e2fsck -fn work/disk-rootfs.raw
+          echo "Guest /etc/passwd:"
+          sudo debugfs -R 'cat /etc/passwd' work/disk-rootfs.raw || true
+          echo "Guest /home:"
+          sudo debugfs -R 'ls -l /home' work/disk-rootfs.raw || true
+          echo "Guest /home/webpc:"
+          sudo debugfs -R 'ls -l /home/webpc' work/disk-rootfs.raw || true
+          echo "Guest /root:"
+          sudo debugfs -R 'ls -l /root' work/disk-rootfs.raw || true
 
       - name: Decode the actual kernel and initramfs using WebPC's LZ4 loader
         run: |
