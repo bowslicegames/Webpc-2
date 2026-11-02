@@ -4613,6 +4613,11 @@ main();
     if (!win) return;
     /* Closing the terminal window must not interrupt the guest shell
        or background jobs. The same terminal session is retained. */
+    if (win.id === "terminalWindow") {
+      webpcCtrlModifierArmed = false;
+      updateCtrlModifierButton();
+      if (terminal && typeof terminal.blur === "function") terminal.blur();
+    }
     win.classList.remove("open");
   }
   function attachTerminal() {
