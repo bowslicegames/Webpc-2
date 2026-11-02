@@ -4620,12 +4620,22 @@ main();
     let raw = (filePath.value || "").trim().replace(/\\/g,"/");
     if (!raw.startsWith("/")) raw = BASE_HOME + "/" + raw;
     const parts = raw.split("/").filter(Boolean);
-    if (parts.some(p => p === "." || p === ".." || !/^[A-Za-z0-9._ -]+$/.test(p))) throw new Error("Use simple folder names (letters, numbers, spaces, dots, _ or -).");
+    const invalid = parts.some(p =>
+      p === "." || p === ".." ||
+      /[\\u0000-\\u001f\\u007f]/.test(p) ||
+      enc.encode(p).length > 255
+    );
+    if (invalid || enc.encode(raw).length > 4096) {
+      throw new Error("Folder path contains an invalid segment or exceeds Linux path limits.");
+    }
     return raw.replace(/\/$/,"") || "/";
   }
   function safeName() {
     const n = (fileName.value || "").trim();
-    if (!n || n === "." || n === ".." || !/^[A-Za-z0-9._ -]+$/.test(n) || n.includes("/")) throw new Error("Enter a simple file name without slashes.");
+    if (!n || n === "." || n === ".." || n.includes("/") || n.includes("\\") ||
+        /[\\u0000-\\u001f\\u007f]/.test(n) || enc.encode(n).length > 255) {
+      throw new Error("Enter a valid Linux file name (maximum 255 UTF-8 bytes).");
+    }
     return n;
   }
   function shellQuote(value) { return "'" + String(value).replace(/'/g, "'\\''") + "'"; }
@@ -4759,7 +4769,7 @@ main();
     let dir; try { dir=guestPath(); filePath.value=dir; } catch(e) { setFileStatus(e.message,true); return; }
     clearFileSelection(); closeFileMenu();
     setFileStatus("Reading folder and file sizes from the Linux disk…");
-    const listCommand = "dir=" + JSON.stringify(dir) + "; for p in \"$dir\"/* \"$dir\"/.[!.]* \"$dir\"/..?*; do " +
+    const listCommand = "dir=" + shellQuote(dir) + "; for p in \"$dir\"/* \"$dir\"/.[!.]* \"$dir\"/..?*; do " +
       "[ -e \"$p\" ] || [ -L \"$p\" ] || continue; " +
       "if [ -d \"$p\" ]; then printf 'D:%s\\n' \"$p\"; " +
       "elif [ -f \"$p\" ]; then size=$(stat -c %s \"$p\" 2>/dev/null) || size=0; printf 'F:%s|%s\\n' \"$p\" \"$size\"; fi; done";
