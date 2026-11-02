@@ -5,6 +5,9 @@ on:
   push:
     paths:
       - ".github/workflows/test-dynamic-disk.yml"
+  workflow_run:
+    workflows: ["Build and enable dynamic 8 GiB WebPC disk"]
+    types: [completed]
 
 # Re-run after each disk release so the exact latest published image is boot-tested.
 permissions:
@@ -12,6 +15,7 @@ permissions:
 
 jobs:
   qemu-guest-boot-test:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
