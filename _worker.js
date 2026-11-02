@@ -363,6 +363,31 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         }
 
         const upstream = await fetch(targetURL.toString(), init);
+        const targetPath = targetURL.pathname.toLowerCase();
+        const binaryTarget = /\.(?:wasm|apk|jar|zip|tgz|gz|bz2|xz|img|data|bin)$/.test(targetPath);
+        const upstreamType = (upstream.headers.get("content-type") || "").toLowerCase();
+
+        // Never let a login/error HTML page be saved by wget as a binary
+        // package or WebAssembly image. Return a readable proxy diagnostic.
+        if (binaryTarget && (!upstream.ok ||
+            upstreamType.includes("text/html") ||
+            upstreamType.includes("application/xhtml+xml"))) {
+          const reason = !upstream.ok
+            ? "upstream HTTP " + upstream.status + " " + upstream.statusText
+            : "upstream returned " + (upstreamType || "an unknown content type");
+          return new Response("WebPC network relay refused binary download: " + reason +
+            " for " + (upstream.url || targetURL.toString()), {
+            status: 502,
+            headers: corsHeaders({
+              "Content-Type": "text/plain; charset=utf-8",
+              "Cache-Control": "no-store",
+              "X-WebPC-Worker": "active",
+              "X-WebPC-Proxy-URL": upstream.url || targetURL.toString(),
+              "X-WebPC-Proxy-Upstream-Status": String(upstream.status)
+            })
+          });
+        }
+
         const headers = new Headers(upstream.headers);
         headers.set("Access-Control-Allow-Origin", "*");
         headers.set("Access-Control-Allow-Methods","GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
@@ -509,6 +534,20 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
           );
         }
 
+        const releaseType = (upstream.headers.get("content-type") || "").toLowerCase();
+        if (filename.endsWith(".wasm") &&
+            (releaseType.includes("text/html") || releaseType.includes("application/xhtml+xml"))) {
+          return new Response("WebPC 2 Worker refused an HTML page where a WASM asset was expected.", {
+            status: 502,
+            headers: corsHeaders({
+              "Content-Type": "text/plain; charset=utf-8",
+              "Cache-Control": "no-store",
+              "X-WebPC-Worker": "active",
+              "X-WebPC-Asset": filename
+            })
+          });
+        }
+
         const headers = new Headers(upstream.headers);
         headers.set("Access-Control-Allow-Origin", "*");
         headers.set("Cross-Origin-Resource-Policy", "cross-origin");
@@ -522,43 +561,6 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
             ? "no-store"
             : "public, max-age=31536000, immutable"
         );
-
-        if (filename === "stack.js") {
-          /*
-           * The startup pre-boot checker uses HEAD to verify that the
-           * asset exists. HEAD responses have no body, so do not try to
-           * patch/match stack.js source for that request. Return the
-           * same successful headers that a patched GET response uses.
-           */
-          if (request.method === "HEAD") {
-            return new Response(null, {
-              status: 200,
-              headers: {
-                "Content-Type": "application/javascript; charset=utf-8",
-                "Cache-Control": "no-store",
-                "Cross-Origin-Resource-Policy": "same-origin",
-                "X-WebPC-Worker": "active",
-                "X-WebPC-Stack-Proxy": "enabled"
-              }
-            });
-          }
-
-          /*
-           * Serve stack.js unchanged. Rewriting JavaScript source here
-           * can corrupt syntax when upstream versions change their fetch
-           * expression. Keep this response byte-for-byte equivalent to
-           * the upstream module while retaining the correct module MIME
-           * type and disabling caching during debugging.
-           */
-          const stackHeaders = new Headers();
-          stackHeaders.set("Content-Type", "application/javascript; charset=utf-8");
-          stackHeaders.set("Cache-Control", "no-store");
-          stackHeaders.set("Cross-Origin-Resource-Policy", "same-origin");
-          stackHeaders.set("X-WebPC-Worker", "active");
-          stackHeaders.set("X-WebPC-Stack-Proxy", "disabled");
-
-          return new Response(upstream.body, {status: 200, headers: stackHeaders});
-        }
 
         /*
          * Preserve the upstream Content-Length when GitHub supplies it.
