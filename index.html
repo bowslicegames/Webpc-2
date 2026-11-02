@@ -4959,7 +4959,7 @@ main();
       }
 
       const verify = await runGuestPromise("test -f " + JSON.stringify(destination) +
-        " && test \"$(wc -c < " + JSON.stringify(destination) + ")\" -eq " + file.size +
+        " && test \"$(stat -c %s " + JSON.stringify(destination) + ")\" -eq " + file.size +
         " && echo WEBPC_UPLOAD_VERIFIED");
       if (!verify.includes("WEBPC_UPLOAD_VERIFIED")) throw new Error("Final file-size verification failed. The file may be incomplete or the virtual disk may be full.");
       setFileStatus("Upload complete and size verified: " + destination);
