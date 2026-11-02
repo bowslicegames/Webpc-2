@@ -70,6 +70,12 @@ jobs:
             -o work/live-stack.js
           grep -Fq 'MAX_RESPONSE_BUFFER_BYTES' work/live-stack.js
           grep -Fq 'pumpResponseBody' work/live-stack.js
+          grep -Fq 'scheduleSockRecvDrain' work/live-stack.js
+          grep -Fq 'sockRecvPendingLengths' work/live-stack.js
+          if grep -Fq 'Atomics.wait(' work/live-stack.js; then
+            echo "Live stack.js still blocks on Atomics.wait"
+            exit 1
+          fi
           if grep -Fq 'resp.arrayBuffer()' work/live-stack.js; then
             echo "Live stack.js still buffers complete HTTP responses"
             exit 1
