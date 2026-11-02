@@ -2,9 +2,6 @@ name: Build and enable dynamic 8 GiB WebPC disk
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/build-dynamic-disk.yml"
 
 permissions:
   contents: write
@@ -167,6 +164,10 @@ jobs:
       - name: Switch WebPC to the dynamic disk
         run: |
           set -eux
+          # Work from the latest main branch, not the older workflow_dispatch
+          # commit, so generated index/Worker updates cannot overwrite newer fixes.
+          git fetch origin main
+          git reset --hard origin/main
           python3 <<'PY'
           import re
           from pathlib import Path
