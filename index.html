@@ -1112,6 +1112,17 @@ button:active {
             errorBox.textContent = "STARTUP / RUNTIME ERROR LOG\n\n" + startupErrorLog.join("\n\n");
         }
         if (message) message.textContent = "WebPC reported an error. Details are shown in the error log below.";
+        /* The startup card is hidden after boot; restore it so runtime
+           exceptions and failed resources are not silently buried. */
+        var startup = document.getElementById("startup");
+        if (startup) {
+            startup.classList.remove("hidden");
+            startup.classList.remove("waiting-for-login");
+        }
+        var desktop = document.getElementById("desktop");
+        if (desktop) desktop.style.display = "none";
+        var app = document.getElementById("app");
+        if (app) app.classList.remove("vm-ready");
     };
     window.addEventListener("error", function (event) {
         var detail = event && event.error && event.error.stack ? event.error.stack :
@@ -1126,6 +1137,7 @@ button:active {
     var resetCacheButton = document.getElementById("resetRuntimeCache");
     if (resetCacheButton) {
         resetCacheButton.addEventListener("click", async function () {
+            if (!window.confirm("Resetting the runtime cache reloads WebPC and ends the current temporary Linux session. Any files or installed programs in that session will be lost. Continue?")) return;
             resetCacheButton.disabled = true;
             if (cacheResetStatus) cacheResetStatus.textContent = "Clearing WebPC runtime caches…";
             try {
