@@ -47,7 +47,7 @@ const RELEASE_BASE =
  * Worker itself is already new.
  */
 const STATIC_COMMIT =
-  "a2d3a13ca35ee349e1c813c25e1acda18f6a5fcd";
+  "2447912487056014854836f2cc623fef4d4dd530";
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
