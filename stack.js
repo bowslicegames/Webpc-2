@@ -22,6 +22,22 @@ let eventQueue = [];
 // currently available ring-buffer space.
 let eventQueueOffset = 0;
 let sockSendRetryScheduled = false;
+let sockRecvPendingLengths = [];
+let sockRecvRetryScheduled = false;
+
+function scheduleSockRecv(targetLen) {
+    sockRecvPendingLengths.push(targetLen);
+    if (sockRecvRetryScheduled) return;
+    sockRecvRetryScheduled = true;
+    setTimeout(() => {
+        sockRecvRetryScheduled = false;
+        const nextLength = sockRecvPendingLengths.shift();
+        if (nextLength !== undefined) sockRecvWS(nextLength);
+        if (sockRecvPendingLengths.length) {
+            scheduleSockRecv(sockRecvPendingLengths.shift());
+        }
+    }, 1);
+}
 
 function scheduleSockSend(delay = 1) {
     if (sockSendRetryScheduled || eventQueue.length === 0) return;
@@ -227,49 +243,63 @@ function sockSend(){
 }
 
 function sockRecvWS(targetLen){
-    if (!accepted) {
-        return -1;
-    }
+    if (!accepted) return -1;
 
+    // The shared ring-buffer lock may briefly belong to the network worker.
+    // Never spin/recursively retry on the UI thread: defer this read instead.
     if (Atomics.compareExchange(fromNetCtrl, 0, 0, 1) != 0) {
-        sockRecvWS(targetLen);
-        return;
-    }
-    let begin = fromNetBegin[0]; //inclusive
-    let end = fromNetEnd[0]; //exclusive
-    var len;
-    var round;
-    if (end >= begin) {
-        len = end - begin;
-        round = 0;
-    } else {
-        len = fromNetData.byteLength - begin;
-        round = end;
-    }
-    if (targetLen < len) {
-        len = targetLen;
-        round = 0;
-    } else if (targetLen < len + round) {
-        round = targetLen - len;
-    }
-    let targetBuf = new Uint8Array(len + round);
-    if (len > 0) {
-        targetBuf.set(fromNetData.subarray(begin, begin + len), 0);
-        fromNetBegin[0] = begin + len;
-    }
-    if (round > 0) {
-        targetBuf.set(fromNetData.subarray(0, round), len);
-        fromNetBegin[0] = round;
+        scheduleSockRecv(targetLen);
+        return 0;
     }
 
-    curSocket.send(targetBuf);
-    
-    if (Atomics.compareExchange(fromNetCtrl, 0, 1, 0) != 1) {
-        console.log("UNEXPECTED STATUS");
-    }
-    Atomics.notify(fromNetCtrl, 0, 1);
+    try {
+        const begin = fromNetBegin[0]; // inclusive
+        const end = fromNetEnd[0]; // exclusive
+        let len;
+        let round;
 
-    return (len + round);
+        if (end >= begin) {
+            len = end - begin;
+            round = 0;
+        } else {
+            len = fromNetData.byteLength - begin;
+            round = end;
+        }
+
+        if (targetLen < len) {
+            len = targetLen;
+            round = 0;
+        } else if (targetLen < len + round) {
+            round = targetLen - len;
+        }
+
+        const targetBuf = new Uint8Array(len + round);
+        if (len > 0) {
+            targetBuf.set(fromNetData.subarray(begin, begin + len), 0);
+            fromNetBegin[0] = begin + len;
+        }
+        if (round > 0) {
+            targetBuf.set(fromNetData.subarray(0, round), len);
+            fromNetBegin[0] = round;
+        }
+
+        if (curSocket && typeof curSocket.send === "function") {
+            curSocket.send(targetBuf);
+        } else {
+            console.error("[WebPC network relay] socket is unavailable while receiving network data");
+            return -1;
+        }
+
+        return len + round;
+    } catch (error) {
+        console.error("[WebPC network relay] failed to deliver network data:", error);
+        return -1;
+    } finally {
+        // Always release the shared lock, including when a socket callback
+        // throws. A stuck lock would otherwise deadlock every later packet.
+        Atomics.store(fromNetCtrl, 0, 0);
+        Atomics.notify(fromNetCtrl, 0, 1);
+    }
 }
 
 export function RecvCert(){
@@ -277,11 +307,11 @@ export function RecvCert(){
     return new Promise((resolve, reject) => {
         function getCert(){
             var done = false;
-            for(;;) {
-                if (Atomics.compareExchange(metaFromNetCtrl, 0, 0, 1) == 0) {
-                    break;
-                }
-                Atomics.wait(metaFromNetCtrl, 0, 1);
+            if (Atomics.compareExchange(metaFromNetCtrl, 0, 0, 1) != 0) {
+                // This callback runs on the browser thread, where Atomics.wait
+                // is forbidden. Poll asynchronously instead of blocking it.
+                setTimeout(getCert, 1);
+                return;
             }
             let end = metaFromNetEnd[0]; //exclusive
             if (end > 0) {
