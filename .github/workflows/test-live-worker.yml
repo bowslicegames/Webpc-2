@@ -24,6 +24,25 @@ jobs:
         run: |
           set -eux
           mkdir -p work
+          curl --fail --silent --show-error --location --max-time 30 \
+            https://api.github.com/repos/bowslicegames/Webpc-2/releases/tags/V1 \
+            -o work/release.json
+          node <<'NODE'
+          const fs = require("fs");
+          const html = fs.readFileSync("index.html", "utf8");
+          const match = html.match(/const KNOWN_SIZES = \{([\s\S]*?)\n\};/);
+          if (!match) throw new Error("Runtime size manifest is missing");
+          const known = Object.fromEntries([...match[1].matchAll(/"([^"]+)":\s*(\d+)/g)]
+            .map(item => [item[1], Number(item[2])]));
+          const release = JSON.parse(fs.readFileSync("work/release.json", "utf8"));
+          const actual = Object.fromEntries(release.assets.map(asset => [asset.name, asset.size]));
+          for (const [name, size] of Object.entries(known)) {
+            const expected = name === "stack.js" ? fs.statSync("stack.js").size : actual[name];
+            if (expected === undefined) throw new Error("Manifest asset is absent from Release V1: " + name);
+            if (size !== expected) throw new Error("Incorrect size for " + name + ": manifest " + size + ", actual " + expected);
+          }
+          console.log("Verified", Object.keys(known).length, "runtime asset sizes against Release V1 and the pinned stack module.");
+          NODE
           ready=0
           for attempt in $(seq 1 24); do
             if curl --fail --silent --show-error --location --max-time 20 \
