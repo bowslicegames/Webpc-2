@@ -361,16 +361,61 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
           outboundHeaders.delete(h);
         }
 
-        const init = {
-          method: request.method,
-          headers: outboundHeaders,
-          redirect: "follow"
-        };
-        if (request.method !== "GET" && request.method !== "HEAD") {
-          init.body = request.body;
-        }
+        let finalURL = targetURL;
+        let upstream = null;
+        for (let redirectCount = 0; redirectCount <= 5; redirectCount++) {
+          const init = {
+            method: request.method,
+            headers: outboundHeaders,
+            redirect: "manual"
+          };
+          if (request.method !== "GET" && request.method !== "HEAD") {
+            init.body = request.body;
+          }
+          upstream = await fetch(finalURL.toString(), init);
 
-        const upstream = await fetch(targetURL.toString(), init);
+          // The guest HTTP client handles redirects for non-GET methods.
+          // GET/HEAD redirects are followed here only after re-validating
+          // every destination against the same host/protocol/port policy.
+          if (request.method !== "GET" && request.method !== "HEAD") break;
+          if (![301, 302, 303, 307, 308].includes(upstream.status)) break;
+          const location = upstream.headers.get("location");
+          if (!location) break;
+          if (redirectCount === 5) {
+            await upstream.body?.cancel();
+            return new Response("WebPC network relay refused a redirect chain longer than five hops.", {
+              status: 502,
+              headers: corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"})
+            });
+          }
+
+          let nextURL;
+          try { nextURL = new URL(location, finalURL.toString()); }
+          catch {
+            await upstream.body?.cancel();
+            return new Response("WebPC network relay refused an invalid upstream redirect.", {
+              status: 502,
+              headers: corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"})
+            });
+          }
+          const nextHost = nextURL.hostname.toLowerCase();
+          const nextPortInvalid = nextURL.port &&
+            !((nextURL.protocol === "https:" && nextURL.port === "443") ||
+              (nextURL.protocol === "http:" && nextURL.port === "80"));
+          if ((nextURL.protocol !== "http:" && nextURL.protocol !== "https:") ||
+              nextURL.username || nextURL.password || nextPortInvalid ||
+              !isAllowedProxyHost(nextHost)) {
+            await upstream.body?.cancel();
+            return new Response("WebPC network relay blocked redirect to " + nextURL.toString(), {
+              status: 403,
+              headers: corsHeaders({"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"})
+            });
+          }
+          await upstream.body?.cancel();
+          finalURL = nextURL;
+        }
+        if (!upstream) throw new Error("No upstream response received");
+
         const targetPath = targetURL.pathname.toLowerCase();
         const binaryTarget = /\.(?:wasm|apk|jar|zip|tgz|gz|bz2|xz|img|data|bin)$/.test(targetPath);
         const upstreamType = (upstream.headers.get("content-type") || "").toLowerCase();
@@ -402,7 +447,7 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         headers.set("Access-Control-Allow-Headers","*");
         headers.set("X-WebPC-Worker","active");
         headers.set("X-WebPC-Proxy","server-fetch");
-        headers.set("X-WebPC-Proxy-URL",upstream.url || targetURL.toString());
+        headers.set("X-WebPC-Proxy-URL",upstream.url || finalURL.toString());
         headers.set("X-WebPC-Proxy-Body", "streamed");
         // Fetch may transparently decompress upstream bodies. Do not forward
         // stale wire-level framing/encoding headers, and avoid caching or
