@@ -90,6 +90,10 @@ jobs:
           for script in /tmp/webpc-inline-*.js; do
             node --check "$script"
           done
+          cat /tmp/webpc-inline-*.js > /tmp/webpc-all-inline.js
+          npx --yes eslint@8.57.1 --no-eslintrc --env browser,es2022 \
+            --parser-options '{"ecmaVersion":2022,"sourceType":"script"}' \
+            --rule 'no-undef:error' /tmp/webpc-all-inline.js
           node --check xterm-pty/index.mjs
 
       - name: Verify Wrangler configuration
