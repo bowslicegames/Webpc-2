@@ -439,6 +439,7 @@ function connect(name, shared, toNet, certbuf) {
     // http_readbody calls drain these chunks while the upstream reader pauses
     // automatically when the queue reaches the high-water mark.
     const MAX_RESPONSE_BUFFER_BYTES = 1024 * 1024;
+    const MAX_RESPONSE_CHUNK_BYTES = 64 * 1024;
 
     function queueResponseChunk(connObj, chunk) {
         if (!chunk || chunk.byteLength === 0) return;
@@ -535,7 +536,26 @@ function connect(name, shared, toNet, certbuf) {
                     return;
                 }
                 if (item.value && item.value.byteLength) {
-                    queueResponseChunk(connObj, item.value);
+                    const sourceChunk = item.value instanceof Uint8Array
+                        ? item.value
+                        : new Uint8Array(item.value);
+                    for (let offset = 0; offset < sourceChunk.byteLength; offset += MAX_RESPONSE_CHUNK_BYTES) {
+                        const chunk = sourceChunk.subarray(
+                            offset,
+                            Math.min(offset + MAX_RESPONSE_CHUNK_BYTES, sourceChunk.byteLength)
+                        );
+                        // Split unusually large Fetch chunks so the bridge's
+                        // own queue never grows by more than one small slice.
+                        while (connObj.respBodyBytes + chunk.byteLength > MAX_RESPONSE_BUFFER_BYTES &&
+                               httpConnections[id] === connObj) {
+                            await new Promise(resolve => setTimeout(resolve, 4));
+                        }
+                        if (httpConnections[id] !== connObj) {
+                            try { await reader.cancel(); } catch (_) {}
+                            return;
+                        }
+                        queueResponseChunk(connObj, chunk);
+                    }
                 }
             }
         } catch (error) {
