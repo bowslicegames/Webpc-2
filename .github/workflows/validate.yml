@@ -106,6 +106,8 @@ jobs:
             --parser-options '{"ecmaVersion":2022,"sourceType":"script"}' \
             --rule 'no-undef:error' /tmp/webpc-all-inline.js
           node --check xterm-pty/index.mjs
+          node --check xterm/xterm.js
+          sh -n tools/expand-rootfs-image.sh
 
       - name: Verify Wrangler configuration
         run: |
