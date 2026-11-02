@@ -60,6 +60,10 @@ jobs:
           if (html.includes("browserLoading")) {
             throw new Error("Stale browserLoading reference remains in the desktop lifecycle code");
           }
+          if (!html.includes('const BASE_HOME = "/root";') ||
+              !html.includes('value="/root/Desktop"')) {
+            throw new Error("File Manager home must match the Alpine root account's /root home");
+          }
           const worker = fs.readFileSync("_worker.js", "utf8");
           const diskBuild = fs.readFileSync(".github/workflows/build-dynamic-disk.yml", "utf8");
           if (!diskBuild.includes("GITHUB_RUN_ID") ||
