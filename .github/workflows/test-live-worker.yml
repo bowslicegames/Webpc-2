@@ -59,7 +59,7 @@ jobs:
                 && grep -Fq 'WEBPC_APKINDEX_OK' work/live-index.html \
                 && grep -Fq 'APKINDEX.tar.gz' work/live-index.html \
                 && grep -Fq 'apk add --no-cache unzip' work/live-index.html \
-                && grep -Fq 'wget -q -T 5 -O /dev/null https://example.com' work/live-index.html; then
+                && grep -Fq 'wget -q -T 8 -O /dev/null https://example.com' work/live-index.html; then
                 ready=1
                 break
               fi
@@ -74,7 +74,7 @@ jobs:
           grep -F 'id="networkTest"' work/live-index.html
           grep -F 'webpcShellReadyNow' work/live-index.html
           grep -F 'apk add --no-cache unzip' work/live-index.html
-          grep -F 'wget -q -T 5 -O /dev/null https://example.com' work/live-index.html
+          grep -F 'wget -q -T 8 -O /dev/null https://example.com' work/live-index.html
           # Wait for the Worker script itself to deploy, not just the static
           # HTML asset bundle. A small request verifies the new streaming marker.
           proxy_ready=0
