@@ -213,8 +213,16 @@ jobs:
           elif 'no huge raw disk is preloaded' not in s:
               raise SystemExit("Cannot find the rootfs loader import to replace.")
 
-          s = s.replace('const ASSET_CACHE_NAME = "webpc-runtime-assets-v1-20261011";',
-                        'const ASSET_CACHE_NAME = "webpc-runtime-assets-v2-20261011-qcow2";', 1)
+          import os
+          cache_name = f'webpc-runtime-assets-v4-{os.environ["GITHUB_RUN_ID"]}-qcow2'
+          s, cache_count = re.subn(
+              r'const ASSET_CACHE_NAME = "[^"]+";',
+              f'const ASSET_CACHE_NAME = "{cache_name}";',
+              s,
+              count=1
+          )
+          if cache_count != 1:
+              raise SystemExit("Cannot find the runtime Cache Storage version to rotate.")
           s = s.replace('id=test,file=/pack-rootfs/disk-rootfs.img,format=raw,if=none',
                         'id=test,file=/pack-rootfs/disk-rootfs.img,format=qcow2,if=none', 1)
           if 'disk-rootfs-qcow2.img' not in s or 'format=qcow2' not in s:
