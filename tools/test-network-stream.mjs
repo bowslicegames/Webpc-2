@@ -18,7 +18,7 @@ globalThis.window = {
 globalThis.Worker = FakeWorker;
 
 const TOTAL_BYTES = 40 * 1024 * 1024;
-const SOURCE_CHUNK_BYTES = 64 * 1024;
+const SOURCE_CHUNK_BYTES = 4 * 1024 * 1024;
 
 globalThis.fetch = async function () {
   let offset = 0;
