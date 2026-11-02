@@ -1527,6 +1527,8 @@ const terminalWrap =
 const controls =
     $("controls");
 
+const appElement = $("app");
+
 
 /* ============================================================
    GLOBAL STATE
@@ -2858,85 +2860,19 @@ async function createTerminal() {
    GUEST WEB / JAVA SETUP
    ============================================================ */
 
-function enableGuestWebControls() {
-    const webButton = $("webtest");
-    const javaButton = $("java");
-
-    if (webButton) webButton.disabled = false;
-    if (javaButton) javaButton.disabled = false;
-}
-
-function sendGuestCommand(command) {
-    if (
-        !terminal ||
-        typeof terminal.paste !== "function" ||
-        !shellReady
-    ) return false;
-
-    terminal.paste(command + "\r");
-    return true;
-}
-
-function webTestCommand() {
-    return [
-        "echo '[WebPC] HTTPS web test: https://example.com'",
-        "if command -v wget >/dev/null 2>&1; then",
-        "if wget -q -T 10 -O /dev/null https://example.com; then",
-        "echo '[WebPC] HTTPS OK'",
-        "else",
-        "echo '[WebPC] HTTPS FAILED'",
-        "fi",
-        "else",
-        "echo '[WebPC] wget is not installed'",
-        "fi"
-    ].join("; ");
-}
-
-function javaSetupCommand() {
-    return [
-        "if command -v java >/dev/null 2>&1; then",
-        "echo '[WebPC] Java already installed'; java -version",
-        "else",
-        "echo '[WebPC] Switching Alpine CDN repositories to HTTPS where possible...'",
-        "if [ -f /etc/apk/repositories ]; then sed -i 's#http://dl-cdn.alpinelinux.org#https://dl-cdn.alpinelinux.org#g' /etc/apk/repositories; fi",
-        "echo '[WebPC] Refreshing Alpine package indexes...'",
-        "apk update || echo '[WebPC] WARNING: index refresh failed; trying available cached indexes anyway.'",
-        "echo '[WebPC] Installing OpenJDK 21 runtime...'",
-        "if ! apk add --no-cache openjdk21-jre-headless; then echo '[WebPC] Headless package failed; trying openjdk21-jre...'; apk add --no-cache openjdk21-jre; fi",
-        "if command -v java >/dev/null 2>&1; then",
-        "echo '[WebPC] OpenJDK runtime installed'; java -version",
-        "else",
-        "echo '[WebPC] Java installation failed. Check network access and the APK errors above.'",
-        "cat /etc/apk/repositories",
-        "fi",
-        "fi"
-    ].join("; ");
-}
-
-function webSetupCommand() {
-    return [
-        "echo '[WebPC] Testing HTTPS web access...'",
-        "if ! command -v wget >/dev/null 2>&1; then",
-        "echo '[WebPC] Installing wget...'; apk add --no-cache wget",
-        "fi",
-        "if command -v wget >/dev/null 2>&1; then",
-        "wget -q -T 10 -O /dev/null https://example.com && echo '[WebPC] HTTPS OK' || echo '[WebPC] HTTPS FAILED'",
-        "fi",
-        javaSetupCommand()
-    ].join("; ");
-}
-
 function onShellReady() {
     if (shellReady) return;
 
     shellReady = true;
     webpcLoginAttemptPending = false;
+    if (linuxBootTimer) { clearInterval(linuxBootTimer); linuxBootTimer = null; }
+    if (bootSignalWatchdog) { clearTimeout(bootSignalWatchdog); bootSignalWatchdog = null; }
+    finishStage("linux");
     const loginScreen = $("webpcLoginScreen");
     if (loginScreen) loginScreen.classList.remove("visible");
-    if (app) app.classList.remove("webpc-login-active");
+    if (appElement) appElement.classList.remove("webpc-login-active");
     const bootSplash = $("webpcBootScreen");
     if (bootSplash) bootSplash.style.display = "none";
-    enableGuestWebControls();
 
     if (stageDetail) {
         stageDetail.textContent =
@@ -3075,7 +3011,7 @@ function noteBootSignal(data) {
         const loginScreen = $("webpcLoginScreen");
         if (bootSplash) bootSplash.style.display = "none";
         if (loginScreen) loginScreen.classList.add("visible");
-        if (app) app.classList.add("webpc-login-active");
+        if (appElement) appElement.classList.add("webpc-login-active");
         const passwordInput = $("webpcPassword");
         if (passwordInput) setTimeout(() => passwordInput.focus(), 60);
     }
@@ -4206,6 +4142,16 @@ function showError(error) {
         error
     );
 
+    /* Show diagnostics even if the VM desktop was already revealed. */
+    const startup = $("startup");
+    if (startup) {
+        startup.classList.remove("hidden");
+        startup.classList.remove("waiting-for-login");
+    }
+    const desktop = $("desktop");
+    if (desktop) desktop.style.display = "none";
+    if (appElement) appElement.classList.remove("vm-ready");
+
     const text =
         error instanceof Error
             ? (
@@ -4651,24 +4597,10 @@ main();
      if (id === "servicesWindow") renderServiceTasks();
      if(id==="servicesWindow")renderServiceTasks();
   }
-  function resetTerminalBeforeClose() {
-    if (!terminal || typeof terminal.paste !== "function") return;
-    webpcCtrlModifierArmed = false;
-    updateCtrlModifierButton();
-    /* Best-effort: interrupt the foreground task, leave nano without saving,
-       then restore a clean, recognisable shell prompt. */
-    try { terminal.paste("\x03"); } catch (_) {}
-    setTimeout(() => { try { terminal.paste("\x1b\x18"); } catch (_) {} }, 100);
-    setTimeout(() => { try { terminal.paste("n\r\x03"); } catch (_) {} }, 220);
-    setTimeout(() => {
-      try {
-        terminal.clear();
-        terminal.paste("export PS1='webpc~# '; clear\r");
-      } catch (_) {}
-    }, 360);
-  }
   function closeWindow(win) {
-    if (win && win.id === "terminalWindow") resetTerminalBeforeClose();
+    if (!win) return;
+    /* Closing the terminal window must not interrupt the guest shell
+       or background jobs. The same terminal session is retained. */
     win.classList.remove("open");
   }
   function attachTerminal() {
@@ -5201,6 +5133,7 @@ main();
   const browserAddress = document.getElementById("browserAddress");
   const browserStatus = document.getElementById("browserStatus");
   let browserHistory = [], browserHistoryIndex = -1, browserTab = null;
+  let webpcHiddenAt = 0;
   function normalizeBrowserAddress(raw) {
     let value = String(raw || "").trim();
     if (!value) throw new Error("Enter a website address or search phrase.");
@@ -5281,9 +5214,7 @@ main();
       setStatus("WebPC resumed · Linux may need a moment to wake up");
     }
     if (browserStatus) {
-      browserStatus.textContent = browserLoading
-        ? "WebPC resumed. The embedded page may still be loading; use Reload if it appears stuck."
-        : "WebPC resumed. Embedded sites may need Reload after a long pause.";
+      browserStatus.textContent = "WebPC resumed. Websites are open in a separate browser tab; use that tab's own controls if it needs reloading.";
     }
   }
   document.addEventListener("visibilitychange", () => {
@@ -5293,8 +5224,8 @@ main();
       const awayMs = Date.now() - webpcHiddenAt;
       webpcHiddenAt = 0;
       noteWebPCResume();
-      if (awayMs > 30000 && browserLoading && browserStatus) {
-        browserStatus.textContent = "Returned after " + Math.round(awayMs / 1000) + "s. If the page stalled while WebPC was backgrounded, press Reload.";
+      if (awayMs > 30000 && browserStatus) {
+        browserStatus.textContent = "Returned after " + Math.round(awayMs / 1000) + "s. If a website needs refreshing, use the real browser tab's Reload control.";
       }
     }
   });
