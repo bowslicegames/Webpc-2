@@ -45,25 +45,37 @@ jobs:
           }
           NODE
           node tools/test-network-stream.mjs
+          node tools/test-network-socket.mjs
 
-      - name: Extract and check browser startup script
+      - name: Syntax-check every inline browser script and validate DOM references
         run: |
           node <<'NODE'
           const fs = require("fs");
           const html = fs.readFileSync("index.html", "utf8");
-          const scriptPattern = new RegExp("<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>", "gi");
-          const scripts = [...html.matchAll(scriptPattern)];
-          if (!scripts.length) throw new Error("No inline startup script found");
-
-          // The application startup script contains the main() call.
-          const mainPattern = new RegExp("\\basync function main\\s*\\(");
-          const mainCallPattern = new RegExp("\\bmain\\s*\\(\\s*\\)\\s*;");
-          const match = scripts.find(m => mainPattern.test(m[1]) && mainCallPattern.test(m[1]));
-          if (!match) throw new Error("WebPC startup script not found");
-
-          fs.writeFileSync("/tmp/webpc-main.js", match[1]);
+          const scripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)];
+          if (!scripts.length) throw new Error("No inline scripts found");
+          let written = 0;
+          for (let i = 0; i < scripts.length; i++) {
+            const code = scripts[i][1];
+            if (!code.trim()) continue;
+            fs.writeFileSync("/tmp/webpc-inline-" + i + ".js", code);
+            written++;
+          }
+          const ids = [...html.matchAll(/\\bid=["']([^"']+)["']/g)].map(match => match[1]);
+          const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
+          if (duplicates.length) throw new Error("Duplicate HTML ids: " + [...new Set(duplicates)].join(", "));
+          const refs = new Set([
+            ...[...html.matchAll(/\\$\\(["']([^"']+)["']\\)/g)].map(match => match[1]),
+            ...[...html.matchAll(/getElementById\\(["']([^"']+)["']\\)/g)].map(match => match[1])
+          ]);
+          const missing = [...refs].filter(id => !ids.includes(id));
+          if (missing.length) throw new Error("JavaScript references missing DOM ids: " + missing.join(", "));
+          console.log("Found", written, "inline scripts;", ids.length, "unique DOM ids;", refs.size, "valid DOM references.");
           NODE
-          node --check /tmp/webpc-main.js
+          for script in /tmp/webpc-inline-*.js; do
+            node --check "$script"
+          done
+          node --check xterm-pty/index.mjs
 
       - name: Verify Wrangler configuration
         run: |
