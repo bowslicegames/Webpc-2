@@ -56,7 +56,7 @@ Guest internet traffic follows this route:
 Alpine guest → c2w-net-proxy → stack.js → same-origin /net-proxy → Cloudflare Worker → internet
 ```
 
-The Worker streams responses with bounded buffering and rejects HTML error pages when a binary download was requested. This prevents an HTML error page from silently being saved as a `.wasm` or package file. A successful Worker-level download test does not by itself prove that the complete guest networking path works on every browser/device.
+The Worker streams responses with bounded buffering, revalidates every HTTP redirect against its host allowlist, and rejects HTML error pages when a binary download was requested. The guest relay is an allowlisted HTTP(S) proxy, not an unrestricted raw-IP/ICMP internet connection. This prevents an HTML error page from silently being saved as a `.wasm` or package file. A successful Worker-level download test does not by itself prove that the complete guest networking path works on every browser/device.
 
 ## Cross-origin isolation
 
