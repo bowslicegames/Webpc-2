@@ -1,36 +1,67 @@
-# WebPC 2: guest services and 4 GiB disk rollout
+# WebPC 2: current disk, app-service and display status
 
-## Current safe state
+## Current disk
 
-The deployed architecture still loads the root disk from the Emscripten preload bundle (load-rootfs.data + load-rootfs.js) into the browser's in-memory filesystem. The QEMU -m 512M option is RAM, not disk capacity. The browser File Manager still issues filesystem operations through the shared guest serial shell.
+- The published guest disk is `disk-rootfs-qcow2.img`, a dynamically allocated qcow2 image with **8 GiB virtual capacity**.
+- The image is loaded into QEMU's Emscripten in-memory filesystem at startup.
+- Runtime assets may be cached in browser Cache Storage, but that cache is separate from the guest disk.
+- Guest filesystem changes are currently **session-local** and are lost when the VM is freshly started.
+- The 8 GiB virtual size does not mean an iPad browser can safely allocate 8 GiB of physical memory. The qcow2 image grows as blocks are written, and those writes consume browser-side memory.
 
-A genuine service split and a real 4 GiB disk are not activated by adding front-end JavaScript alone. This document records the implementation path so that the running VM is not broken by a pretend fix.
+The old `tools/expand-rootfs-image.sh` helper is a preparation utility for a standalone ext4 image; it is not the current qcow2 release pipeline.
 
-## Service split plan
+## Current desktop/service architecture
 
-1. Add a guest-side service manager to the Alpine image and start it from the guest's boot sequence.
-2. Provide a dedicated QEMU device/channel for the service protocol; do not route file listing, file reads/writes, downloads, or app jobs through the interactive shell.
-3. Use framed requests with request IDs, bounded message sizes, timeouts, cancellation, and explicit error replies. File operations must be rooted in the guest user's home unless the user explicitly requests an elevated operation.
-4. Keep the interactive terminal on its current console channel. Give File Manager and other apps separate logical RPC clients and queues over the dedicated service channel.
-5. Test concurrent listing/read/write requests, interrupted transfers, path traversal rejection, binary files, cancellation, and shell responsiveness.
-6. Only then wire the browser apps to the RPC client and remove their terminal-command fallbacks.
+The visible desktop is an HTML application shell, not a Linux graphical desktop. QEMU currently runs with `-nographic` and exposes the guest through one serial console.
 
-Integration blocker: the guest boot filesystem/initramfs and QEMU-generated release bundle are not tracked in this repository. The current browser runtime exposes only the console path to app code; no guest daemon or independent service channel is present. The service cannot be made active until the guest image and QEMU runtime are rebuilt together.
+File Manager, Java setup, downloads and other desktop features have separate browser-side queues. These queues prevent ordinary short commands from being submitted simultaneously, but they are **not independent guest runtimes**: all commands still travel through the same serial shell. A stalled shell can block every app.
 
-## 4 GiB disk plan
+Closing the Terminal window must not interrupt or reset the guest shell. The browser UI should preserve the same terminal session when the window is reopened.
 
-1. Obtain the exact source disk image from the build pipeline (not the Emscripten preload .data bundle).
-2. Inspect whether it is a whole-device ext4 image or a partitioned disk. Do not assume the layout.
-3. Use tools/expand-rootfs-image.sh SOURCE.img OUTPUT.img only for a standalone ext4 filesystem image. It makes a sparse 4 GiB copy and checks the filesystem before and after resizing. It deliberately refuses unknown or partitioned layouts.
-4. Repackage the new image into the matching Emscripten preload data/loader assets, preserving paths and generated metadata.
-5. Fix the runtime's storage backend so a 4 GiB virtual image does not require a dense 4 GiB JavaScript heap allocation. A sparse file on the host build machine alone does not guarantee sparse storage in browser MEMFS.
-6. Update the exact release assets and known-size metadata together; test asset hashes/HTTP status, fresh cache loading, boot, df -h, filesystem writes across the 512 MiB boundary, and a reboot.
-7. Deploy only after a real browser test confirms disk capacity and memory use.
+## Work required for persistent storage
 
-## Release limitation
+A correct persistence implementation must preserve the *modified* qcow2 disk, not merely cache the original release image.
 
-The GitHub integration available for this repository can update tracked text files but does not expose GitHub Release asset upload/replacement. The release assets are generated binaries and are not tracked source files. Changing the QEMU drive arguments or only changing the HTML's reported capacity would not expand the actual guest disk.
+1. Confirm which persistent browser storage backend is available in the target browsers (IndexedDB, OPFS, or an Emscripten-supported filesystem).
+2. Confirm whether the current QEMU-Wasm build includes a compatible persistent filesystem backend. Do not assume IDBFS is present just because Emscripten is used.
+3. Avoid copying an entire multi-gigabyte disk into one JavaScript ArrayBuffer. Use bounded, chunked reads/writes and handle browser quota errors.
+4. Make startup restore the last complete disk snapshot before QEMU opens it.
+5. Make guest writes durable while the VM is running, not only during a graceful page close. iOS may suspend or terminate a tab without firing unload handlers.
+6. Use atomic generations/checkpoints so an interrupted write cannot destroy the last good disk.
+7. Add explicit storage usage, quota, export, restore and reset controls.
+8. Test refresh, tab close, browser termination, low storage, interrupted writes, and restore on iPad Safari and desktop browsers.
+
+Do not label the disk persistent until those tests pass.
+
+## Work required for independent desktop apps
+
+1. Add a guest-side service manager to the Alpine image.
+2. Add a dedicated QEMU device/channel for framed app requests, separate from the interactive serial console.
+3. Implement request IDs, bounded messages, timeouts, cancellation, and explicit error replies.
+4. Restrict file operations to the guest user's home unless an elevated action is explicitly requested.
+5. Test simultaneous file listing, reads, writes, downloads, cancellation, and shell responsiveness.
+6. Connect each desktop app to that service channel and remove shell-command fallbacks only after the service is proven reliable.
+
+This requires rebuilding and validating the guest image and QEMU runtime together. Browser-side queues alone cannot provide independent guest services.
+
+## Work required for a graphical PC
+
+The current guest is serial-console only. Host WebGL availability does not provide a guest display or GPU.
+
+A graphical environment requires a supported QEMU display device/backend, a Linux guest driver, and a browser-side renderer or display protocol. Only after that exists should a lightweight Linux desktop and graphical applications be added. Minecraft Java's interactive client also needs a working display path and substantially more guest RAM than the current 512 MiB setting.
+
+## Network validation requirements
+
+The network tests must distinguish these layers:
+
+1. The Cloudflare Worker can fetch and stream a large upstream response.
+2. `stack.js` can transfer that response through its bounded HTTP bridge.
+3. The c2w worker and shared WebSocket ring buffers can move data without loss.
+4. The Alpine guest can resolve DNS, complete TLS, and download a known binary.
+5. `apk update` and a small package installation complete with verified package signatures.
+
+A Worker-level 40 MiB comparison does not prove steps 2–5. Keep guest-side diagnostics and do not replace the guest disk or package database based only on a successful host-side proxy test.
 
 ## Safety rule
 
-Never replace out.js, load-rootfs.data, load-rootfs.js, or the disk image in production unless the corresponding generated assets are available, validated, and can be restored from the backup release.
+Never replace `out.js`, the QEMU WASM binary, the qcow2 image, or the kernel/initramfs release assets unless the corresponding build outputs are available, validated, and recoverable from a known-good release.
