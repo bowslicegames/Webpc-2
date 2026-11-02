@@ -50,15 +50,16 @@ async function waitForBytes(count) {
 }
 
 // Lock contention must defer instead of recursively spinning until stack overflow.
-data.set([11, 12, 13], 0);
+data.set([11, 12, 13, 14, 15], 0);
 begin[0] = 0;
-end[0] = 3;
+end[0] = 5;
 lock[0] = 1;
 notify(3);
+notify(2);
 setTimeout(() => { lock[0] = 0; }, 8);
-await waitForBytes(3);
-if (flatten().join(",") !== "11,12,13") {
-  throw new Error("Lock-retry payload mismatch: " + flatten().join(","));
+await waitForBytes(5);
+if (flatten().join(",") !== "11,12,13,14,15") {
+  throw new Error("Queued lock-retry payload mismatch: " + flatten().join(","));
 }
 
 // Read a frame that crosses the end of the shared ring buffer.
