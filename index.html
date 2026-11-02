@@ -5312,7 +5312,7 @@ main();
   window.webpcDesktopShellReady = function() {
     desktop.classList.remove("locked");
     setStatus("Linux shell ready · all desktop apps available");
-    if(fileStatus) setFileStatus("Linux shell ready. Files are saved to the VM's /home/webpc folders.");
+    if(fileStatus) setFileStatus("Linux shell ready. Files are stored on the temporary VM disk and are lost on a fresh launch.");
     if(document.getElementById("fileWindow").classList.contains("open")) refreshFiles();
   };
   window.showDesktopUI = function() {
