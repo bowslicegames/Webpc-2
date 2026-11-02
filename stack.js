@@ -25,18 +25,20 @@ let sockSendRetryScheduled = false;
 let sockRecvPendingLengths = [];
 let sockRecvRetryScheduled = false;
 
-function scheduleSockRecv(targetLen) {
-    sockRecvPendingLengths.push(targetLen);
-    if (sockRecvRetryScheduled) return;
+function scheduleSockRecvDrain() {
+    if (sockRecvRetryScheduled || sockRecvPendingLengths.length === 0) return;
     sockRecvRetryScheduled = true;
     setTimeout(() => {
         sockRecvRetryScheduled = false;
         const nextLength = sockRecvPendingLengths.shift();
         if (nextLength !== undefined) sockRecvWS(nextLength);
-        if (sockRecvPendingLengths.length) {
-            scheduleSockRecv(sockRecvPendingLengths.shift());
-        }
+        scheduleSockRecvDrain();
     }, 1);
+}
+
+function scheduleSockRecv(targetLen) {
+    sockRecvPendingLengths.push(targetLen);
+    scheduleSockRecvDrain();
 }
 
 function scheduleSockSend(delay = 1) {
