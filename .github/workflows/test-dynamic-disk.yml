@@ -49,7 +49,7 @@ jobs:
           node - <<'NODE'
           const fs = require("fs");
           const out = fs.readFileSync("work/out.js", "utf8");
-          for (const term of ["IDBFS", "OPFS", "indexedDB", "IDBFS"]) {
+          for (const term of ["IDBFS", "OPFS", "indexedDB", "syncfs"]) {
             console.log("Emscripten runtime contains", term + ":", out.includes(term));
           }
           NODE
