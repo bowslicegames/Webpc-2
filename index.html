@@ -1029,7 +1029,7 @@ button:active {
                 <aside class="file-sidebar"><button class="file-nav active" data-folder="Desktop">🖥 Desktop</button><button class="file-nav" data-folder="Documents">📄 Documents</button><button class="file-nav" data-folder="Downloads">⬇ Downloads</button><button class="file-nav" data-folder="">⌂ Home</button></aside>
                 <div class="file-main">
                   <div class="file-location" id="fileBreadcrumbs" aria-label="Folder breadcrumbs"><span>Filesystem</span></div>
-                  <input class="file-path" id="filePath" value="/" aria-label="Current folder path">
+                  <input class="file-path" id="filePath" value="/root/Desktop" aria-label="Current folder path">
                   <div class="file-search-row"><input class="file-search" id="fileSearch" type="search" placeholder="Search this folder…" aria-label="Search files"><select class="file-sort" id="fileSort" aria-label="Sort files"><option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="size">Smallest first</option><option value="size-desc">Largest first</option><option value="type">Folders first</option></select></div>
                   <div class="file-toolbar"><button class="ui-button" id="fileUp">↑ Up</button><button class="ui-button" id="fileNew">＋ New</button><button class="ui-button" id="fileRefresh">↻ Refresh</button><button class="ui-button" id="fileUpload">⇧ Upload file</button><button class="ui-button" id="fileDownloadUrl">↓ Download URL</button><button class="ui-button" id="fileGetJava">☕ Get Java 21 APK</button><button class="ui-button primary" id="fileSave">Save to disk</button><button class="ui-button" id="fileOpenPath">Open path</button><button class="ui-button" id="fileDelete">Delete selected</button><span class="file-menu-wrap"><button class="ui-button" id="fileMenu" aria-label="More file actions" aria-expanded="false" title="More actions">⋮</button><span id="fileMenuPopup" hidden><button id="fileInstallPackage" hidden>📦 Install APK package</button><button id="fileDecompress" hidden>📂 Decompress archive</button></span></span></div>
                   <input id="fileUploadInput" type="file" hidden>
@@ -4413,8 +4413,8 @@ main();
   const terminalWrap = document.getElementById("terminalWrap");
   const controls = document.getElementById("controls");
   const app = document.getElementById("app");
-  let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "", selectedFilePath = null, commandChannelStalled = false;
-  const BASE_HOME = "/home/webpc";
+  let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "", selectedFilePath = null, commandChannelStalled = false, homeDirsInitialized = false;
+  const BASE_HOME = "/root";
   const enc = new TextEncoder();
   const dec = new TextDecoder();
   function shellReadyNow() { return typeof shellReady !== "undefined" && shellReady && typeof masterPTY !== "undefined" && masterPTY && typeof slavePTY !== "undefined" && slavePTY; }
@@ -5313,7 +5313,23 @@ main();
     desktop.classList.remove("locked");
     setStatus("Linux shell ready · all desktop apps available");
     if(fileStatus) setFileStatus("Linux shell ready. Files are stored on the temporary VM disk and are lost on a fresh launch.");
-    if(document.getElementById("fileWindow").classList.contains("open")) refreshFiles();
+    if (!homeDirsInitialized) {
+      homeDirsInitialized = true;
+      const homeDirs = ["Desktop", "Documents", "Downloads"]
+        .map(name => shellQuote(BASE_HOME + "/" + name)).join(" ");
+      runGuestForService("files", "mkdir -p " + homeDirs, err => {
+        if (err) {
+          homeDirsInitialized = false;
+          setFileStatus("Could not prepare the Linux home folders: " + err.message, true);
+          return;
+        }
+        const fileWindow = document.getElementById("fileWindow");
+        if (fileWindow && fileWindow.classList.contains("open")) refreshFiles();
+      });
+    } else {
+      const fileWindow = document.getElementById("fileWindow");
+      if (fileWindow && fileWindow.classList.contains("open")) refreshFiles();
+    }
   };
   window.showDesktopUI = function() {
     /* The shell-ready callback is the only path that unlocks the desktop. */
