@@ -22,8 +22,8 @@ Closing the Terminal window must not interrupt or reset the guest shell. The bro
 
 A correct persistence implementation must preserve the *modified* qcow2 disk, not merely cache the original release image.
 
-1. Confirm which persistent browser storage backend is available in the target browsers (IndexedDB, OPFS, or an Emscripten-supported filesystem).
-2. Confirm whether the current QEMU-Wasm build includes a compatible persistent filesystem backend. Do not assume IDBFS is present just because Emscripten is used.
+1. The published `out.js` was inspected in CI: a string scan found no `IDBFS`, `OPFS`, or `indexedDB` identifiers (the generic `syncfs` string alone does not prove a persistent backend is bundled). Treat durable browser-backed guest storage as unsupported in the current build.
+2. Rebuild the QEMU-Wasm Emscripten runtime with a verified persistent filesystem/block backend, then test that backend in the target browsers (IndexedDB or OPFS as appropriate).
 3. Avoid copying an entire multi-gigabyte disk into one JavaScript ArrayBuffer. Use bounded, chunked reads/writes and handle browser quota errors.
 4. Make startup restore the last complete disk snapshot before QEMU opens it.
 5. Make guest writes durable while the VM is running, not only during a graceful page close. iOS may suspend or terminate a tab without firing unload handlers.
