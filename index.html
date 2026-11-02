@@ -2154,7 +2154,12 @@ async function downloadWithProgress(filename) {
     const cachedResponse = await getCachedAsset(filename);
     if (cachedResponse) {
         const cachedBlob = await cachedResponse.blob();
-        if (cachedBlob.size > 0) {
+        const cachedTypeLower = (cachedBlob.type || "").toLowerCase();
+        const cacheValid = cachedBlob.size > 0 &&
+            (!expected || cachedBlob.size === expected) &&
+            !cachedTypeLower.includes("text/html") &&
+            !cachedTypeLower.includes("application/xhtml+xml");
+        if (cacheValid) {
             let cachedType = cachedBlob.type || "";
             if (filename.endsWith(".js") || filename.endsWith(".mjs")) {
                 cachedType = "application/javascript; charset=utf-8";
@@ -2179,6 +2184,18 @@ async function downloadWithProgress(filename) {
             updateOverall();
             downloaded.set(filename, readyBlob);
             return readyBlob;
+        }
+
+        console.warn("Discarding invalid cached WebPC asset:", filename, {
+            cachedBytes: cachedBlob.size,
+            expectedBytes: expected,
+            contentType: cachedBlob.type || "unknown"
+        });
+        try {
+            const cache = await openAssetCache();
+            if (cache) await cache.delete(assetURL(filename));
+        } catch (cacheError) {
+            console.warn("Could not delete invalid cached WebPC asset:", filename, cacheError);
         }
     }
 
@@ -2267,6 +2284,14 @@ async function downloadWithProgress(filename) {
         with HTTP 200.
     */
 
+    if (contentType.includes("text/html") || contentType.includes("application/xhtml+xml")) {
+        throw new Error(
+            "The Worker returned an HTML page instead of " + filename +
+            ".\n\nContent-Type: " + contentType +
+            "\n\nURL:\n" + url
+        );
+    }
+
     if (
         filename.endsWith(".wasm") &&
         contentType &&
@@ -2319,6 +2344,13 @@ async function downloadWithProgress(filename) {
 
         const blob =
             await response.blob();
+
+        if (expected > 0 && blob.size !== expected) {
+            throw new Error(
+                "Downloaded " + filename + " has the wrong size: received " +
+                blob.size + " bytes; expected " + expected + ". The response may be truncated or an error page."
+            );
+        }
 
         currentAssetLoaded =
             blob.size;
@@ -2504,6 +2536,13 @@ async function downloadWithProgress(filename) {
     } else if (filename.endsWith(".wasm")) {
         blobType =
             "application/wasm";
+    }
+
+    if (expected > 0 && received !== expected) {
+        throw new Error(
+            "Downloaded " + filename + " is incomplete: received " +
+            received + " bytes; expected " + expected + ". The asset was not cached."
+        );
     }
 
     const blob =
