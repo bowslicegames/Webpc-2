@@ -87,6 +87,14 @@ jobs:
           done
           test "$proxy_ready" -eq 1
 
+          # Exercise the actual Alpine package-index CDN through the Worker
+          # relay and verify that the streamed gzip payload is intact.
+          curl --fail --silent --show-error --location --retry 2 --retry-delay 2 --max-time 60 \
+            -H 'X-WebPC-Proxy-Target: https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/APKINDEX.tar.gz' \
+            https://webpc.bowslicegames.workers.dev/net-proxy \
+            -o work/alpine-main-index.tar.gz
+          gzip -t work/alpine-main-index.tar.gz
+
           # A missing binary URL must not return a saveable HTML error page.
           binary_error_status="$(curl --silent --show-error --location --max-time 20 \
             -D work/binary-error-headers.txt \
