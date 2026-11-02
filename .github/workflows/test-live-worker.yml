@@ -97,6 +97,12 @@ jobs:
             -o work/alpine-main-index.tar.gz
           gzip -t work/alpine-main-index.tar.gz
 
+          # Check the exact BellSoft Java 21 APK URL used by the desktop app.
+          bellsoft_status="$(curl --silent --show-error --location --head --max-time 30 \
+            -H 'X-WebPC-Proxy-Target: https://download.bell-sw.com/java/21.0.12+10/bellsoft-jdk21.0.12+10-linux-x64-musl.apk' \
+            https://webpc.bowslicegames.workers.dev/net-proxy -o /dev/null -w '%{http_code}')"
+          test "$bellsoft_status" = "200"
+
           # A missing binary URL must not return a saveable HTML error page.
           binary_error_status="$(curl --silent --show-error --location --max-time 20 \
             -D work/binary-error-headers.txt \
