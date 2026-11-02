@@ -490,7 +490,8 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
               "Cache-Control": "no-store",
               "Cross-Origin-Resource-Policy": "same-origin",
               "X-WebPC-Worker": "active",
-              "X-WebPC-Stack-Module": "repository-pinned"
+              "X-WebPC-Stack-Module": "repository-pinned",
+              "X-WebPC-Static-Commit": STATIC_COMMIT
             }
           });
         } catch (error) {
