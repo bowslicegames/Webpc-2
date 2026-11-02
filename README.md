@@ -44,7 +44,7 @@ The Worker serves these small files from the repository:
 
 The Worker serves the QEMU runtime and Linux assets from Release `V1`, including the 8 GiB virtual qcow2 disk image.
 
-The guest disk is currently loaded into Emscripten's in-memory filesystem. **The 8 GiB figure is virtual capacity, not a guarantee that the browser can allocate 8 GiB of RAM. Guest file changes are lost when the VM is freshly started.** Cache Storage keeps downloaded runtime assets between visits where the browser allows it; asset byte sizes are checked before caching, and every disk release rotates the cache version so old base images are not silently reused. That cache does not persist the guest disk.
+The guest disk is currently loaded into Emscripten's in-memory filesystem. **The 8 GiB figure is virtual capacity, not a guarantee that the browser can allocate 8 GiB of RAM. Guest file changes are lost when the VM is freshly started.** A CI scan of the published `out.js` found no recognizable IDBFS/OPFS/IndexedDB backend, so persistence requires rebuilding and verifying the QEMU-Wasm runtime rather than just caching the original disk image. Cache Storage keeps downloaded runtime assets between visits where the browser allows it; asset byte sizes are checked before caching, and every disk release rotates the cache version so old base images are not silently reused. That cache does not persist the guest disk.
 
 The desktop is currently a browser-based HTML shell around a serial-console Linux guest. QEMU is started with `-nographic`; there is no guest graphical display or accelerated guest GPU yet. The host browser's WebGL support is not a guest GPU. Consequently, graphical Linux applications and the Minecraft Java client cannot yet be displayed inside WebPC.
 
