@@ -57,6 +57,9 @@ jobs:
           if (!html.includes("stat -c %s") || html.includes("wc -c <")) {
             throw new Error("File listing/upload size checks must use filesystem metadata, not reread file contents");
           }
+          if (!html.includes("__webpc_exit_code=$?") || !html.includes("_END_FAIL__")) {
+            throw new Error("Desktop command broker must report guest command failures");
+          }
           if (html.includes("browserLoading")) {
             throw new Error("Stale browserLoading reference remains in the desktop lifecycle code");
           }
