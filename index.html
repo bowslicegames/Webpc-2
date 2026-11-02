@@ -4622,7 +4622,7 @@ main();
     const parts = raw.split("/").filter(Boolean);
     const invalid = parts.some(p =>
       p === "." || p === ".." ||
-      /[\\u0000-\\u001f\\u007f]/.test(p) ||
+      /[\u0000-\u001f\u007f]/.test(p) ||
       enc.encode(p).length > 255
     );
     if (invalid || enc.encode(raw).length > 4096) {
@@ -4633,7 +4633,7 @@ main();
   function safeName() {
     const n = (fileName.value || "").trim();
     if (!n || n === "." || n === ".." || n.includes("/") || n.includes("\\") ||
-        /[\\u0000-\\u001f\\u007f]/.test(n) || enc.encode(n).length > 255) {
+        /[\u0000-\u001f\u007f]/.test(n) || enc.encode(n).length > 255) {
       throw new Error("Enter a valid Linux file name (maximum 255 UTF-8 bytes).");
     }
     return n;
