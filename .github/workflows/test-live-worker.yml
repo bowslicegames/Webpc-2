@@ -66,7 +66,7 @@ jobs:
           # Wait for the Worker to report the exact STATIC_COMMIT configured
           # in this checkout. A streaming proxy header alone can come from an
           # older deployment and is not proof that the new stack module is live.
-          expected_stack_pin="$(node -e 'const s=require("fs").readFileSync("_worker.js","utf8"); const m=s.match(/const STATIC_COMMIT =\\s*"([0-9a-f]+)"/); if(!m) process.exit(2); process.stdout.write(m[1]);')"
+          expected_stack_pin="$(node -e 'const s=require("fs").readFileSync("_worker.js","utf8"); const m=s.match(/const STATIC_COMMIT =\s*"([0-9a-f]+)"/); if(!m) process.exit(2); process.stdout.write(m[1]);')"
           stack_ready=0
           for attempt in $(seq 1 24); do
             curl --silent --show-error --location --max-time 20 \
