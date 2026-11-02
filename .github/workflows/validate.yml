@@ -54,6 +54,12 @@ jobs:
           node <<'NODE'
           const fs = require("fs");
           const html = fs.readFileSync("index.html", "utf8");
+          if (!html.includes("stat -c %s") || html.includes("wc -c <")) {
+            throw new Error("File listing/upload size checks must use filesystem metadata, not reread file contents");
+          }
+          if (html.includes("browserLoading")) {
+            throw new Error("Stale browserLoading reference remains in the desktop lifecycle code");
+          }
           const worker = fs.readFileSync("_worker.js", "utf8");
           const stack = fs.readFileSync("stack.js");
           const sizeMatch = html.match(/const KNOWN_SIZES = \{([\s\S]*?)\n\};/);
