@@ -36,8 +36,9 @@ function scheduleSockRecvDrain() {
     }, 1);
 }
 
-function scheduleSockRecv(targetLen) {
-    sockRecvPendingLengths.push(targetLen);
+function scheduleSockRecv(targetLen, atFront = false) {
+    if (atFront) sockRecvPendingLengths.unshift(targetLen);
+    else sockRecvPendingLengths.push(targetLen);
     scheduleSockRecvDrain();
 }
 
@@ -250,7 +251,7 @@ function sockRecvWS(targetLen){
     // The shared ring-buffer lock may briefly belong to the network worker.
     // Never spin/recursively retry on the UI thread: defer this read instead.
     if (Atomics.compareExchange(fromNetCtrl, 0, 0, 1) != 0) {
-        scheduleSockRecv(targetLen);
+        scheduleSockRecv(targetLen, true);
         return 0;
     }
 
