@@ -97,3 +97,8 @@ These tests do not emulate iPad Safari or prove the guest's full real-world netw
 ## Release assets
 
 The large runtime binaries are kept in GitHub Release `V1` because committing the QEMU/Linux binaries directly to the repository is unsuitable. The checked-in Worker and HTML must remain in sync with the exact release asset names and sizes.
+
+## Documentation
+
+- [Full audit and remaining work (2026-11-02)](docs/audit-2026-11-02.md)
+- [Guest services and disk notes](docs/guest-services-and-4gb-disk.md)
