@@ -87,10 +87,10 @@ GitHub Actions now checks:
 1. Worker and network bridge JavaScript syntax.
 2. The bounded 40 MiB HTTP streaming regression test.
 3. WebSocket ring-buffer lock contention and wrap-around.
-4. Every inline browser script and its referenced DOM IDs.
-5. The local xterm-pty module syntax.
-6. Wrangler configuration.
-7. The live Worker asset/proxy route and the published qcow2 guest boot (in their respective workflows).
+4. Every inline browser script, DOM ID reference, and browser-global reference (ESLint `no-undef`).
+5. Runtime size-manifest accuracy and equality between the Worker-pinned `stack.js` and the tested source.
+6. The local xterm-pty module syntax and Wrangler configuration.
+7. The live Worker revision, binary error handling, 40 MiB direct/proxy byte equality, and the published qcow2 guest boot (in their respective workflows).
 
 These tests do not emulate iPad Safari or prove the guest's full real-world network/package-manager path. Final testing on the target browser/device remains necessary.
 
