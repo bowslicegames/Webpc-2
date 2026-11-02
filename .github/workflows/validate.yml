@@ -52,7 +52,7 @@ jobs:
           node <<'NODE'
           const fs = require("fs");
           const html = fs.readFileSync("index.html", "utf8");
-          const scripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)];
+          const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
           if (!scripts.length) throw new Error("No inline scripts found");
           let written = 0;
           for (let i = 0; i < scripts.length; i++) {
@@ -61,12 +61,12 @@ jobs:
             fs.writeFileSync("/tmp/webpc-inline-" + i + ".js", code);
             written++;
           }
-          const ids = [...html.matchAll(/\\bid=["']([^"']+)["']/g)].map(match => match[1]);
+          const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(match => match[1]);
           const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
           if (duplicates.length) throw new Error("Duplicate HTML ids: " + [...new Set(duplicates)].join(", "));
           const refs = new Set([
-            ...[...html.matchAll(/\\$\\(["']([^"']+)["']\\)/g)].map(match => match[1]),
-            ...[...html.matchAll(/getElementById\\(["']([^"']+)["']\\)/g)].map(match => match[1])
+            ...[...html.matchAll(/\$\(["']([^"']+)["']\)/g)].map(match => match[1]),
+            ...[...html.matchAll(/getElementById\(["']([^"']+)["']\)/g)].map(match => match[1])
           ]);
           const missing = [...refs].filter(id => !ids.includes(id));
           if (missing.length) throw new Error("JavaScript references missing DOM ids: " + missing.join(", "));
