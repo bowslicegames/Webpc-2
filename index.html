@@ -4380,10 +4380,14 @@ main();
       networkStatus.textContent = "Testing ICMP ping and HTTPS from inside Linux…";
       const command = "ping -c 1 -W 3 1.1.1.1 >/tmp/webpc-ping.log 2>&1; p=$?; " +
         "if [ \"$p\" -eq 0 ]; then echo WEBPC_PING_OK; else echo WEBPC_PING_FAIL; fi; " +
-        "if command -v wget >/dev/null 2>&1; then wget -q -T 5 -O /dev/null https://example.com; h=$?; else h=127; fi; " +
-        "if [ \"$h\" -ne 0 ] && command -v curl >/dev/null 2>&1; then curl -fsSL --max-time 5 -o /dev/null https://example.com; h=$?; fi; " +
+        "if command -v wget >/dev/null 2>&1; then wget -q -T 8 -O /dev/null https://example.com; h=$?; else h=127; fi; " +
+        "if [ \"$h\" -ne 0 ] && command -v curl >/dev/null 2>&1; then curl -fsSL --max-time 8 -o /dev/null https://example.com; h=$?; fi; " +
         "if [ \"$h\" -eq 0 ]; then echo WEBPC_HTTPS_OK; else echo WEBPC_HTTPS_FAIL; fi; " +
-        "tail -n 2 /tmp/webpc-ping.log 2>/dev/null || true";
+        "rm -f /tmp/webpc-apkindex.tar.gz; " +
+        "if command -v wget >/dev/null 2>&1; then wget -S -T 15 -O /tmp/webpc-apkindex.tar.gz https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/APKINDEX.tar.gz >/tmp/webpc-apkindex.log 2>&1; a=$?; else a=127; fi; " +
+        "if [ \"$a\" -eq 0 ] && command -v gzip >/dev/null 2>&1; then gzip -t /tmp/webpc-apkindex.tar.gz >/dev/null 2>&1; a=$?; fi; " +
+        "if [ \"$a\" -eq 0 ]; then echo WEBPC_APKINDEX_OK; else echo WEBPC_APKINDEX_FAIL; fi; " +
+        "tail -n 2 /tmp/webpc-ping.log 2>/dev/null || true; tail -n 4 /tmp/webpc-apkindex.log 2>/dev/null || true";
       if (!window.webpcRunGuestForService) {
         networkTestButton.disabled = false;
         networkStatus.textContent = "Guest command bridge is not ready yet. Reload after Linux has started.";
@@ -4394,9 +4398,12 @@ main();
         if (err) { networkStatus.textContent = "Guest internet test failed to run: " + err.message; return; }
         const pingOk = out.includes("WEBPC_PING_OK");
         const httpsOk = out.includes("WEBPC_HTTPS_OK");
+        const apkIndexOk = out.includes("WEBPC_APKINDEX_OK");
         networkStatus.textContent = "ICMP ping: " + (pingOk ? "reachable" : "blocked or unavailable") +
-          " · HTTPS download: " + (httpsOk ? "working" : "failed") +
-          (httpsOk ? ". Guest-side large-file downloads can use the File Manager's Download URL action." : ". Check the network log in /tmp/webpc-ping.log.");
+          " · HTTPS: " + (httpsOk ? "working" : "failed") +
+          " · Alpine package index: " + (apkIndexOk ? "downloaded and gzip-verified" : "failed") +
+          (apkIndexOk ? ". The guest can reach its package CDN." :
+            ". Check /tmp/webpc-apkindex.log and /tmp/webpc-ping.log for the exact HTTP/proxy error.");
       });
     });
   }
@@ -4529,7 +4536,9 @@ main();
       pumpGuestQueue();
     }
     p.finish = finish;
-    const commandTimeoutMs = job.command.includes("WEBPC_DECOMPRESS_OK") ? 180000 : (job.command.includes("WEBPC_TASK_STARTED") ? 60000 : 20000);
+    const commandTimeoutMs = job.command.includes("WEBPC_DECOMPRESS_OK") ? 180000 :
+      (job.command.includes("WEBPC_TASK_STARTED") ? 60000 :
+        (job.command.includes("WEBPC_APKINDEX_OK") ? 45000 : 20000));
     p.timeout = setTimeout(() => {
       if (pending !== p) return;
       commandChannelStalled = true;
