@@ -61,6 +61,11 @@ jobs:
             throw new Error("Stale browserLoading reference remains in the desktop lifecycle code");
           }
           const worker = fs.readFileSync("_worker.js", "utf8");
+          const diskBuild = fs.readFileSync(".github/workflows/build-dynamic-disk.yml", "utf8");
+          if (!diskBuild.includes("GITHUB_RUN_ID") ||
+              !diskBuild.includes("Cannot find the runtime Cache Storage version to rotate")) {
+            throw new Error("Dynamic disk builds must rotate the browser asset cache version on every release");
+          }
           const stack = fs.readFileSync("stack.js");
           const sizeMatch = html.match(/const KNOWN_SIZES = \{([\s\S]*?)\n\};/);
           if (!sizeMatch) throw new Error("Runtime asset size manifest was not found");
