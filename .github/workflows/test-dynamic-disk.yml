@@ -46,6 +46,13 @@ jobs:
           for f in disk-rootfs-qcow2.img qemu-system-x86_64.wasm qemu-system-x86_64.worker.js out.js load-kernel.data load-kernel.js load-initramfs.data load-initramfs.js; do
             test -s "work/$f"
           done
+          node - <<'NODE'
+          const fs = require("fs");
+          const out = fs.readFileSync("work/out.js", "utf8");
+          for (const term of ["IDBFS", "OPFS", "indexedDB", "IDBFS"]) {
+            console.log("Emscripten runtime contains", term + ":", out.includes(term));
+          }
+          NODE
           qemu-img check work/disk-rootfs-qcow2.img
           qemu-img info --output=json work/disk-rootfs-qcow2.img > work/disk-info.json
           python3 <<'PY'
