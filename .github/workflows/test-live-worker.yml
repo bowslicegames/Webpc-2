@@ -6,7 +6,9 @@ on:
     paths:
       - ".github/workflows/test-live-worker.yml"
       - "_worker.js"
+      - "index.html"
       - "stack.js"
+      - "wrangler.toml"
 
 # This runs after release rebuilds to catch stale Worker asset pins and stale disk bytes.
 permissions:
