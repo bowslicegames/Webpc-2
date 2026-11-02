@@ -4385,7 +4385,7 @@ main();
         "if [ \"$h\" -eq 0 ]; then echo WEBPC_HTTPS_OK; else echo WEBPC_HTTPS_FAIL; fi; " +
         "rm -f /tmp/webpc-apkindex.tar.gz; " +
         "if command -v wget >/dev/null 2>&1; then wget -S -T 15 -O /tmp/webpc-apkindex.tar.gz https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/APKINDEX.tar.gz >/tmp/webpc-apkindex.log 2>&1; a=$?; else a=127; fi; " +
-        "if [ \"$a\" -eq 0 ] && command -v gzip >/dev/null 2>&1; then gzip -t /tmp/webpc-apkindex.tar.gz >/dev/null 2>&1; a=$?; fi; " +
+        "if [ \"$a\" -eq 0 ]; then if command -v gzip >/dev/null 2>&1; then gzip -t /tmp/webpc-apkindex.tar.gz >/dev/null 2>&1; a=$?; else a=127; fi; fi; " +
         "if [ \"$a\" -eq 0 ]; then echo WEBPC_APKINDEX_OK; else echo WEBPC_APKINDEX_FAIL; fi; " +
         "tail -n 2 /tmp/webpc-ping.log 2>/dev/null || true; tail -n 4 /tmp/webpc-apkindex.log 2>/dev/null || true";
       if (!window.webpcRunGuestForService) {
