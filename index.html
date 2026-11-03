@@ -1021,6 +1021,7 @@ button:active {
         <button class="desktop-shortcut" id="shortcut-terminal" data-open-app="terminal"><span class="shortcut-icon">▣</span><span class="shortcut-label">Terminal</span></button>
         <button class="desktop-shortcut" id="shortcut-minecraft" data-open-app="minecraft"><span class="shortcut-icon">🟩</span><span class="shortcut-label">Minecraft</span></button>
         <button class="desktop-shortcut" id="shortcut-browser" data-open-app="browser"><span class="shortcut-icon">🌐</span><span class="shortcut-label">Browser</span></button>
+        <button class="desktop-shortcut" id="shortcut-computer" data-open-app="computer"><span class="shortcut-icon">🖥️</span><span class="shortcut-label">Virtual Computer</span></button>
         <div id="windowHost">
           <section class="desktop-window" id="fileWindow" aria-label="File Manager window">
             <div class="window-titlebar"><span>📁</span><span class="window-title">File Manager</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
@@ -1051,7 +1052,16 @@ button:active {
             <div class="window-titlebar"><span>🟩</span><span class="window-title">Minecraft Java Edition</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body"><div class="info-content">
               <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Java 21 runtime from here. Setup runs as a background guest task, so the File Manager and terminal remain usable while packages download. The current VM has no guest graphical display yet, so it cannot show or run the interactive Minecraft client until a display backend is added.</p><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button" id="repairApk">Repair APK / install nano</button><button class="ui-button primary" id="installJava">Install Java 21</button><div class="info-status" id="apkStatus" style="flex-basis:100%">APK package manager: not checked</div></div></div>
-              <div class="info-card"><h3>Virtual computer</h3><p><b>Virtual disk:</b> 8 GiB qcow2, dynamically growing. The backing file starts small and grows as Linux writes data; it does not pre-allocate 8 GiB of browser memory. Actual used blocks still consume browser memory, so avoid filling multiple GiB in an iPad tab. Guest-side downloads avoid a second full-file JavaScript buffer, and the guest disk resets on a fresh launch.</p><p style="margin-top:8px"><b>Guest RAM:</b> 512 MiB. QEMU uses CPU emulation, with browser-side memory kept deliberately conservative.</p><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="memoryCheck">Check memory</button><button class="ui-button" id="enableZram">Enable compressed RAM (ZRAM)</button><button class="ui-button" id="networkTest">Test guest internet</button></div><div class="info-status" id="memoryStatus">Guest memory: not checked · Disk swapfile: disabled</div><div class="info-status" id="networkStatus">Guest internet: not checked</div></div>
+              
+            </div><div class="window-resize" aria-hidden="true"></div></div>
+          </section>
+          <section class="desktop-window" id="computerWindow" aria-label="Virtual Computer settings window">
+            <div class="window-titlebar"><span>🖥️</span><span class="window-title">Virtual Computer</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
+            <div class="window-body"><div class="info-content">
+              <div class="info-card"><h3>Hardware and storage</h3><p><b>Virtual disk:</b> 8 GiB qcow2, dynamically growing. The backing file starts small and grows as Linux writes data; it does not pre-allocate 8 GiB of browser memory. Actual used blocks still consume browser memory, so avoid filling multiple GiB in an iPad tab. Guest-side downloads avoid a second full-file JavaScript buffer, and the guest disk resets on a fresh launch.</p><p style="margin-top:8px"><b>Guest RAM:</b> 512 MiB. QEMU uses CPU emulation, with browser-side memory kept deliberately conservative.</p><p style="margin-top:8px"><b>Disk swapfile:</b> disabled. No disk-backed swap is created.</p></div>
+              <div class="info-card"><h3>Graphics capabilities</h3><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div><p>Host WebGL capability is not a guest GPU. QEMU currently has no connected guest display or OpenGL-to-WebGL bridge.</p></div>
+              <div class="info-card"><h3>Memory management</h3><p>Check guest memory usage or optionally enable a small compressed ZRAM swap device if the Alpine kernel supports it. ZRAM uses CPU and guest RAM; it does not add physical memory or use GPU VRAM.</p><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="memoryCheck">Check memory</button><button class="ui-button" id="enableZram">Enable compressed RAM (ZRAM)</button></div><div class="info-status" id="memoryStatus">Guest memory: not checked · Disk swapfile: disabled</div></div>
+              <div class="info-card"><h3>Network diagnostics</h3><p>Test guest internet access and the Alpine package download path.</p><button class="ui-button" id="networkTest">Test guest internet</button><div class="info-status" id="networkStatus">Guest internet: not checked</div></div>
             </div><div class="window-resize" aria-hidden="true"></div></div>
           </section>
           <section class="desktop-window" id="servicesWindow" aria-label="Services and task manager window">
@@ -1078,7 +1088,7 @@ button:active {
           </section>
         </div>
       </div>
-      <div id="appDock" aria-label="App dock"><button class="dock-app" data-open-app="files" aria-label="Files" title="File Manager">📁</button><button class="dock-app" data-open-app="terminal" aria-label="Terminal" title="Terminal">▣</button><button class="dock-app" data-open-app="minecraft" aria-label="Minecraft" title="Minecraft Java Edition">🟩</button><button class="dock-app" data-open-app="browser" aria-label="Browser" title="Web Browser">🌐</button><button class="dock-app" data-open-app="services" aria-label="Services" title="Services & Tasks">⚙️</button></div>
+      <div id="appDock" aria-label="App dock"><button class="dock-app" data-open-app="files" aria-label="Files" title="File Manager">📁</button><button class="dock-app" data-open-app="terminal" aria-label="Terminal" title="Terminal">▣</button><button class="dock-app" data-open-app="minecraft" aria-label="Minecraft" title="Minecraft Java Edition">🟩</button><button class="dock-app" data-open-app="browser" aria-label="Browser" title="Web Browser">🌐</button><button class="dock-app" data-open-app="computer" aria-label="Virtual Computer" title="Virtual Computer">🖥️</button></button><button class="dock-app" data-open-app="services" aria-label="Services" title="Services & Tasks">⚙️</button></div>
     </div>
 
 </div>
@@ -4774,7 +4784,7 @@ main();
   }
   document.querySelectorAll("[data-open-app]").forEach(el => el.addEventListener("click", () => {
     const which = el.getAttribute("data-open-app");
-    showWindow(which === "files" ? "fileWindow" : which === "terminal" ? "terminalWindow" : which === "browser" ? "browserWindow" : which === "services" ? "servicesWindow" : "minecraftWindow");
+    showWindow(which === "files" ? "fileWindow" : which === "terminal" ? "terminalWindow" : which === "browser" ? "browserWindow" : which === "services" ? "servicesWindow" : which === "computer" ? "computerWindow" : "minecraftWindow");
   }));
   document.querySelectorAll(".desktop-window").forEach(win => {
     win.addEventListener("pointerdown", () => { win.style.zIndex = ++zTop; });
