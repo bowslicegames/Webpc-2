@@ -21,6 +21,11 @@ jobs:
       - name: Check Worker JavaScript syntax
         run: node --check _worker.js
 
+      - name: Check guest framebuffer bridge and tests
+        run: |
+          node --check graphics-bridge.js
+          node tools/test-graphics-bridge.cjs
+
       - name: Check streaming network bridge syntax and invariants
         run: |
           node --input-type=module --check < stack.js
