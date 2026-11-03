@@ -67,6 +67,12 @@ jobs:
               !html.includes('value="/root/Desktop"')) {
             throw new Error("File Manager home must match the Alpine root account's /root home");
           }
+          for (const marker of ['id="memoryCheck"', 'id="enableZram"', '/sys/block/zram0/disksize', 'vm.swappiness=80', 'WEBPC_ZRAM_UNAVAILABLE', 'WEBGL_lose_context']) {
+            if (!html.includes(marker)) throw new Error("GPU/memory optimisation marker missing: " + marker);
+          }
+          if (html.includes("fallocate -l") || html.includes("dd if=/dev/zero of=/swapfile")) {
+            throw new Error("Disk-backed swapfile must remain disabled");
+          }
           const worker = fs.readFileSync("_worker.js", "utf8");
           const diskBuild = fs.readFileSync(".github/workflows/build-dynamic-disk.yml", "utf8");
           if (!diskBuild.includes("GITHUB_RUN_ID") ||
