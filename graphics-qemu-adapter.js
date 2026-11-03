@@ -48,6 +48,14 @@
     lastGeneration = -1;
     pollHandle = window.setInterval(copyFrame, 1000 / 15);
     window.WebPCGraphicsBridge.setInputSink(sendInput);
+    canvas.tabIndex = 0;
+    canvas.style.outlineOffset = "2px";
+    canvas.addEventListener("pointerdown", onPointer);
+    canvas.addEventListener("pointermove", onPointer);
+    canvas.addEventListener("pointerup", onPointer);
+    canvas.addEventListener("pointercancel", onPointer);
+    canvas.addEventListener("keydown", onKey);
+    canvas.addEventListener("keyup", onKey);
     report("QEMU display ABI connected; waiting for first guest frame…");
     return { connected: true, missing: [] };
   }
@@ -75,6 +83,27 @@
     }
   }
 
+  function onPointer(event) {
+    if (!canvas) return;
+    if (event.type === "pointerdown") canvas.focus();
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(0, Math.min(canvas.width - 1, Math.round((event.clientX - rect.left) * canvas.width / Math.max(1, rect.width))));
+    const y = Math.max(0, Math.min(canvas.height - 1, Math.round((event.clientY - rect.top) * canvas.height / Math.max(1, rect.height))));
+    window.WebPCGraphicsBridge.sendInput({
+      type: "pointer", codeValue: event.button, x, y,
+      buttons: event.type === "pointerup" || event.type === "pointercancel" ? 0 : event.buttons
+    });
+    if (event.cancelable) event.preventDefault();
+  }
+
+  function onKey(event) {
+    window.WebPCGraphicsBridge.sendInput({
+      type: "key", codeValue: event.keyCode || 0,
+      buttons: event.type === "keydown" ? 1 : 0
+    });
+    if (event.cancelable) event.preventDefault();
+  }
+
   function sendInput(event) {
     if (!attached || !moduleRef) return false;
     const type = event.type === "pointer" ? 2 : event.type === "key" ? 1 : 0;
@@ -90,7 +119,17 @@
     pollHandle = 0;
     attached = false;
     moduleRef = null;
+    if (canvas) {
+      canvas.removeEventListener("pointerdown", onPointer);
+      canvas.removeEventListener("pointermove", onPointer);
+      canvas.removeEventListener("pointerup", onPointer);
+      canvas.removeEventListener("pointercancel", onPointer);
+      canvas.removeEventListener("keydown", onKey);
+      canvas.removeEventListener("keyup", onKey);
+    }
     if (window.WebPCGraphicsBridge) window.WebPCGraphicsBridge.setInputSink(null);
+    canvas = null;
+    status = null;
   }
 
   window.WebPCQemuGraphics = Object.freeze({ connect, disconnect });
