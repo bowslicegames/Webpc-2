@@ -21,6 +21,13 @@ jobs:
       - name: Check Worker JavaScript syntax
         run: node --check _worker.js
 
+      - name: Check graphics transport and QEMU ABI starter
+        run: |
+          node --check graphics-bridge.js
+          node --check graphics-qemu-adapter.js
+          node tools/test-graphics-bridge.cjs
+          gcc -std=c11 -Wall -Wextra -Werror -fsyntax-only -Iqemu-webpc-display qemu-webpc-display/webpc-display-abi.c
+
       - name: Check guest framebuffer bridge and tests
         run: |
           node --check graphics-bridge.js
