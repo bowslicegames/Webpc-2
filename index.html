@@ -1051,7 +1051,7 @@ button:active {
             <div class="window-titlebar"><span>🟩</span><span class="window-title">Minecraft Java Edition</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body"><div class="info-content">
               <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Java 21 runtime from here. Setup runs as a background guest task, so the File Manager and terminal remain usable while packages download. The current VM has no guest graphical display yet, so it cannot show or run the interactive Minecraft client until a display backend is added.</p><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button" id="repairApk">Repair APK / install nano</button><button class="ui-button primary" id="installJava">Install Java 21</button><div class="info-status" id="apkStatus" style="flex-basis:100%">APK package manager: not checked</div></div></div>
-              <div class="info-card"><h3>Virtual computer</h3><p><b>Virtual disk:</b> 8 GiB qcow2, dynamically growing. The backing file starts small and grows as Linux writes data; it does not pre-allocate 8 GiB of browser memory. Actual used blocks still consume browser memory, so avoid filling multiple GiB in an iPad tab. Guest-side downloads avoid a second full-file JavaScript buffer, and the guest disk resets on a fresh launch.</p><p style="margin-top:8px"><b>Guest RAM:</b> 512 MiB. QEMU uses CPU emulation, with browser-side memory kept deliberately conservative.</p><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div><div style="display:flex;gap:7px;margin-top:10px"><button class="ui-button" id="networkTest">Test guest internet</button></div><div class="info-status" id="networkStatus">Guest internet: not checked</div></div>
+              <div class="info-card"><h3>Virtual computer</h3><p><b>Virtual disk:</b> 8 GiB qcow2, dynamically growing. The backing file starts small and grows as Linux writes data; it does not pre-allocate 8 GiB of browser memory. Actual used blocks still consume browser memory, so avoid filling multiple GiB in an iPad tab. Guest-side downloads avoid a second full-file JavaScript buffer, and the guest disk resets on a fresh launch.</p><p style="margin-top:8px"><b>Guest RAM:</b> 512 MiB. QEMU uses CPU emulation, with browser-side memory kept deliberately conservative.</p><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="memoryCheck">Check memory</button><button class="ui-button" id="enableZram">Enable compressed RAM (ZRAM)</button><button class="ui-button" id="networkTest">Test guest internet</button></div><div class="info-status" id="memoryStatus">Guest memory: not checked · Disk swapfile: disabled</div><div class="info-status" id="networkStatus">Guest internet: not checked</div></div>
             </div><div class="window-resize" aria-hidden="true"></div></div>
           </section>
           <section class="desktop-window" id="servicesWindow" aria-label="Services and task manager window">
@@ -4361,16 +4361,75 @@ main();
   const graphicsStatus = document.getElementById("graphicsStatus");
   if (graphicsStatus) {
     const canvas = document.createElement("canvas");
-    let gl2 = null, gl = null;
-    try { gl2 = canvas.getContext("webgl2"); gl = gl2 || canvas.getContext("webgl"); } catch (_) {}
-    const memoryHint = navigator.deviceMemory ? " Device memory reported: " + navigator.deviceMemory + " GB." : " Device memory is not exposed by this browser.";
-    graphicsStatus.textContent = (gl2
-      ? "Host renderer: WebGL 2 available."
-      : gl
-        ? "Host renderer: WebGL available."
-        : "Host renderer: WebGL unavailable in this tab; browser-side GPU rendering cannot be used.") +
-      " Guest display: unavailable. QEMU currently boots with -nographic and exposes only a serial console; host WebGL is not connected to a guest GPU." + memoryHint;
+    let gl = null, gpuDetails = " GPU details are hidden by the browser.";
+    try {
+      gl = canvas.getContext("webgl2", {alpha:false, antialias:false, depth:false, stencil:false, powerPreference:"low-power", failIfMajorPerformanceCaveat:false}) ||
+        canvas.getContext("webgl", {alpha:false, antialias:false, depth:false, stencil:false, powerPreference:"low-power", failIfMajorPerformanceCaveat:false});
+      if (gl) {
+        const info = gl.getExtension("WEBGL_debug_renderer_info");
+        const renderer = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : "";
+        const vendor = info ? gl.getParameter(info.UNMASKED_VENDOR_WEBGL) : "";
+        gpuDetails = (renderer ? " Renderer: " + renderer + "." : "") + (vendor ? " Vendor: " + vendor + "." : "") +
+          " Max texture: " + gl.getParameter(gl.MAX_TEXTURE_SIZE) + "px; max renderbuffer: " + gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) + "px.";
+        const lose = gl.getExtension("WEBGL_lose_context");
+        if (lose) lose.loseContext();
+      }
+    } catch (_) { gl = null; }
+    const memoryHint = navigator.deviceMemory ? " Browser device-memory hint: " + navigator.deviceMemory + " GB." : " Browser device-memory estimate is not exposed.";
+    const webgl2 = !!gl && typeof WebGL2RenderingContext !== "undefined" && gl instanceof WebGL2RenderingContext;
+    graphicsStatus.textContent = (gl ? (webgl2 ? "Host GPU: WebGL 2 available." : "Host GPU: WebGL available.") : "Host GPU: WebGL unavailable in this tab.") +
+      " Guest GPU: not connected; QEMU still has a serial-only display. Host WebGL does not provide OpenGL to Linux." +
+      " QEMU guest RAM remains 512 MiB; disk swapfile is disabled." + gpuDetails + memoryHint;
   }
+
+  const memoryStatus = document.getElementById("memoryStatus");
+  const memoryCheckButton = document.getElementById("memoryCheck");
+  const enableZramButton = document.getElementById("enableZram");
+  const memoryCommand = "echo WEBPC_MEMORY_BEGIN; grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; " +
+    "if [ -r /sys/block/zram0/disksize ]; then echo ZRAM_DEVICE_PRESENT; cat /sys/block/zram0/disksize; grep -E '^/dev/zram[0-9]+' /proc/swaps || true; else echo ZRAM_DEVICE_ABSENT; fi; " +
+    "echo WEBPC_MEMORY_END";
+  function runMemoryCommand(button, command, done) {
+    if (!window.webpcShellReadyNow || !window.webpcShellReadyNow()) {
+      if (memoryStatus) memoryStatus.textContent = "Guest memory: sign in to Linux first.";
+      return;
+    }
+    if (button) button.disabled = true;
+    if (!window.webpcRunGuestForService) {
+      if (button) button.disabled = false;
+      if (memoryStatus) memoryStatus.textContent = "Guest command bridge is not ready.";
+      return;
+    }
+    window.webpcRunGuestForService("system", command, (err, out) => {
+      if (button) button.disabled = false;
+      if (err) { if (memoryStatus) memoryStatus.textContent = "Memory operation failed: " + err.message; return; }
+      if (done) done(out);
+      else if (memoryStatus) {
+        const lines = out.split("\n").filter(line => /^(MemTotal|MemAvailable|SwapTotal|SwapFree):|^ZRAM_DEVICE_/.test(line));
+        memoryStatus.textContent = "Guest memory: " + (lines.join(" · ") || "diagnostic completed") + " · Disk swapfile: disabled";
+      }
+    });
+  }
+  if (memoryCheckButton) memoryCheckButton.addEventListener("click", () => {
+    if (memoryStatus) memoryStatus.textContent = "Reading guest RAM and swap status…";
+    runMemoryCommand(memoryCheckButton, memoryCommand);
+  });
+  if (enableZramButton) enableZramButton.addEventListener("click", () => {
+    if (memoryStatus) memoryStatus.textContent = "Checking kernel support and preparing a 128 MiB compressed swap device…";
+    const command = "if ! [ -e /sys/block/zram0/disksize ]; then modprobe zram num_devices=1 2>/dev/null || true; fi; " +
+      "if ! [ -e /sys/block/zram0/disksize ]; then echo WEBPC_ZRAM_UNAVAILABLE; " +
+      "elif grep -q '^/dev/zram0 ' /proc/swaps; then echo WEBPC_ZRAM_ALREADY_ON; " +
+      "else current=$(cat /sys/block/zram0/disksize); if [ \"$current\" = 0 ]; then echo 134217728 > /sys/block/zram0/disksize || exit 21; fi; " +
+      "mkswap /dev/zram0 >/dev/null 2>&1 && swapon -p 100 /dev/zram0 && sysctl -w vm.swappiness=80 >/dev/null; " +
+      "if [ $? -eq 0 ]; then echo WEBPC_ZRAM_ENABLED; else echo WEBPC_ZRAM_FAILED; fi; fi; " + memoryCommand;
+    runMemoryCommand(enableZramButton, command, out => {
+      if (!memoryStatus) return;
+      if (out.includes("WEBPC_ZRAM_ENABLED")) memoryStatus.textContent = "ZRAM enabled: 128 MiB compressed swap, priority 100, swappiness 80. No disk swapfile was created.";
+      else if (out.includes("WEBPC_ZRAM_ALREADY_ON")) memoryStatus.textContent = "ZRAM was already active. No disk swapfile is enabled.";
+      else if (out.includes("WEBPC_ZRAM_UNAVAILABLE")) memoryStatus.textContent = "This guest kernel does not expose ZRAM. No changes were made; disk swap remains disabled.";
+      else if (out.includes("WEBPC_ZRAM_FAILED")) memoryStatus.textContent = "The kernel exposed ZRAM but could not activate it. Check dmesg and /proc/swaps; disk swap remains disabled.";
+      else memoryStatus.textContent = "ZRAM command finished. " + out.slice(-500);
+    });
+  });
   const networkTestButton = document.getElementById("networkTest");
   const networkStatus = document.getElementById("networkStatus");
   if (networkTestButton && networkStatus) {
