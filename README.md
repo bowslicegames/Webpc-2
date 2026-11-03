@@ -48,6 +48,8 @@ The guest disk is currently loaded into Emscripten's in-memory filesystem. **The
 
 The desktop is currently a browser-based HTML shell around a serial-console Linux guest. QEMU is started with `-nographic`; there is no guest graphical display or accelerated guest GPU yet. The host browser's WebGL support is not a guest GPU. Consequently, graphical Linux applications and the Minecraft Java client cannot yet be displayed inside WebPC.
 
+The Virtual Computer panel reports the host WebGL renderer and conservative capability limits, then explicitly releases its temporary WebGL context to avoid reserving GPU resources. This is diagnostics only: it does not attach the host GPU to QEMU. The same panel offers an optional 128 MiB ZRAM setup if the guest kernel exposes the driver. ZRAM is compressed guest-memory swap (not GPU VRAM and not extra physical RAM); it is opt-in, uses CPU for compression, and creates no disk swapfile. Disk-backed swap remains disabled.
+
 File Manager, Java setup, downloads and other desktop services use separate browser-side queues, but their short control commands still share the guest's one serial shell. A genuinely independent app/service channel requires a guest-side service and a matching QEMU device/channel.
 
 Guest internet traffic follows this route:
