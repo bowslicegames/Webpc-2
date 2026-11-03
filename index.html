@@ -3492,6 +3492,18 @@ async function bootQEMU() {
             }
 
             installTTYPollHook(Module);
+            if (window.WebPCQemuGraphics) {
+                const canvas = document.getElementById("guestDisplayCanvas");
+                const status = document.getElementById("guestDisplayStatus");
+                try {
+                    const result = window.WebPCQemuGraphics.connect(Module, canvas, status);
+                    if (!result.connected) {
+                        noteBootSignal("Graphics ABI not present in this QEMU build: " + result.missing.join(", "));
+                    }
+                } catch (graphicsError) {
+                    noteBootSignal("Graphics adapter error: " + graphicsError.message);
+                }
+            }
         };
 
     if (
@@ -3541,6 +3553,15 @@ async function bootQEMU() {
         "pc",
 
         /*
+            Instantiate QEMU's standard VGA device. -nographic still
+            suppresses the host display, but this gives the guest a
+            concrete VGA adapter while browser frame transport is built.
+            Serial remains the boot channel.
+        */
+        "-vga",
+        "std",
+
+        /*
             Keep the guest at the upstream browser-example size.
         */
         "-m",
@@ -3568,7 +3589,7 @@ async function bootQEMU() {
         "/pack-initramfs/initramfs-virt",
 
         "-append",
-        "earlyprintk=ttyS0 console=ttyS0 root=/dev/vda loglevel=7 hostname=webpc2 ip=dhcp",
+        "earlyprintk=ttyS0 console=ttyS0 console=tty0 root=/dev/vda loglevel=7 hostname=webpc2 ip=dhcp",
 
         "-drive",
         "id=test,file=/pack-rootfs/disk-rootfs.img,format=qcow2,if=none",
@@ -5481,6 +5502,7 @@ main();
 </script>
 
 <script src="./graphics-bridge.js"></script>
+<script src="./graphics-qemu-adapter.js"></script>
 <script>
 (() => {
   const canvas = document.getElementById("guestDisplayCanvas");
