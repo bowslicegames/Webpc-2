@@ -4418,7 +4418,8 @@ main();
     const command = "if ! [ -e /sys/block/zram0/disksize ]; then modprobe zram num_devices=1 2>/dev/null || true; fi; " +
       "if ! [ -e /sys/block/zram0/disksize ]; then echo WEBPC_ZRAM_UNAVAILABLE; " +
       "elif grep -q '^/dev/zram0 ' /proc/swaps; then echo WEBPC_ZRAM_ALREADY_ON; " +
-      "else current=$(cat /sys/block/zram0/disksize); if [ \"$current\" = 0 ]; then echo 134217728 > /sys/block/zram0/disksize || exit 21; fi; " +
+      "else if [ -r /sys/block/zram0/comp_algorithm ] && grep -qw lz4 /sys/block/zram0/comp_algorithm; then echo lz4 > /sys/block/zram0/comp_algorithm; fi; " +
+      "current=$(cat /sys/block/zram0/disksize); if [ \"$current\" = 0 ]; then echo 134217728 > /sys/block/zram0/disksize || exit 21; fi; " +
       "mkswap /dev/zram0 >/dev/null 2>&1 && swapon -p 100 /dev/zram0 && sysctl -w vm.swappiness=80 >/dev/null; " +
       "if [ $? -eq 0 ]; then echo WEBPC_ZRAM_ENABLED; else echo WEBPC_ZRAM_FAILED; fi; fi; " + memoryCommand;
     runMemoryCommand(enableZramButton, command, out => {
