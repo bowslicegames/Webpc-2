@@ -70,6 +70,9 @@ jobs:
           for (const marker of ['id="memoryCheck"', 'id="enableZram"', '/sys/block/zram0/disksize', 'vm.swappiness=80', 'WEBPC_ZRAM_UNAVAILABLE', 'WEBGL_lose_context']) {
             if (!html.includes(marker)) throw new Error("GPU/memory optimisation marker missing: " + marker);
           }
+          for (const marker of ['id="graphicsSelfTest"', 'id="graphicsTestCanvas"', 'gl.readPixels(160,75,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel)', "Minecraft browser readiness", "Stage 2 — virtual display"]) {
+            if (!html.includes(marker)) throw new Error("Browser graphics milestone missing: " + marker);
+          }
           if (html.includes("fallocate -l") || html.includes("dd if=/dev/zero of=/swapfile")) {
             throw new Error("Disk-backed swapfile must remain disabled");
           }
