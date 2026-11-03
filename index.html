@@ -1059,7 +1059,7 @@ button:active {
             <div class="window-titlebar"><span>🖥️</span><span class="window-title">Virtual Computer</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body"><div class="info-content">
               <div class="info-card"><h3>Hardware and storage</h3><p><b>Virtual disk:</b> 8 GiB qcow2, dynamically growing. The backing file starts small and grows as Linux writes data; it does not pre-allocate 8 GiB of browser memory. Actual used blocks still consume browser memory, so avoid filling multiple GiB in an iPad tab. Guest-side downloads avoid a second full-file JavaScript buffer, and the guest disk resets on a fresh launch.</p><p style="margin-top:8px"><b>Guest RAM:</b> 512 MiB. QEMU uses CPU emulation, with browser-side memory kept deliberately conservative.</p><p style="margin-top:8px"><b>Disk swapfile:</b> disabled. No disk-backed swap is created.</p></div>
-              <div class="info-card"><h3>Graphics capabilities</h3><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div><p>Host WebGL capability is not a guest GPU. QEMU currently has no connected guest display or OpenGL-to-WebGL bridge.</p></div>
+              <div class="info-card"><h3>Graphics capabilities</h3><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div><p>Host WebGL capability is not a guest GPU. This first-stage test checks the iPad browser renderer only; it does not yet display Linux or Minecraft. The experimental guest display backend is still being developed separately.</p><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="graphicsSelfTest">Run WebGL graphics test</button></div><div class="info-status" id="graphicsTestStatus">Graphics test: not run</div><canvas id="graphicsTestCanvas" width="320" height="180" aria-label="WebGL graphics test output" style="display:block;width:100%;max-width:480px;height:auto;aspect-ratio:16/9;margin-top:8px;background:#07111d;border:1px solid #ffffff22;border-radius:8px"></canvas></div><div class="info-card"><h3>Minecraft browser readiness</h3><p><b>Stage 1 — browser graphics:</b> test WebGL 2, shader compilation and framebuffer readback on this device.</p><p><b>Stage 2 — virtual display:</b> rebuild QEMU-Wasm with a browser frame output path and add a guest VirtIO-GPU 2D device plus a kernel with the matching driver.</p><p><b>Stage 3 — 3D translation:</b> add a Mesa/OpenGL ES compatibility layer and translate supported calls to WebGL 2. VirGL cannot be enabled just by adding a QEMU device; its host renderer must also be ported.</p><p><b>Stage 4 — game runtime:</b> Java 21, LWJGL input/audio/window compatibility, persistent game storage, network access, touch controls and performance tuning.</p><div class="info-status">Current state: Java can be installed, but the guest has no graphical display. Minecraft Java is not playable yet.</div></div>
               <div class="info-card"><h3>Memory management</h3><p>Check guest memory usage or optionally enable a small compressed ZRAM swap device if the Alpine kernel supports it. ZRAM uses CPU and guest RAM; it does not add physical memory or use GPU VRAM.</p><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="memoryCheck">Check memory</button><button class="ui-button" id="enableZram">Enable compressed RAM (ZRAM)</button></div><div class="info-status" id="memoryStatus">Guest memory: not checked · Disk swapfile: disabled</div></div>
               <div class="info-card"><h3>Network diagnostics</h3><p>Test guest internet access and the Alpine package download path.</p><button class="ui-button" id="networkTest">Test guest internet</button><div class="info-status" id="networkStatus">Guest internet: not checked</div></div>
             </div><div class="window-resize" aria-hidden="true"></div></div>
@@ -4390,6 +4390,44 @@ main();
     graphicsStatus.textContent = (gl ? (webgl2 ? "Host GPU: WebGL 2 available." : "Host GPU: WebGL available.") : "Host GPU: WebGL unavailable in this tab.") +
       " Guest GPU: not connected; QEMU still has a serial-only display. Host WebGL does not provide OpenGL to Linux." +
       " QEMU guest RAM remains 512 MiB; disk swapfile is disabled." + gpuDetails + memoryHint;
+  }
+
+  const graphicsTestButton = document.getElementById("graphicsSelfTest");
+  const graphicsTestStatus = document.getElementById("graphicsTestStatus");
+  const graphicsTestCanvas = document.getElementById("graphicsTestCanvas");
+  if (graphicsTestButton && graphicsTestCanvas && graphicsTestStatus) {
+    graphicsTestButton.addEventListener("click", () => {
+      graphicsTestButton.disabled = true;
+      graphicsTestStatus.textContent = "Graphics test: compiling WebGL 2 shaders…";
+      try {
+        const gl = graphicsTestCanvas.getContext("webgl2", {alpha:false, antialias:false, depth:true, powerPreference:"low-power"});
+        if (!gl) throw new Error("WebGL 2 context unavailable");
+        const vs = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vs, "#version 300 es\\nin vec2 p;\\nvoid main(){gl_Position=vec4(p,0.0,1.0);}");
+        gl.compileShader(vs);
+        if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) throw new Error("Vertex shader: " + gl.getShaderInfoLog(vs));
+        const fs = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fs, "#version 300 es\\nprecision mediump float;\\nout vec4 color;\\nvoid main(){color=vec4(0.12,0.78,0.58,1.0);}");
+        gl.compileShader(fs);
+        if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) throw new Error("Fragment shader: " + gl.getShaderInfoLog(fs));
+        const program = gl.createProgram();
+        gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error("Shader link: " + gl.getProgramInfoLog(program));
+        const vertices = new Float32Array([0,0.82,-0.78,-0.62,0.78,-0.62]);
+        const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+        gl.viewport(0,0,graphicsTestCanvas.width,graphicsTestCanvas.height);
+        gl.clearColor(0.025,0.055,0.095,1); gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.useProgram(program);
+        const loc=gl.getAttribLocation(program,"p"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+        gl.drawArrays(gl.TRIANGLES,0,3);
+        const pixel=new Uint8Array(4); gl.readPixels(160,75,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+        if (gl.getError() !== gl.NO_ERROR || pixel[1] < 80) throw new Error("Framebuffer render/readback verification failed");
+        graphicsTestStatus.textContent = "PASS — WebGL 2 context, GLSL ES 3.00 shaders, draw call and framebuffer readback succeeded. Pixel RGBA: " + Array.from(pixel).join(",") + ". This tests the browser GPU only, not the VM display.";
+        gl.deleteBuffer(buffer); gl.deleteProgram(program); gl.deleteShader(vs); gl.deleteShader(fs);
+      } catch (error) {
+        graphicsTestStatus.textContent = "FAIL — " + (error && error.message ? error.message : String(error)) + ". Try reloading the tab; WebGL may be disabled or unavailable.";
+      } finally { graphicsTestButton.disabled = false; }
+    });
   }
 
   const memoryStatus = document.getElementById("memoryStatus");
