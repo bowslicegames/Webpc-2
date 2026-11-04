@@ -13,7 +13,6 @@ with tempfile.TemporaryDirectory() as tmp:
         '    w = MIN(w, width - x);\n'
         '    h = MIN(h, height - y);\n'
         '\n'
-        '\n'
         '    if (!qemu_console_is_visible(con)) {\n'
         '        return;\n'
         '    }\n'
