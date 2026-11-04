@@ -3263,8 +3263,17 @@ async function bootQEMU() {
                 throw new Error("An existing OPFS disk has data but its initialization marker is missing; refusing to overwrite it.");
             }
             const writable = await diskHandle.createWritable({ keepExistingData: false });
-            await writable.write(blob);
-            await writable.close();
+            try {
+                const chunkBytes = 8 * 1024 * 1024;
+                for (let offset = 0; offset < blob.size; offset += chunkBytes) {
+                    const chunk = await blob.slice(offset, Math.min(blob.size, offset + chunkBytes)).arrayBuffer();
+                    await writable.write(chunk);
+                }
+                await writable.close();
+            } catch (error) {
+                try { await writable.abort(); } catch (_) {}
+                throw error;
+            }
             const markerHandle = await root.getFileHandle(markerName, { create: true });
             const markerWriter = await markerHandle.createWritable({ keepExistingData: false });
             await markerWriter.write("webpc-disk-rootfs-v1:" + blob.size);
