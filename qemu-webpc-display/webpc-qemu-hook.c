@@ -68,6 +68,7 @@ static void webpc_process_input(uint32_t width, uint32_t height)
 
 static void webpc_input_timer_cb(void *opaque)
 {
+    (void)opaque;
     webpc_process_input(webpc_input_width, webpc_input_height);
     timer_mod(webpc_input_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + 8);
 }
