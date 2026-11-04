@@ -7,8 +7,8 @@
  *   webpc_get_framebuffer_generation() -> integer (increments after each completed frame)
  *   webpc_send_input(type, code, x, y, buttons) -> 0 on success
  *
- * This adapter intentionally reports a missing ABI instead of pretending
- * that a normal Emscripten QEMU build can provide frames by itself.
+ * The matching QEMU patch exports the framebuffer ABI and consumes the
+ * keyboard, pointer, wheel and touch-look input queue.
  */
 (() => {
   "use strict";
@@ -54,6 +54,7 @@
     canvas.addEventListener("pointermove", onPointer);
     canvas.addEventListener("pointerup", onPointer);
     canvas.addEventListener("pointercancel", onPointer);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("keydown", onKey);
     canvas.addEventListener("keyup", onKey);
     report("QEMU display ABI connected; waiting for first guest frame…");
@@ -98,6 +99,12 @@
       buttons: event.type === "pointerup" || event.type === "pointercancel" ? 0 : event.buttons
     });
     if (event.cancelable) event.preventDefault();
+  }
+
+  function onWheel(event) {
+    if (!canvas) return;
+    if (event.cancelable) event.preventDefault();
+    sendInput({ type: "pointer", codeValue: 253, x: event.deltaY < 0 ? -1 : 1, y: 0, buttons: 0 });
   }
 
   function browserKeyToLinux(code) {
@@ -146,6 +153,7 @@
       canvas.removeEventListener("pointermove", onPointer);
       canvas.removeEventListener("pointerup", onPointer);
       canvas.removeEventListener("pointercancel", onPointer);
+      canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("keydown", onKey);
       canvas.removeEventListener("keyup", onKey);
     }
