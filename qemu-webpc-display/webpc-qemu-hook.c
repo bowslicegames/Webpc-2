@@ -1,4 +1,5 @@
 #include "qemu/osdep.h"
+#include <pixman.h>
 #include "ui/surface.h"
 #include "webpc-display-abi.h"
 #include "ui/input.h"
