@@ -5246,46 +5246,37 @@ main();
 
   document.getElementById("checkJava").addEventListener("click",()=>checkJavaStatus(true));
 
-  /* Best-effort launcher entry point. It never downloads an untrusted launcher
-     or pretends the serial-only guest has a working graphical display. */
+  /* Start the real guest Xorg + Prism launcher process. */
   document.getElementById("launchMinecraft").addEventListener("click", () => {
-    const box=document.getElementById("minecraftStatus");
-    if (!shellReadyNow()) { box.textContent="Minecraft launch: Linux is still starting."; return; }
-    if (!window.confirm("Attempt to launch an installed Minecraft Java launcher? This checks Java, a supported launcher and a guest graphical display. The current QEMU build is headless, so a playable window is not expected yet.")) return;
-    const taskId="wpc-mc-launch-"+Date.now().toString(36);
-    const taskStatus="/tmp/"+taskId+".status", taskLog="/tmp/"+taskId+".log";
-    const inner=[
+    const box = document.getElementById("minecraftStatus");
+    if (!shellReadyNow()) { box.textContent = "Minecraft launch: Linux is still starting."; return; }
+    if (!window.confirm("Start the guest Xorg display with Mesa software OpenGL and open Prism Launcher? On first launch, sign in with your Microsoft account and install a Minecraft Java version you own.")) return;
+    const taskId = "wpc-mc-launch-" + Date.now().toString(36);
+    const taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
+    const inner = [
       "set +e",
-      "echo '=== WebPC Minecraft Java launch attempt ==='",
-      "echo '[1/4] Java runtime'",
-      "if ! command -v java >/dev/null 2>&1; then echo 'BLOCKED: Java is not installed. Use Install Java 21 first.'; rc=10",
-      "else java -version 2>&1; rc=0; fi",
-      "echo '[2/4] Guest display availability'",
-      "echo \"DISPLAY=${DISPLAY:-<unset>} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-<unset>}\"",
-      "if [ -z \"${DISPLAY:-}\" ] && [ -z \"${WAYLAND_DISPLAY:-}\" ]; then echo 'BLOCKED: this QEMU guest has no X11/Wayland display server. The browser canvas is not exposed as a Linux display.'; rc=11; fi",
-      "echo '[3/4] Launcher discovery'",
-      "launcher=''",
-      "for candidate in prismlauncher PrismLauncher minecraft-launcher hmcl; do if command -v \"$candidate\" >/dev/null 2>&1; then launcher=$(command -v \"$candidate\"); break; fi; done",
-      "if [ -z \"$launcher\" ] && [ -d /root/Downloads ]; then",
-      "  jar=$(find /root/Downloads -maxdepth 1 -type f \\( -iname 'hmcl*.jar' -o -iname 'minecraft-launcher*.jar' \\) -print -quit 2>/dev/null)",
-      "  if [ -n \"$jar\" ]; then launcher=\"java -jar $jar\"; fi",
+      "echo '=== WebPC Minecraft guest display startup ==='",
+      "if ! command -v prismlauncher >/dev/null 2>&1; then echo 'BLOCKED: Prism Launcher is not installed. Run Install Minecraft runtime first.'; rc=10",
+      "elif [ ! -x /usr/local/bin/webpc-minecraft-display ]; then echo 'BLOCKED: guest Xorg/Mesa setup is missing. Run Install Minecraft runtime first.'; rc=11",
+      "else",
+      "  echo '[1/3] Checking guest VGA and DRM'",
+      "  if [ ! -e /dev/dri/card0 ]; then modprobe bochs_drm 2>&1 || true; fi",
+      "  ls -l /dev/dri /dev/fb0 2>&1 || true",
+      "  echo '[2/3] Starting Xorg and Prism Launcher with Mesa llvmpipe'",
+      "  nohup /usr/local/bin/webpc-minecraft-display </dev/null >/var/log/webpc-minecraft-launcher.log 2>&1 &",
+      "  pid=$!",
+      "  sleep 4",
+      "  if kill -0 \"$pid\" 2>/dev/null; then echo \"SUCCESS: Prism Launcher startup process is running (PID $pid).\"; echo 'The first-run wizard will ask you to add your Microsoft account and install a Java Edition version.'; rc=0",
+      "  else echo 'ERROR: the Xorg/Prism process exited during startup.'; tail -n 100 /var/log/webpc-xorg.log /var/log/webpc-minecraft-launcher.log 2>/dev/null || true; rc=12; fi",
       "fi",
-      "if [ -z \"$launcher\" ] && [ \"$rc\" -eq 0 ]; then echo 'BLOCKED: no supported installed launcher found (Prism Launcher, HMCL, or Minecraft Launcher).'; rc=12; fi",
-      "echo '[4/4] Launch'",
-      "if [ \"$rc\" -eq 0 ]; then",
-      "  mkdir -p /root/.minecraft/logs",
-      "  if [ -f /root/.minecraft/launcher_profiles.json ] || [ -d /root/.local/share/PrismLauncher/instances ]; then echo 'Existing launcher/game data detected.'; else echo 'No existing Minecraft profile detected; launcher may require setup and account sign-in.'; fi",
-      "  if echo \"$launcher\" | grep -q '^java -jar '; then jar_path=${launcher#java -jar }; nohup java -jar \"$jar_path\" > /root/.minecraft/logs/webpc-launcher.log 2>&1 </dev/null &",
-      "  else nohup \"$launcher\" > /root/.minecraft/logs/webpc-launcher.log 2>&1 </dev/null & fi",
-      "  pid=$!; echo \"Launcher process started: PID $pid\"; sleep 3; if kill -0 \"$pid\" 2>/dev/null; then echo 'Launcher process is still running; inspect /root/.minecraft/logs/webpc-launcher.log.'; rc=0; else echo 'Launcher exited during startup:'; tail -n 40 /root/.minecraft/logs/webpc-launcher.log; rc=13; fi",
-      "else echo 'No launcher process started. See the blocking reason above.'; fi",
-      "printf '%s\\n' \"$rc\" > "+JSON.stringify(taskStatus),
+      "printf '%s\\n' \"$rc\" > " + JSON.stringify(taskStatus),
       "exit \"$rc\""
     ].join("\n");
-    const taskScript="/tmp/"+taskId+".sh";
-    const encoded=b64(inner);
-    const command="printf '%s' "+shellQuote(encoded)+" | base64 -d > "+shellQuote(taskScript)+" && chmod 700 "+shellQuote(taskScript)+" && (nohup /bin/sh "+shellQuote(taskScript)+" </dev/null > "+shellQuote(taskLog)+" 2>&1 & echo WEBPC_TASK_STARTED:$!)";
-    startBackgroundTask("java","Minecraft launch attempt",command,taskStatus,taskLog,box);
+    const taskScript = "/tmp/" + taskId + ".sh";
+    const command = "printf '%s' " + shellQuote(b64(inner)) + " | base64 -d > " + shellQuote(taskScript) +
+      " && chmod 700 " + shellQuote(taskScript) +
+      " && (nohup /bin/sh " + shellQuote(taskScript) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!)";
+    startBackgroundTask("java", "Starting guest Xorg and Prism Launcher", command, taskStatus, taskLog, box);
   });
 
   const installJavaButton = document.getElementById("installJava");
