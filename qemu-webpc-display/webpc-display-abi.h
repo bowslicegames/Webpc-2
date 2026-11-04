@@ -4,7 +4,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-uint32_t webpc_get_framebuffer_ptr(void);
+#ifdef WEBPC_NATIVE_TEST
+typedef uintptr_t WebPCFramebufferPtr;
+#else
+typedef uint32_t WebPCFramebufferPtr;
+#endif
+WebPCFramebufferPtr webpc_get_framebuffer_ptr(void);
 uint32_t webpc_get_framebuffer_width(void);
 uint32_t webpc_get_framebuffer_height(void);
 uint32_t webpc_get_framebuffer_generation(void);
