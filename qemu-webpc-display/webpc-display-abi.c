@@ -17,15 +17,22 @@ static uint32_t rd, wr, dropped;
 WEBPC_EXPORT int webpc_publish_frame(const uint8_t *rgba, uint32_t width, uint32_t height) {
     if (!rgba || !width || !height || width > WEBPC_MAX_WIDTH || height > WEBPC_MAX_HEIGHT ||
         (uint64_t)width * height * 4u > SIZE_MAX) return -1;
-    size_t bytes = (size_t)width * height * 4u;
-    uint8_t *next = (uint8_t *)realloc(framebuffer, bytes);
-    if (!next) return -2;
-    framebuffer = next;
-    memcpy(framebuffer, rgba, bytes);
-    fb_width = width; fb_height = height;
-    __sync_synchronize(); ++fb_generation;
+    /* Allocate once at the maximum supported size. Keeping the address stable
+       prevents JS HEAPU8 readers racing a realloc during a display resize. */
+    if (!framebuffer) {
+        framebuffer = (uint8_t *)malloc((size_t)WEBPC_MAX_WIDTH * WEBPC_MAX_HEIGHT * 4u);
+        if (!framebuffer) return -2;
+    }
+    fb_generation = (fb_generation + 1u) | 1u; /* odd means a frame is in flight */
+    __sync_synchronize();
+    memcpy(framebuffer, rgba, (size_t)width * height * 4u);
+    fb_width = width;
+    fb_height = height;
+    __sync_synchronize();
+    ++fb_generation; /* even means a complete frame is published */
     return 0;
 }
+
 WEBPC_EXPORT uint32_t webpc_get_framebuffer_ptr(void) { return (uint32_t)(uintptr_t)framebuffer; }
 WEBPC_EXPORT uint32_t webpc_get_framebuffer_width(void) { return fb_width; }
 WEBPC_EXPORT uint32_t webpc_get_framebuffer_height(void) { return fb_height; }
