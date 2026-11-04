@@ -3568,13 +3568,16 @@ async function bootQEMU() {
         "512M",
 
         /*
-            Use single-threaded TCG for browser compatibility.
-            The Emscripten build itself already uses a worker for
-            its pthread/proxy runtime; adding MTTCG creates further
-            worker activity and is particularly fragile on iPad/WebKit.
+            Use single-threaded TCG for browser compatibility. Keep the
+            translated-block cache bounded to 128 MiB rather than
+            reserving a 500 MiB cache alongside a 512 MiB guest.
+            This reduces host/Wasm memory pressure; it is a tuning
+            trade-off, not a promise of higher FPS. MTTCG remains
+            disabled because it adds worker activity and is fragile
+            on iPad/WebKit.
         */
         "-accel",
-        "tcg,tb-size=500",
+        "tcg,tb-size=128",
 
         "-L",
         "/pack-rom/",
