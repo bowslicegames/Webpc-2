@@ -30,6 +30,7 @@ jobs:
           node --check minecraft-touch.js
           node tools/test-graphics-bridge.cjs
           gcc -std=c11 -Wall -Wextra -Werror -fsyntax-only -Iqemu-webpc-display qemu-webpc-display/webpc-display-abi.c
+          python3 tools/test-qemu-webpc-patcher.py
 
       - name: Check guest framebuffer bridge and tests
         run: |
