@@ -5276,7 +5276,6 @@ main();
       "exit \"$rc\""
     ].join("\n");
     const taskScript="/tmp/"+taskId+".sh";
-    const launch="printf '%s' "+ "''" + " >/dev/null";
     const encoded=b64(inner);
     const command="printf '%s' "+shellQuote(encoded)+" | base64 -d > "+shellQuote(taskScript)+" && chmod 700 "+shellQuote(taskScript)+" && (nohup /bin/sh "+shellQuote(taskScript)+" </dev/null > "+shellQuote(taskLog)+" 2>&1 & echo WEBPC_TASK_STARTED:$!)";
     startBackgroundTask("java","Minecraft launch attempt",command,taskStatus,taskLog,box);
