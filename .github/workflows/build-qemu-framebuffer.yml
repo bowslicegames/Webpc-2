@@ -1,0 +1,66 @@
+name: Build experimental WebPC QEMU framebuffer runtime
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webpc-qemu-framebuffer-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    steps:
+      - name: Check out WebPC
+        uses: actions/checkout@v4
+
+      - name: Check out the pinned QEMU-Wasm source
+        uses: actions/checkout@v4
+        with:
+          repository: ktock/qemu-wasm
+          ref: 0ef7b4e2814b231705d8371dd7997f5b72e70baf
+          path: qemu-src
+          submodules: recursive
+
+      - name: Apply and verify WebPC framebuffer hook
+        run: |
+          set -eux
+          python3 tools/patch-qemu-webpc-display.py qemu-src
+          grep -Fq 'webpc_qemu_capture_surface(con->surface)' qemu-src/ui/console.c
+          grep -Fq "'webpc-display-abi.c'" qemu-src/ui/meson.build
+          grep -Fq "'webpc-qemu-hook.c'" qemu-src/ui/meson.build
+
+      - name: Build the pinned Emscripten toolchain image
+        run: docker build --pull -t webpc-qemu-build qemu-src
+
+      - name: Configure and compile QEMU with the framebuffer ABI
+        run: |
+          set -eux
+          docker run -d --name build-qemu-wasm -v "$PWD/qemu-src:/qemu:ro" webpc-qemu-build
+          EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=mimalloc --js-library=/build/node_modules/xterm-pty/emscripten-pty.js -sEXPORT_ES6=1 -sASYNCIFY_IMPORTS=ffi_call_js"
+          EXTRA_LDFLAGS="-sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS"
+          docker exec build-qemu-wasm bash -lc "EXTRA_CFLAGS='$EXTRA_CFLAGS' emconfigure /qemu/configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= --without-default-features --enable-system --with-coroutine=fiber --enable-virtfs --extra-cflags=\"$EXTRA_CFLAGS\" --extra-cxxflags=\"$EXTRA_CFLAGS\" --extra-ldflags=\"$EXTRA_LDFLAGS\""
+          docker exec build-qemu-wasm emmake make -j2 qemu-system-x86_64
+
+      - name: Collect experimental runtime outputs
+        run: |
+          set -eux
+          mkdir -p artifacts
+          for file in qemu-system-x86_64 qemu-system-x86_64.wasm qemu-system-x86_64.worker.js; do
+            docker cp "build-qemu-wasm:/build/$file" "artifacts/$file"
+            test -s "artifacts/$file"
+          done
+          file artifacts/*
+          ls -lh artifacts
+
+      - name: Upload experimental QEMU build
+        uses: actions/upload-artifact@v4
+        with:
+          name: webpc-qemu-framebuffer-experimental
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
