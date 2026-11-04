@@ -5,8 +5,9 @@ import shutil, sys
 repo=Path(__file__).resolve().parents[1]
 qemu=Path(sys.argv[1]).resolve()
 ui=qemu/"ui"
-for name in ("webpc-display-abi.h","webpc-display-abi.c","webpc-qemu-hook.h","webpc-qemu-hook.c","webpc-opfs.c"):
+for name in ("webpc-display-abi.h","webpc-display-abi.c","webpc-qemu-hook.h","webpc-qemu-hook.c"):
     shutil.copy2(repo/"qemu-webpc-display"/name,ui/name)
+block_dir=qemu/"block"; shutil.copy2(repo/"qemu-webpc-display"/"webpc-opfs.c",block_dir/"webpc-opfs.c")
 console=ui/"console.c"; source=console.read_text()
 inc='#include "webpc-qemu-hook.h"'; anchor='#include "ui/console.h"'
 if inc not in source:
