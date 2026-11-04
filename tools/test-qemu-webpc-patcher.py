@@ -10,6 +10,9 @@ with tempfile.TemporaryDirectory() as tmp:
     (qemu / "ui" / "console.c").write_text(
         '#include "ui/console.h"\n'
         'void dpy_gfx_update(QemuConsole *con, int x, int y, int w, int h) {\n'
+        '    w = MIN(w, width - x);\n'
+        '    h = MIN(h, height - y);\n'
+        '    if (!qemu_console_is_visible(con)) return;\n'
         '    dpy_gfx_update_texture(con, con->surface, x, y, w, h);\n'
         '}\n'
     )
@@ -22,6 +25,7 @@ with tempfile.TemporaryDirectory() as tmp:
     meson = (qemu / "ui" / "meson.build").read_text()
     assert console.count('#include "webpc-qemu-hook.h"') == 1
     assert console.count("webpc_qemu_capture_surface(con->surface);") == 1
+    assert console.index("webpc_qemu_capture_surface(con->surface);") < console.index("if (!qemu_console_is_visible(con))")
     assert meson.count("'webpc-display-abi.c'") == 1
     assert meson.count("'webpc-qemu-hook.c'") == 1
     subprocess.run(["python3", str(patcher), str(qemu)], check=True)
