@@ -31,7 +31,7 @@ jobs:
           node tools/test-graphics-bridge.cjs
           gcc -std=c11 -Wall -Wextra -Werror -fsyntax-only -Iqemu-webpc-display qemu-webpc-display/webpc-display-abi.c
           python3 tools/test-qemu-webpc-patcher.py
-          cc -std=c11 -Wall -Wextra -Werror -Iqemu-webpc-display tools/test-webpc-display-abi.c qemu-webpc-display/webpc-display-abi.c -o /tmp/test-webpc-display-abi
+          cc -DWEBPC_NATIVE_TEST -std=c11 -Wall -Wextra -Werror -Iqemu-webpc-display tools/test-webpc-display-abi.c qemu-webpc-display/webpc-display-abi.c -o /tmp/test-webpc-display-abi
           /tmp/test-webpc-display-abi
 
       - name: Check guest framebuffer bridge and tests
