@@ -33,7 +33,7 @@ WEBPC_EXPORT int webpc_publish_frame(const uint8_t *rgba, uint32_t width, uint32
     return 0;
 }
 
-WEBPC_EXPORT uint32_t webpc_get_framebuffer_ptr(void) { return (uint32_t)(uintptr_t)framebuffer; }
+WEBPC_EXPORT WebPCFramebufferPtr webpc_get_framebuffer_ptr(void) { return (WebPCFramebufferPtr)(uintptr_t)framebuffer; }
 WEBPC_EXPORT uint32_t webpc_get_framebuffer_width(void) { return fb_width; }
 WEBPC_EXPORT uint32_t webpc_get_framebuffer_height(void) { return fb_height; }
 WEBPC_EXPORT uint32_t webpc_get_framebuffer_generation(void) { return fb_generation; }
