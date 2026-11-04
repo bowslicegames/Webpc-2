@@ -63,10 +63,12 @@ jobs:
         run: |
           set -eux
           mkdir -p artifacts
-          for file in qemu-system-x86_64 qemu-system-x86_64.wasm qemu-system-x86_64.worker.js; do
-            docker cp "build-qemu-wasm:/build/$file" "artifacts/$file"
-            test -s "artifacts/$file"
-          done
+          docker cp build-qemu-wasm:/build/qemu-system-x86_64 artifacts/out.js
+          docker cp build-qemu-wasm:/build/qemu-system-x86_64.wasm artifacts/qemu-system-x86_64.wasm
+          docker cp build-qemu-wasm:/build/qemu-system-x86_64.worker.js artifacts/qemu-system-x86_64.worker.js
+          test -s artifacts/out.js
+          test -s artifacts/qemu-system-x86_64.wasm
+          test -s artifacts/qemu-system-x86_64.worker.js
           file artifacts/*
           ls -lh artifacts
 
