@@ -13,10 +13,10 @@ if inc not in source:
     if source.count(anchor)!=1: raise SystemExit("QEMU console include anchor changed; refusing unsafe patch")
     source=source.replace(anchor,anchor+"\n"+inc,1)
 call="    webpc_qemu_capture_surface(con->surface);"
-anchor="    dpy_gfx_update_texture(con, con->surface, x, y, w, h);"
+anchor="    w = MIN(w, width - x);\n    h = MIN(h, height - y);\n\n    if (!qemu_console_is_visible(con)) {"
 if call not in source:
-    if source.count(anchor)!=1: raise SystemExit("QEMU framebuffer update anchor changed; refusing unsafe patch")
-    source=source.replace(anchor,anchor+"\n"+call,1)
+    if source.count(anchor)!=1: raise SystemExit("QEMU visibility/update anchor changed; refusing unsafe patch")
+    source=source.replace(anchor,"    w = MIN(w, width - x);\n    h = MIN(h, height - y);\n\n"+call+"\n\n    if (!qemu_console_is_visible(con)) {",1)
 console.write_text(source)
 meson=ui/"meson.build"; source=meson.read_text()
 anchor="  'clipboard.c',"; entries=["  'webpc-display-abi.c',","  'webpc-qemu-hook.c',"]
