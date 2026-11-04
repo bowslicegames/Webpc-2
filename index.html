@@ -1051,7 +1051,7 @@ button:active {
           <section class="desktop-window" id="minecraftWindow" aria-label="Minecraft launcher window">
             <div class="window-titlebar"><span>🟩</span><span class="window-title">Minecraft Java Edition</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body"><div class="info-content">
-              <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Minecraft runtime (Java 21, Prism Launcher, Xorg and Mesa software OpenGL) here. Setup runs in the background. Prism still requires your Microsoft account sign-in and a game version download. Rendering uses the guest's software OpenGL driver; the browser WebGL presenter transports the guest display but is not itself a guest OpenGL driver.</p><div class="info-status" id="guestDisplayStatus">WebPC GPU display: WebGL 2 ready; waiting for guest framebuffer</div><canvas id="guestDisplayCanvas" width="640" height="360" aria-label="Minecraft guest display" style="display:block;width:100%;max-width:720px;aspect-ratio:16/9;background:#05080d;border:1px solid #ffffff33;border-radius:8px;margin:10px 0;image-rendering:pixelated"></canvas><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="ui-button" id="guestDisplayStats">Display diagnostics</button></div><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button" id="repairApk">Repair APK / install nano</button><button class="ui-button primary" id="installJava">Install Minecraft runtime</button><button class="ui-button" id="launchMinecraft">Launch Minecraft</button><div class="info-status" id="apkStatus" style="flex-basis:100%">APK package manager: not checked</div></div></div>
+              <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Minecraft runtime (Java 21, Prism Launcher, Xorg and Mesa software OpenGL) here. Setup runs in the background. Prism still requires your Microsoft account sign-in and a game version download. Rendering uses the guest's software OpenGL driver; the browser WebGL presenter transports the guest display but is not itself a guest OpenGL driver.</p><div class="info-status" id="guestDisplayStatus">WebPC GPU display: WebGL 2 ready; waiting for guest framebuffer</div><canvas id="guestDisplayCanvas" width="640" height="360" aria-label="Minecraft guest display" style="display:block;width:100%;max-width:720px;aspect-ratio:16/9;background:#05080d;border:1px solid #ffffff33;border-radius:8px;margin:10px 0;image-rendering:pixelated"></canvas><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="ui-button" id="guestDisplayStats">Display diagnostics</button><button class="ui-button" id="requestStorage">Request persistent storage</button></div><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button" id="repairApk">Repair APK / install nano</button><button class="ui-button primary" id="installJava">Install Minecraft runtime</button><button class="ui-button" id="launchMinecraft">Launch Minecraft</button><div class="info-status" id="apkStatus" style="flex-basis:100%">APK package manager: not checked</div></div></div>
               
             </div><div class="window-resize" aria-hidden="true"></div></div>
           </section>
@@ -5661,6 +5661,30 @@ main();
   const canvas = document.getElementById("guestDisplayCanvas");
   const status = document.getElementById("guestDisplayStatus");
   const button = document.getElementById("guestDisplayStats");
+  const storageButton = document.getElementById("requestStorage");
+  const minecraftStatus = document.getElementById("minecraftStatus");
+  if (storageButton) storageButton.addEventListener("click", async () => {
+    if (!navigator.storage || !navigator.storage.estimate) {
+      minecraftStatus.textContent = "Browser storage estimate API is unavailable.";
+      return;
+    }
+    try {
+      let persistent = false;
+      if (navigator.storage.persist) persistent = await navigator.storage.persist();
+      const estimate = await navigator.storage.estimate();
+      const used = Number(estimate.usage || 0);
+      const quota = Number(estimate.quota || 0);
+      const free = Math.max(0, quota - used);
+      minecraftStatus.textContent =
+        "Browser storage: " + (used / 1073741824).toFixed(2) + " GiB used / " +
+        (quota ? (quota / 1073741824).toFixed(2) + " GiB quota" : "quota unavailable") +
+        " · " + (free / 1073741824).toFixed(2) + " GiB free · " +
+        (persistent ? "persistent storage granted" : "persistence not granted") +
+        (free < 4.5 * 1073741824 ? " · WARNING: insufficient free quota for the full Minecraft asset set" : "");
+    } catch (error) {
+      minecraftStatus.textContent = "Storage check failed: " + (error && error.message ? error.message : String(error));
+    }
+  });
   if (!canvas || !status || !window.WebPCGraphicsBridge) return;
   try {
     window.WebPCGraphicsBridge.attach(canvas);
