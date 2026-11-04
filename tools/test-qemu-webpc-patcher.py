@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory() as tmp:
         "system_ss.add(files(\n  'clipboard.c',\n  'console.c',\n))\n"
     )
     (qemu / "block" / "meson.build").write_text(
-        "block_ss.add(files(\\n  'null.c',\\n  'raw-format.c',\\n))\\n"
+        "block_ss.add(files(\n  'null.c',\\n  'raw-format.c',\\n))\\n"
     )
     patcher = repo / "tools" / "patch-qemu-webpc-display.py"
     subprocess.run(["python3", str(patcher), str(qemu)], check=True)
