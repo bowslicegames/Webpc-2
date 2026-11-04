@@ -5372,7 +5372,7 @@ main();
       "    echo '[4/7] Installing Java 21, Prism Launcher, Xorg and Mesa (up to 3 attempts)'",
       "    install_rc=1; attempt=1",
       "    while [ \"$attempt\" -le 3 ]; do",
-      "      apk add --no-cache --update-cache openjdk21-jre prismlauncher xorg-server xf86-input-libinput mesa-dri-gallium mesa-gl mesa-egl mesa-gbm xinit xauth font-dejavu; install_rc=$?",
+      "      apk add --no-cache --update-cache openjdk21-jre prismlauncher xorg-server xf86-input-libinput mesa-dri-gallium mesa-gl mesa-egl mesa-gbm libx11 libxrandr libxcursor libxi libxinerama libxxf86vm libxrender libxfixes libxext libxcb libxkbcommon libdrm libpciaccess xinit xauth font-dejavu; install_rc=$?",
       "      if [ \"$install_rc\" -eq 0 ]; then break; fi",
       "      echo \"Minecraft runtime package attempt $attempt failed (exit $install_rc). Will refresh and retry.\"",
       "      if [ \"$attempt\" -lt 3 ]; then echo 'Refreshing indexes before retry…'; apk update; fi",
