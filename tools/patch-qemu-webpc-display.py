@@ -5,7 +5,7 @@ import shutil, sys
 repo=Path(__file__).resolve().parents[1]
 qemu=Path(sys.argv[1]).resolve()
 ui=qemu/"ui"
-for name in ("webpc-display-abi.h","webpc-display-abi.c","webpc-qemu-hook.h","webpc-qemu-hook.c"):
+for name in ("webpc-display-abi.h","webpc-display-abi.c","webpc-qemu-hook.h","webpc-qemu-hook.c","webpc-opfs.c"):
     shutil.copy2(repo/"qemu-webpc-display"/name,ui/name)
 console=ui/"console.c"; source=console.read_text()
 inc='#include "webpc-qemu-hook.h"'; anchor='#include "ui/console.h"'
@@ -24,4 +24,10 @@ if not all(x in source for x in entries):
     if source.count(anchor)!=1: raise SystemExit("QEMU UI Meson anchor changed; refusing unsafe patch")
     source=source.replace(anchor,anchor+"\n"+"\n".join(entries),1)
 meson.write_text(source)
-print("Applied WebPC framebuffer hook to",qemu)
+block=qemu/"block"/"meson.build"; source=block.read_text()
+anchor="  'null.c',"; entry="  'webpc-opfs.c',"
+if entry not in source:
+    if source.count(anchor)!=1: raise SystemExit("QEMU block Meson anchor changed; refusing unsafe patch")
+    source=source.replace(anchor,anchor+"\n"+entry,1)
+block.write_text(source)
+print("Applied WebPC framebuffer and OPFS hooks to",qemu)
