@@ -1,6 +1,6 @@
 /* iPad-oriented Minecraft touch controls and guest-window presentation shell.
- * This forwards controls to the QEMU adapter. Actual game input only works
- * after the native QEMU input ABI is wired to QEMU input devices.
+ * This forwards controls through the browser adapter into the experimental
+ * QEMU Linux input queue (keyboard, absolute tablet and relative look events).
  */
 (() => {
   "use strict";
@@ -19,7 +19,7 @@
     #mcTouchPanel .mc-dpad button:nth-child(3){grid-column:2;grid-row:2}
     #mcTouchPanel .mc-dpad button:nth-child(4){grid-column:3;grid-row:2}
     #mcTouchPanel .mc-actions{display:grid;grid-template-columns:repeat(2,minmax(44px,1fr));gap:7px;width:100%}
-    #mcTouchPanel .mc-look{width:100%;height:100%;min-height:105px;border:1px dashed #71869b;border-radius:10px;color:#b9c9da;display:flex;align-items:center;justify-content:center;font-size:12px;text-align:center}
+    #mcTouchPanel .mc-hotbar{grid-column:1/-1;display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:4px}#mcTouchPanel .mc-hotbar button{min-width:0;min-height:38px;padding:0}#mcTouchPanel .mc-look{width:100%;height:100%;min-height:105px;border:1px dashed #71869b;border-radius:10px;color:#b9c9da;display:flex;align-items:center;justify-content:center;font-size:12px;text-align:center}
     #mcWindowToolbar{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0}
     #mcWindowToolbar button{min-height:38px}
     #guestDisplayCanvas{touch-action:none;display:block;max-height:60vh;object-fit:contain}
@@ -29,24 +29,24 @@
 
   const toolbar = document.createElement("div");
   toolbar.id = "mcWindowToolbar";
-  toolbar.innerHTML = '<button class="ui-button primary" id="mcFullscreen" type="button">Fullscreen</button><button class="ui-button" id="mcFps" type="button" aria-label="Frame cap">Frame cap: 30 FPS</button><span class="info-status">Touch controls enabled · guest input bridge pending</span>';
+  toolbar.innerHTML = '<button class="ui-button primary" id="mcFullscreen" type="button">Fullscreen</button><button class="ui-button" id="mcFps" type="button" aria-label="Frame cap">Frame cap: 30 FPS</button><span class="info-status">Touch controls enabled · keyboard and mouse events routed to guest</span>';
   canvas.insertAdjacentElement("afterend", toolbar);
 
   const panel = document.createElement("div");
   panel.id = "mcTouchPanel";
   panel.setAttribute("aria-label", "Minecraft touch controls");
-  panel.innerHTML = '<div class="mc-pad"><div class="mc-dpad"><button data-key="87">▲</button><button data-key="65">◀</button><button data-key="83">▼</button><button data-key="68">▶</button></div></div><div class="mc-pad"><div class="mc-look" id="mcLook">Drag here to look around</div></div><div class="mc-pad"><div class="mc-actions"><button data-key="32">Jump</button><button data-key="16">Sneak</button><button data-key="69">Inventory</button><button data-key="81">Drop</button></div></div><div class="mc-pad"><div class="mc-actions"><button data-mouse="0">Attack</button><button data-mouse="2">Place</button><button data-key="27">Pause</button><button data-key="9">Swap</button></div></div>';
+  panel.innerHTML = '<div class="mc-pad"><div class="mc-dpad"><button data-key="87">▲</button><button data-key="65">◀</button><button data-key="83">▼</button><button data-key="68">▶</button></div></div><div class="mc-pad"><div class="mc-look" id="mcLook">Drag here to look around</div></div><div class="mc-pad"><div class="mc-actions"><button data-key="32">Jump</button><button data-key="16">Sneak</button><button data-key="17">Sprint</button><button data-key="69">Inventory</button><button data-key="81">Drop</button></div></div><div class="mc-pad"><div class="mc-actions"><button data-mouse="0">Attack</button><button data-mouse="2">Place</button><button data-key="27">Pause</button><button data-key="9">Swap</button></div></div><div class="mc-hotbar" aria-label="Hotbar slots"><button data-key="49">1</button><button data-key="50">2</button><button data-key="51">3</button><button data-key="52">4</button><button data-key="53">5</button><button data-key="54">6</button><button data-key="55">7</button><button data-key="56">8</button><button data-key="57">9</button></div>';
   toolbar.insertAdjacentElement("afterend", panel);
 
   const keyNames = {87:"W",65:"A",83:"S",68:"D",32:" ",16:"Shift",69:"E",81:"Q",27:"Escape",9:"Tab"};
   const keyEvent = (code, down) => {
     if (window.WebPCQemuGraphics && window.WebPCQemuGraphics.sendInput) {
-      window.WebPCQemuGraphics.sendInput({type:"key",codeValue:code,buttons:down?1:0});
+      window.WebPCQemuGraphics.sendKeyCode(code,down);
     }
   };
   const mouseEvent = (button, down, x=canvas.width/2, y=canvas.height/2) => {
     if (window.WebPCQemuGraphics && window.WebPCQemuGraphics.sendInput) {
-      window.WebPCQemuGraphics.sendInput({type:"pointer",codeValue:button,x,y,buttons:down?(button===2?2:1):0});
+      window.WebPCQemuGraphics.sendInput({type:"pointer",codeValue:254,x,y,buttons:down?(button===2?2:1):0});
     }
   };
   panel.querySelectorAll("[data-key]").forEach(button => {
@@ -73,7 +73,7 @@
     const rect=canvas.getBoundingClientRect();
     const x=Math.max(0,Math.min(canvas.width-1,Math.round((e.clientX-rect.left)*canvas.width/Math.max(1,rect.width))));
     const y=Math.max(0,Math.min(canvas.height-1,Math.round((e.clientY-rect.top)*canvas.height/Math.max(1,rect.height))));
-    if(window.WebPCQemuGraphics?.sendInput)window.WebPCQemuGraphics.sendInput({type:"pointer",codeValue:255,x:x+Math.round(dx*4),y:y+Math.round(dy*4),buttons:1});
+    if(window.WebPCQemuGraphics?.sendInput)window.WebPCQemuGraphics.sendInput({type:"pointer",codeValue:255,x:Math.round(dx*4),y:Math.round(dy*4),buttons:0});
   });
   const stopLook=e=>{if(lookPointer===e.pointerId)lookPointer=null;};
   look.addEventListener("pointerup",stopLook);look.addEventListener("pointercancel",stopLook);

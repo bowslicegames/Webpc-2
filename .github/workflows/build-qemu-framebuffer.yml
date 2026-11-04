@@ -1,0 +1,81 @@
+name: Build experimental WebPC QEMU framebuffer runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experimental/minecraft-guest-display
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webpc-qemu-framebuffer-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    steps:
+      - name: Check out WebPC
+        uses: actions/checkout@v4
+
+      - name: Check out the pinned QEMU-Wasm source
+        uses: actions/checkout@v4
+        with:
+          repository: ktock/qemu-wasm
+          ref: 0ef7b4e2814b231705d8371dd7997f5b72e70baf
+          path: qemu-src
+          submodules: false
+
+      - name: Fetch only the x86 PC firmware submodule
+        working-directory: qemu-src
+        run: git submodule update --init --depth=1 roms/seabios
+
+      - name: Repair obsolete upstream zlib archive URL
+        run: |
+          set -eux
+          sed -i 's#curl -Ls https://zlib.net/zlib-$ZLIB_VERSION.tar.xz | tar xJC /zlib --strip-components=1#curl -fLs https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz | tar xzC /zlib --strip-components=1#' qemu-src/Dockerfile
+          grep -Fq 'https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz' qemu-src/Dockerfile
+
+      - name: Apply and verify WebPC framebuffer hook
+        run: |
+          set -eux
+          python3 tools/patch-qemu-webpc-display.py qemu-src
+          grep -Fq 'webpc_qemu_capture_surface(con->surface)' qemu-src/ui/console.c
+          grep -Fq "'webpc-display-abi.c'" qemu-src/ui/meson.build
+          grep -Fq "'webpc-qemu-hook.c'" qemu-src/ui/meson.build
+
+      - name: Build the pinned Emscripten toolchain image
+        run: docker build --pull -t webpc-qemu-build qemu-src
+
+      - name: Configure and compile QEMU with the framebuffer ABI
+        run: |
+          set -eux
+          docker run -d --name build-qemu-wasm -v "$PWD/qemu-src:/qemu:ro" webpc-qemu-build
+          EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -pthread"
+          EXTRA_LDFLAGS="-O3 -pthread -sPROXY_TO_PTHREAD=1 -sASYNCIFY=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=mimalloc -sEXPORT_ES6=1 -sASYNCIFY_IMPORTS=ffi_call_js --js-library=/build/node_modules/xterm-pty/emscripten-pty.js -sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS,addRunDependency,removeRunDependency"
+          docker exec build-qemu-wasm bash -lc "EXTRA_CFLAGS='$EXTRA_CFLAGS' emconfigure /qemu/configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= --without-default-features --enable-system --disable-fdt --with-coroutine=fiber --enable-virtfs --extra-cflags=\"$EXTRA_CFLAGS\" --extra-cxxflags=\"$EXTRA_CFLAGS\" --extra-ldflags=\"$EXTRA_LDFLAGS\""
+          docker exec build-qemu-wasm emmake make -j2 qemu-system-x86_64
+
+      - name: Collect experimental runtime outputs
+        run: |
+          set -eux
+          mkdir -p artifacts
+          docker cp build-qemu-wasm:/build/qemu-system-x86_64 artifacts/out.js
+          docker cp build-qemu-wasm:/build/qemu-system-x86_64.wasm artifacts/qemu-system-x86_64.wasm
+          docker cp build-qemu-wasm:/build/qemu-system-x86_64.worker.js artifacts/qemu-system-x86_64.worker.js
+          test -s artifacts/out.js
+          test -s artifacts/qemu-system-x86_64.wasm
+          test -s artifacts/qemu-system-x86_64.worker.js
+          file artifacts/*
+          ls -lh artifacts
+
+      - name: Upload experimental QEMU build
+        uses: actions/upload-artifact@v4
+        with:
+          name: webpc-qemu-framebuffer-experimental
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14

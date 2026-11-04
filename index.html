@@ -1051,7 +1051,7 @@ button:active {
           <section class="desktop-window" id="minecraftWindow" aria-label="Minecraft launcher window">
             <div class="window-titlebar"><span>🟩</span><span class="window-title">Minecraft Java Edition</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body"><div class="info-content">
-              <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Java 21 runtime from here. Setup runs as a background guest task, so the File Manager and terminal remain usable while packages download. The browser has a WebGL 2 frame presenter and iPad touch controls. The current QEMU binary does not yet export the guest framebuffer/input ABI, and there is no guest OpenGL/LWJGL translation, so the game display will remain blank until those native components are built and connected.</p><div class="info-status" id="guestDisplayStatus">WebPC GPU display: WebGL 2 ready; waiting for guest framebuffer</div><canvas id="guestDisplayCanvas" width="640" height="360" aria-label="Minecraft guest display" style="display:block;width:100%;max-width:720px;aspect-ratio:16/9;background:#05080d;border:1px solid #ffffff33;border-radius:8px;margin:10px 0;image-rendering:pixelated"></canvas><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="ui-button" id="guestDisplayStats">Display diagnostics</button></div><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button" id="repairApk">Repair APK / install nano</button><button class="ui-button primary" id="installJava">Install Java 21</button><button class="ui-button" id="launchMinecraft">Launch Minecraft</button><div class="info-status" id="apkStatus" style="flex-basis:100%">APK package manager: not checked</div></div></div>
+              <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Minecraft runtime (Java 21, Prism Launcher, Xorg and Mesa software OpenGL) here. Setup runs in the background. Prism still requires your Microsoft account sign-in and a game version download. When Prism displays its device code, open <a href="https://microsoft.com/devicelogin" target="_blank" rel="noopener">Microsoft device login</a> in another Safari tab and enter the code shown in Prism. Rendering uses the guest's Mesa software OpenGL driver; the browser WebGL presenter transports the guest display but is not itself a guest OpenGL driver.</p><div class="info-status" id="guestDisplayStatus">WebPC GPU display: WebGL 2 ready; waiting for guest framebuffer</div><canvas id="guestDisplayCanvas" width="640" height="360" aria-label="Minecraft guest display" style="display:block;width:100%;max-width:720px;aspect-ratio:16/9;background:#05080d;border:1px solid #ffffff33;border-radius:8px;margin:10px 0;image-rendering:pixelated"></canvas><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="ui-button" id="guestDisplayStats">Display diagnostics</button><button class="ui-button" id="requestStorage">Request persistent storage</button></div><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button" id="repairApk">Repair APK / install nano</button><button class="ui-button primary" id="installJava">Install Minecraft runtime</button><button class="ui-button" id="launchMinecraft">Launch Minecraft</button><div class="info-status" id="apkStatus" style="flex-basis:100%">APK package manager: not checked</div></div></div>
               
             </div><div class="window-resize" aria-hidden="true"></div></div>
           </section>
@@ -3241,9 +3241,57 @@ async function bootQEMU() {
         "rootfs",
         "Downloading the sparse 8 GiB virtual disk (only allocated blocks are transferred)."
     );
-    let rootDiskBinary = await rootDiskBlob.arrayBuffer();
-    downloaded.delete(FILES.rootfsDisk);
-    rootDiskBlob = null;
+    async function prepareWebPCOpfsDisk(blob) {
+        if (!navigator.storage || typeof navigator.storage.getDirectory !== "function") {
+            throw new Error("This browser does not provide the Origin Private File System required for an 8 GiB persistent guest disk.");
+        }
+        let persistent = false;
+        try { persistent = await navigator.storage.persist(); } catch (_) {}
+        const root = await navigator.storage.getDirectory();
+        const diskName = "webpc-disk-rootfs-v1.qcow2";
+        const markerName = "webpc-disk-rootfs-v1.ready";
+        const diskHandle = await root.getFileHandle(diskName, { create: true });
+        let initialized = false;
+        try {
+            const markerHandle = await root.getFileHandle(markerName);
+            const markerFile = await markerHandle.getFile();
+            initialized = (await markerFile.text()) === "webpc-disk-rootfs-v1:" + blob.size;
+        } catch (_) {}
+        if (!initialized) {
+            const existing = await diskHandle.getFile();
+            if (existing.size > blob.size) {
+                throw new Error("An existing OPFS disk has data but its initialization marker is missing; refusing to overwrite it.");
+            }
+            const writable = await diskHandle.createWritable({ keepExistingData: false });
+            try {
+                const chunkBytes = 8 * 1024 * 1024;
+                for (let offset = 0; offset < blob.size; offset += chunkBytes) {
+                    const chunk = await blob.slice(offset, Math.min(blob.size, offset + chunkBytes)).arrayBuffer();
+                    await writable.write(chunk);
+                }
+                await writable.close();
+            } catch (error) {
+                try { await writable.abort(); } catch (_) {}
+                throw error;
+            }
+            const markerHandle = await root.getFileHandle(markerName, { create: true });
+            const markerWriter = await markerHandle.createWritable({ keepExistingData: false });
+            await markerWriter.write("webpc-disk-rootfs-v1:" + blob.size);
+            await markerWriter.close();
+        }
+        const diskFile = await diskHandle.getFile();
+        if (diskFile.size < blob.size) {
+            throw new Error("OPFS disk initialization is incomplete: stored file is shorter than the signed release asset.");
+        }
+        let estimate = {};
+        try { estimate = await navigator.storage.estimate(); } catch (_) {}
+        return {
+            size: diskFile.size,
+            persistent,
+            usage: Number(estimate.usage || 0),
+            quota: Number(estimate.quota || 0)
+        };
+    }
 
 
     /*
@@ -3376,9 +3424,25 @@ async function bootQEMU() {
         */
         preRun:
             [mod => {
-                try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}
-                mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", new Uint8Array(rootDiskBinary));
-                rootDiskBinary = null;
+                const dependency = "webpc-opfs-disk-initialization";
+                mod.addRunDependency(dependency);
+                prepareWebPCOpfsDisk(rootDiskBlob).then(info => {
+                    downloaded.delete(FILES.rootfsDisk);
+                    rootDiskBlob = null;
+                    const available = info.quota ? Math.max(0, info.quota - info.usage) : 0;
+                    noteBootSignal("Persistent OPFS disk ready: " +
+                        (info.size / 1048576).toFixed(1) + " MiB allocated; " +
+                        (info.persistent ? "persistent storage granted" : "browser persistence not guaranteed") +
+                        (info.quota ? "; " + (available / 1073741824).toFixed(1) + " GiB browser quota remaining" : ""));
+                    if (info.quota && available < 4.5 * 1073741824) {
+                        noteBootSignal("WARNING: browser storage quota may be too small for the full Minecraft asset set.");
+                    }
+                    mod.removeRunDependency(dependency);
+                }).catch(error => {
+                    noteBootSignal("OPFS disk initialization failed: " + (error && error.message ? error.message : String(error)));
+                    mod.removeRunDependency(dependency);
+                    if (typeof mod.abort === "function") mod.abort("Persistent OPFS disk initialization failed.");
+                });
             }]
     };
 
@@ -3416,7 +3480,7 @@ async function bootQEMU() {
         )
     );
 
-    // The qcow2 guest disk is written into MEMFS in Module.preRun; no huge raw disk is preloaded.
+    // The qcow2 guest disk is streamed into OPFS in Module.preRun; it is not copied into MEMFS.
 
 
     /*
@@ -3562,19 +3626,26 @@ async function bootQEMU() {
         "std",
 
         /*
-            Keep the guest at the upstream browser-example size.
+            USB tablet provides absolute pointer coordinates to Linux/Xorg.
+            This is required for reliable touch taps and pointer positioning.
         */
-        "-m",
-        "512M",
+        "-usb",
+
+        "-device",
+        "usb-tablet",
 
         /*
-            Use single-threaded TCG for browser compatibility. Keep the
-            translated-block cache bounded to 128 MiB rather than
-            reserving a 500 MiB cache alongside a 512 MiB guest.
-            This reduces host/Wasm memory pressure; it is a tuning
-            trade-off, not a promise of higher FPS. MTTCG remains
-            disabled because it adds worker activity and is fragile
-            on iPad/WebKit.
+            Minecraft needs substantially more guest RAM than the old
+            shell-only VM. 1536 MiB leaves room for Alpine, Xorg, Prism
+            and a small vanilla Java heap inside the 2300 MiB Wasm limit.
+        */
+        "-m",
+        "1536M",
+
+        /*
+            Keep single-threaded TCG for the iPad/WebKit baseline and
+            bound its translated-block cache to 128 MiB. This is still
+            software CPU emulation; it does not provide GPU acceleration.
         */
         "-accel",
         "tcg,tb-size=128",
@@ -3595,7 +3666,7 @@ async function bootQEMU() {
         "earlyprintk=ttyS0 console=ttyS0 console=tty0 root=/dev/vda loglevel=7 hostname=webpc2 ip=dhcp",
 
         "-drive",
-        "id=test,file=/pack-rootfs/disk-rootfs.img,format=qcow2,if=none",
+        "id=test,file=webpc-opfs:webpc-disk-rootfs-v1.qcow2,format=qcow2,if=none",
 
         "-device",
         "virtio-blk-pci,drive=test",
@@ -5239,63 +5310,54 @@ main();
 
   document.getElementById("checkJava").addEventListener("click",()=>checkJavaStatus(true));
 
-  /* Best-effort launcher entry point. It never downloads an untrusted launcher
-     or pretends the serial-only guest has a working graphical display. */
+  /* Start the real guest Xorg + Prism launcher process. */
   document.getElementById("launchMinecraft").addEventListener("click", () => {
-    const box=document.getElementById("minecraftStatus");
-    if (!shellReadyNow()) { box.textContent="Minecraft launch: Linux is still starting."; return; }
-    if (!window.confirm("Attempt to launch an installed Minecraft Java launcher? This checks Java, a supported launcher and a guest graphical display. The current QEMU build is headless, so a playable window is not expected yet.")) return;
-    const taskId="wpc-mc-launch-"+Date.now().toString(36);
-    const taskStatus="/tmp/"+taskId+".status", taskLog="/tmp/"+taskId+".log";
-    const inner=[
+    const box = document.getElementById("minecraftStatus");
+    if (!shellReadyNow()) { box.textContent = "Minecraft launch: Linux is still starting."; return; }
+    if (!window.confirm("Start the guest Xorg display with Mesa software OpenGL and open Prism Launcher? On first launch, sign in with your Microsoft account and install a Minecraft Java version you own.")) return;
+    const taskId = "wpc-mc-launch-" + Date.now().toString(36);
+    const taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
+    const inner = [
       "set +e",
-      "echo '=== WebPC Minecraft Java launch attempt ==='",
-      "echo '[1/4] Java runtime'",
-      "if ! command -v java >/dev/null 2>&1; then echo 'BLOCKED: Java is not installed. Use Install Java 21 first.'; rc=10",
-      "else java -version 2>&1; rc=0; fi",
-      "echo '[2/4] Guest display availability'",
-      "echo \"DISPLAY=${DISPLAY:-<unset>} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-<unset>}\"",
-      "if [ -z \"${DISPLAY:-}\" ] && [ -z \"${WAYLAND_DISPLAY:-}\" ]; then echo 'BLOCKED: this QEMU guest has no X11/Wayland display server. The browser canvas is not exposed as a Linux display.'; rc=11; fi",
-      "echo '[3/4] Launcher discovery'",
-      "launcher=''",
-      "for candidate in prismlauncher PrismLauncher minecraft-launcher hmcl; do if command -v \"$candidate\" >/dev/null 2>&1; then launcher=$(command -v \"$candidate\"); break; fi; done",
-      "if [ -z \"$launcher\" ] && [ -d /root/Downloads ]; then",
-      "  jar=$(find /root/Downloads -maxdepth 1 -type f \\( -iname 'hmcl*.jar' -o -iname 'minecraft-launcher*.jar' \\) -print -quit 2>/dev/null)",
-      "  if [ -n \"$jar\" ]; then launcher=\"java -jar $jar\"; fi",
+      "echo '=== WebPC Minecraft guest display startup ==='",
+      "if ! command -v prismlauncher >/dev/null 2>&1; then echo 'BLOCKED: Prism Launcher is not installed. Run Install Minecraft runtime first.'; rc=10",
+      "elif [ ! -x /usr/local/bin/webpc-minecraft-display ]; then echo 'BLOCKED: guest Xorg/Mesa setup is missing. Run Install Minecraft runtime first.'; rc=11",
+      "else",
+      "  echo '[1/3] Checking guest VGA and DRM'",
+      "  if [ ! -e /dev/dri/card0 ]; then modprobe bochs_drm 2>&1 || true; fi",
+      "  ls -l /dev/dri /dev/fb0 2>&1 || true",
+      "  echo '[2/3] Starting Xorg and Prism Launcher with Mesa llvmpipe'",
+      "  nohup /usr/local/bin/webpc-minecraft-display </dev/null >/var/log/webpc-minecraft-launcher.log 2>&1 &",
+      "  pid=$!",
+      "  sleep 4",
+      "  if kill -0 \"$pid\" 2>/dev/null; then echo \"SUCCESS: Prism Launcher startup process is running (PID $pid).\"; echo 'The first-run wizard will ask you to add your Microsoft account and install a Java Edition version.'; rc=0",
+      "  else echo 'ERROR: the Xorg/Prism process exited during startup.'; tail -n 100 /var/log/webpc-xorg.log /var/log/webpc-minecraft-launcher.log 2>/dev/null || true; rc=12; fi",
       "fi",
-      "if [ -z \"$launcher\" ] && [ \"$rc\" -eq 0 ]; then echo 'BLOCKED: no supported installed launcher found (Prism Launcher, HMCL, or Minecraft Launcher).'; rc=12; fi",
-      "echo '[4/4] Launch'",
-      "if [ \"$rc\" -eq 0 ]; then",
-      "  mkdir -p /root/.minecraft/logs",
-      "  if [ -f /root/.minecraft/launcher_profiles.json ] || [ -d /root/.local/share/PrismLauncher/instances ]; then echo 'Existing launcher/game data detected.'; else echo 'No existing Minecraft profile detected; launcher may require setup and account sign-in.'; fi",
-      "  if echo \"$launcher\" | grep -q '^java -jar '; then jar_path=${launcher#java -jar }; nohup java -jar \"$jar_path\" > /root/.minecraft/logs/webpc-launcher.log 2>&1 </dev/null &",
-      "  else nohup \"$launcher\" > /root/.minecraft/logs/webpc-launcher.log 2>&1 </dev/null & fi",
-      "  pid=$!; echo \"Launcher process started: PID $pid\"; sleep 3; if kill -0 \"$pid\" 2>/dev/null; then echo 'Launcher process is still running; inspect /root/.minecraft/logs/webpc-launcher.log.'; rc=0; else echo 'Launcher exited during startup:'; tail -n 40 /root/.minecraft/logs/webpc-launcher.log; rc=13; fi",
-      "else echo 'No launcher process started. See the blocking reason above.'; fi",
-      "printf '%s\\n' \"$rc\" > "+JSON.stringify(taskStatus),
+      "printf '%s\\n' \"$rc\" > " + JSON.stringify(taskStatus),
       "exit \"$rc\""
     ].join("\n");
-    const taskScript="/tmp/"+taskId+".sh";
-    const encoded=b64(inner);
-    const command="printf '%s' "+shellQuote(encoded)+" | base64 -d > "+shellQuote(taskScript)+" && chmod 700 "+shellQuote(taskScript)+" && (nohup /bin/sh "+shellQuote(taskScript)+" </dev/null > "+shellQuote(taskLog)+" 2>&1 & echo WEBPC_TASK_STARTED:$!)";
-    startBackgroundTask("java","Minecraft launch attempt",command,taskStatus,taskLog,box);
+    const taskScript = "/tmp/" + taskId + ".sh";
+    const command = "printf '%s' " + shellQuote(b64(inner)) + " | base64 -d > " + shellQuote(taskScript) +
+      " && chmod 700 " + shellQuote(taskScript) +
+      " && (nohup /bin/sh " + shellQuote(taskScript) + " </dev/null > " + shellQuote(taskLog) + " 2>&1 & echo WEBPC_TASK_STARTED:$!)";
+    startBackgroundTask("java", "Starting guest Xorg and Prism Launcher", command, taskStatus, taskLog, box);
   });
 
   const installJavaButton = document.getElementById("installJava");
   installJavaButton.addEventListener("click", () => {
     if (!shellReadyNow()) { document.getElementById("minecraftStatus").textContent = "Linux is still starting."; return; }
-    if (!window.confirm("Install or repair the OpenJDK 21 runtime inside the temporary Linux disk? The installer will retry package-index downloads and verify Java before reporting success.")) return;
+    if (!window.confirm("Install OpenJDK 21, Prism Launcher, Xorg, Mesa software OpenGL and guest input support inside the Linux disk? The installer will retry package-index downloads and verify the runtime before reporting success.")) return;
     const taskId = "wpc-java-" + Date.now().toString(36);
     const taskStatus = "/tmp/" + taskId + ".status", taskLog = "/tmp/" + taskId + ".log";
     const inner = [
       "set +e",
       "rc=1",
-      "echo '=== WebPC OpenJDK 21 installer ==='",
-      "echo '[1/6] Guest and network diagnostics'",
+      "echo '=== WebPC Minecraft runtime installer ==='",
+      "echo '[1/7] Guest and network diagnostics'",
       "cat /etc/alpine-release 2>/dev/null || true",
       "uname -a 2>/dev/null || true",
       "if command -v getent >/dev/null 2>&1; then getent hosts dl-cdn.alpinelinux.org 2>&1 || true; fi",
-      "echo '[2/6] Preparing APK repositories'",
+      "echo '[2/7] Preparing APK repositories'",
       "mkdir -p /etc/apk",
       "touch /etc/apk/repositories",
       "cp /etc/apk/repositories /tmp/webpc-apk-repositories.orig",
@@ -5303,18 +5365,16 @@ main();
       "while IFS= read -r repo || [ -n \"$repo\" ]; do case \"$repo\" in *'/main') community=\"\${repo%/main}/community\"; grep -Fqx \"$community\" /tmp/webpc-apk-repositories || printf '%s\\n' \"$community\" >> /tmp/webpc-apk-repositories ;; esac; done < /tmp/webpc-apk-repositories.orig",
       "if [ ! -s /tmp/webpc-apk-repositories ]; then echo 'ERROR: no APK repositories are configured'; rc=2; else cp /tmp/webpc-apk-repositories /etc/apk/repositories; cat /etc/apk/repositories; fi",
       "if [ \"$rc\" -ne 2 ]; then",
-      "  echo '[3/6] Updating APK indexes (up to 3 attempts)'",
+      "  echo '[3/7] Updating APK indexes (up to 3 attempts)'",
       "  update_rc=1; attempt=1",
       "  while [ \"$attempt\" -le 3 ]; do echo \"APK update attempt $attempt/3\"; apk update; update_rc=$?; [ \"$update_rc\" -eq 0 ] && break; sleep $((attempt * 2)); attempt=$((attempt + 1)); done",
       "  if [ \"$update_rc\" -eq 0 ]; then",
-      "    echo '[4/6] Installing OpenJDK 21 (up to 3 attempts)'",
+      "    echo '[4/7] Installing Java 21, Prism Launcher, Xorg and Mesa (up to 3 attempts)'",
       "    install_rc=1; attempt=1",
       "    while [ \"$attempt\" -le 3 ]; do",
-      "      apk add --no-cache --update-cache openjdk21-jre-headless; install_rc=$?",
+      "      apk add --no-cache --update-cache openjdk21-jre prismlauncher xorg-server xf86-input-libinput mesa-dri-gallium mesa-gl mesa-egl mesa-gbm libx11 libxrandr libxcursor libxi libxinerama libxxf86vm libxrender libxfixes libxext libxcb libxkbcommon libdrm libpciaccess xinit xauth font-dejavu; install_rc=$?",
       "      if [ \"$install_rc\" -eq 0 ]; then break; fi",
-      "      echo \"Headless package attempt $attempt failed (exit $install_rc). Trying standard JRE package.\"",
-      "      apk add --no-cache --update-cache openjdk21-jre; install_rc=$?",
-      "      if [ \"$install_rc\" -eq 0 ]; then break; fi",
+      "      echo \"Minecraft runtime package attempt $attempt failed (exit $install_rc). Will refresh and retry.\"",
       "      if [ \"$attempt\" -lt 3 ]; then echo 'Refreshing indexes before retry…'; apk update; fi",
       "      sleep $((attempt * 2)); attempt=$((attempt + 1))",
       "    done",
@@ -5323,13 +5383,56 @@ main();
       "    rc=$update_rc; echo \"ERROR: apk update failed after 3 attempts (exit $update_rc). Check DNS, TLS, network gateway, and repository URLs above.\"",
       "  fi",
       "fi",
-      "echo '[5/6] Verifying the installed Java runtime'",
+      "echo '[5/7] Configuring guest X11 and software OpenGL'",
+      "mkdir -p /etc/X11/xorg.conf.d /usr/local/bin /var/log",
+      "cat > /etc/X11/xorg.conf.d/20-webpc.conf <<'WEBPC_XORG_EOF'",
+      "Section \"Device\"",
+      "  Identifier \"WebPC VGA\"",
+      "  Driver \"modesetting\"",
+      "  Option \"AccelMethod\" \"none\"",
+      "EndSection",
+      "Section \"Screen\"",
+      "  Identifier \"WebPC Screen\"",
+      "  Device \"WebPC VGA\"",
+      "  DefaultDepth 24",
+      "  SubSection \"Display\"",
+      "    Depth 24",
+      "    Modes \"1024x768\" \"800x600\"",
+      "  EndSubSection",
+      "EndSection",
+      "WEBPC_XORG_EOF",
+      "cat > /usr/local/bin/webpc-minecraft-display <<'WEBPC_MC_EOF'",
+      "#!/bin/sh",
+      "set -eu",
+      "export DISPLAY=:0",
+      "export LIBGL_ALWAYS_SOFTWARE=1",
+      "export GALLIUM_DRIVER=llvmpipe",
+      "export QT_QPA_PLATFORM=xcb",
+      "export QT_X11_NO_MITSHM=1",
+      "mkdir -p /var/log /tmp/.X11-unix",
+      "if [ ! -e /dev/dri/card0 ]; then modprobe bochs_drm >/dev/null 2>&1 || true; fi",
+      "if ! pidof Xorg >/dev/null 2>&1; then",
+      "  Xorg :0 -config /etc/X11/xorg.conf.d/20-webpc.conf -noreset -nolisten tcp -keeptty -logfile /var/log/webpc-xorg.log vt1 &",
+      "  xpid=$!",
+      "  n=0",
+      "  while [ \"$n\" -lt 20 ] && [ ! -S /tmp/.X11-unix/X0 ]; do",
+      "    kill -0 \"$xpid\" 2>/dev/null || break",
+      "    sleep 1",
+      "    n=$((n + 1))",
+      "  done",
+      "fi",
+      "if [ ! -S /tmp/.X11-unix/X0 ]; then echo 'Xorg did not create display :0'; tail -n 80 /var/log/webpc-xorg.log 2>/dev/null || true; exit 20; fi",
+      "exec prismlauncher",
+      "WEBPC_MC_EOF",
+      "chmod 755 /usr/local/bin/webpc-minecraft-display",
+      "echo 'Configured Xorg modesetting and Mesa llvmpipe. Guest VGA/DRM availability will be checked when the display starts.'",
       "if command -v java >/dev/null 2>&1; then java -version 2>&1; java_rc=$?; else echo 'ERROR: java executable is not on PATH'; java_rc=127; fi",
-      "if [ \"$java_rc\" -eq 0 ] && java -version 2>&1 | grep -Eq 'version \"?21([. +\"-]|$)|openjdk 21'; then rc=0; echo 'SUCCESS: OpenJDK 21 is installed and runnable.'; else",
+      "if command -v prismlauncher >/dev/null 2>&1; then prismlauncher --version 2>&1 || true; else echo 'ERROR: Prism Launcher executable is missing'; java_rc=127; fi",
+      "if [ \"$java_rc\" -eq 0 ] && java -version 2>&1 | grep -Eq 'version .?21|openjdk 21' && command -v prismlauncher >/dev/null 2>&1 && command -v Xorg >/dev/null 2>&1; then rc=0; echo 'SUCCESS: Java 21, Prism Launcher, Xorg and Mesa runtime packages are installed.'; else",
       "  echo 'ERROR: Java verification did not confirm a runnable Java 21 runtime.'; rc=1",
-      "  echo '[6/6] Package and network diagnostics'",
+      "  echo '[7/7] Package and network diagnostics'",
       "  echo 'Configured repositories:'; cat /etc/apk/repositories 2>/dev/null || true",
-      "  echo 'APK package candidates:'; apk search -x openjdk21-jre-headless openjdk21-jre 2>&1 || true",
+      "  echo 'APK package candidates:'; apk search -x openjdk21-jre prismlauncher xorg-server mesa-dri-gallium 2>&1 || true",
       "  echo 'Disk space:'; df -h / 2>&1 || true",
       "fi",
       "rm -f /tmp/webpc-apk-repositories.orig /tmp/webpc-apk-repositories",
@@ -5556,6 +5659,30 @@ main();
   const canvas = document.getElementById("guestDisplayCanvas");
   const status = document.getElementById("guestDisplayStatus");
   const button = document.getElementById("guestDisplayStats");
+  const storageButton = document.getElementById("requestStorage");
+  const minecraftStatus = document.getElementById("minecraftStatus");
+  if (storageButton) storageButton.addEventListener("click", async () => {
+    if (!navigator.storage || !navigator.storage.estimate) {
+      minecraftStatus.textContent = "Browser storage estimate API is unavailable.";
+      return;
+    }
+    try {
+      let persistent = false;
+      if (navigator.storage.persist) persistent = await navigator.storage.persist();
+      const estimate = await navigator.storage.estimate();
+      const used = Number(estimate.usage || 0);
+      const quota = Number(estimate.quota || 0);
+      const free = Math.max(0, quota - used);
+      minecraftStatus.textContent =
+        "Browser storage: " + (used / 1073741824).toFixed(2) + " GiB used / " +
+        (quota ? (quota / 1073741824).toFixed(2) + " GiB quota" : "quota unavailable") +
+        " · " + (free / 1073741824).toFixed(2) + " GiB free · " +
+        (persistent ? "persistent storage granted" : "persistence not granted") +
+        (free < 4.5 * 1073741824 ? " · WARNING: insufficient free quota for the full Minecraft asset set" : "");
+    } catch (error) {
+      minecraftStatus.textContent = "Storage check failed: " + (error && error.message ? error.message : String(error));
+    }
+  });
   if (!canvas || !status || !window.WebPCGraphicsBridge) return;
   try {
     window.WebPCGraphicsBridge.attach(canvas);
