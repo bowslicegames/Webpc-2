@@ -236,6 +236,11 @@ static int coroutine_fn webpc_opfs_co_truncate(BlockDriverState *bs,
         error_setg(errp, "WebPC OPFS does not support preallocation");
         return -ENOTSUP;
     }
+    if (!exact) {
+        double current_size = webpc_opfs_get_size();
+        if (current_size < 0) return -EIO;
+        if (current_size >= (double)offset) return 0;
+    }
     if (webpc_opfs_truncate((double)offset) != 0) {
         error_setg(errp, "Unable to resize OPFS disk '%s'", state->filename);
         return -EIO;
