@@ -28,7 +28,13 @@ static void webpc_process_input(uint32_t width, uint32_t height)
                 changed = true;
             }
         } else if (event.type == 2) {
-            if (event.code == 255) {
+            if (event.code == 254) {
+                qemu_input_update_buttons(NULL, button_map, webpc_old_buttons,
+                                          (uint32_t)event.buttons);
+                webpc_old_buttons = (uint32_t)event.buttons;
+                changed = true;
+                continue;
+            } else if (event.code == 255) {
                 qemu_input_queue_rel(NULL, INPUT_AXIS_X, event.x);
                 qemu_input_queue_rel(NULL, INPUT_AXIS_Y, event.y);
                 changed = true;
