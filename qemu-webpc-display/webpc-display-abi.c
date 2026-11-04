@@ -38,13 +38,25 @@ WEBPC_EXPORT uint32_t webpc_get_framebuffer_width(void) { return fb_width; }
 WEBPC_EXPORT uint32_t webpc_get_framebuffer_height(void) { return fb_height; }
 WEBPC_EXPORT uint32_t webpc_get_framebuffer_generation(void) { return fb_generation; }
 WEBPC_EXPORT int32_t webpc_send_input(int32_t type, int32_t code, int32_t x, int32_t y, int32_t buttons) {
-    if ((type != 1 && type != 2) || wr - rd >= INPUT_QUEUE_CAPACITY) { ++dropped; return -1; }
-    WebPCInputEvent *event = &queue[wr % INPUT_QUEUE_CAPACITY];
+    if (type != 1 && type != 2) return -2;
+    uint32_t write_at = __atomic_load_n(&wr, __ATOMIC_RELAXED);
+    uint32_t read_at = __atomic_load_n(&rd, __ATOMIC_ACQUIRE);
+    if (write_at - read_at >= INPUT_QUEUE_CAPACITY) {
+        __atomic_add_fetch(&dropped, 1u, __ATOMIC_RELAXED);
+        return -1;
+    }
+    WebPCInputEvent *event = &queue[write_at % INPUT_QUEUE_CAPACITY];
     event->type=type; event->code=code; event->x=x; event->y=y; event->buttons=buttons;
-    __sync_synchronize(); ++wr; return 0;
+    __atomic_store_n(&wr, write_at + 1u, __ATOMIC_RELEASE);
+    return 0;
 }
 WEBPC_EXPORT int32_t webpc_read_input(WebPCInputEvent *event) {
-    if (!event || rd == wr) return 0;
-    __sync_synchronize(); *event=queue[rd % INPUT_QUEUE_CAPACITY]; ++rd; return 1;
+    if (!event) return -1;
+    uint32_t read_at = __atomic_load_n(&rd, __ATOMIC_RELAXED);
+    uint32_t write_at = __atomic_load_n(&wr, __ATOMIC_ACQUIRE);
+    if (read_at == write_at) return 0;
+    *event=queue[read_at % INPUT_QUEUE_CAPACITY];
+    __atomic_store_n(&rd, read_at + 1u, __ATOMIC_RELEASE);
+    return 1;
 }
-WEBPC_EXPORT uint32_t webpc_dropped_input_events(void) { return dropped; }
+WEBPC_EXPORT uint32_t webpc_dropped_input_events(void) { return __atomic_load_n(&dropped, __ATOMIC_RELAXED); }
