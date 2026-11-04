@@ -46,7 +46,7 @@
   };
   const mouseEvent = (button, down, x=canvas.width/2, y=canvas.height/2) => {
     if (window.WebPCQemuGraphics && window.WebPCQemuGraphics.sendInput) {
-      window.WebPCQemuGraphics.sendInput({type:"pointer",codeValue:button,x,y,buttons:down?(button===2?2:1):0});
+      window.WebPCQemuGraphics.sendInput({type:"pointer",codeValue:254,x,y,buttons:down?(button===2?2:1):0});
     }
   };
   panel.querySelectorAll("[data-key]").forEach(button => {
@@ -73,7 +73,7 @@
     const rect=canvas.getBoundingClientRect();
     const x=Math.max(0,Math.min(canvas.width-1,Math.round((e.clientX-rect.left)*canvas.width/Math.max(1,rect.width))));
     const y=Math.max(0,Math.min(canvas.height-1,Math.round((e.clientY-rect.top)*canvas.height/Math.max(1,rect.height))));
-    if(window.WebPCQemuGraphics?.sendInput)window.WebPCQemuGraphics.sendInput({type:"pointer",codeValue:255,x:x+Math.round(dx*4),y:y+Math.round(dy*4),buttons:1});
+    if(window.WebPCQemuGraphics?.sendInput)window.WebPCQemuGraphics.sendInput({type:"pointer",codeValue:255,x:Math.round(dx*4),y:Math.round(dy*4),buttons:0});
   });
   const stopLook=e=>{if(lookPointer===e.pointerId)lookPointer=null;};
   look.addEventListener("pointerup",stopLook);look.addEventListener("pointercancel",stopLook);
