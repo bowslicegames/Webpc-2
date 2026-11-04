@@ -3562,6 +3562,13 @@ async function bootQEMU() {
         "std",
 
         /*
+            USB tablet provides absolute pointer coordinates to Linux/Xorg.
+            This is required for reliable touch taps and pointer positioning.
+        */
+        "-device",
+        "usb-tablet",
+
+        /*
             Keep the guest at the upstream browser-example size.
         */
         "-m",
