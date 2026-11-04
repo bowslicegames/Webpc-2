@@ -12,6 +12,7 @@ with tempfile.TemporaryDirectory() as tmp:
         'void dpy_gfx_update(QemuConsole *con, int x, int y, int w, int h) {\n'
         '    w = MIN(w, width - x);\n'
         '    h = MIN(h, height - y);\n'
+        '\n'
         '    if (!qemu_console_is_visible(con)) return;\n'
         '    dpy_gfx_update_texture(con, con->surface, x, y, w, h);\n'
         '}\n'
