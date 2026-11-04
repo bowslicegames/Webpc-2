@@ -3,7 +3,6 @@
 #include "webpc-display-abi.h"
 #include "ui/input.h"
 #include "qapi/qapi-types-ui.h"
-#include "qemu/clock.h"
 #include "qemu/timer.h"
 #define WEBPC_CAPTURE_MAX_PIXELS (2048u * 2048u)
 
