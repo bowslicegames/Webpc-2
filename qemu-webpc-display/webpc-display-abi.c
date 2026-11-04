@@ -27,6 +27,6 @@ int32_t webpc_send_input(int32_t type,int32_t code,int32_t x,int32_t y,int32_t b
  __sync_synchronize();++wr;return 0;
 }
 int32_t webpc_read_input(WebPCInputEvent *e){
- if(!e||rd==wr)return 0;__sync_synchronize();*e=queue[rd%INPUT_QUEUE_CAPACITY];++rd;return 1;
+ if (!e || rd == wr) return 0;\n __sync_synchronize();\n *e = queue[rd % INPUT_QUEUE_CAPACITY];\n ++rd;\n return 1;
 }
 uint32_t webpc_dropped_input_events(void){return dropped;}
