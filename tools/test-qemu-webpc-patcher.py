@@ -37,6 +37,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert meson.count("'webpc-qemu-hook.c'") == 1
     block_meson = (qemu / "block" / "meson.build").read_text()
     assert block_meson.count("'webpc-opfs.c'") == 1
+    assert (qemu / "block" / "webpc-opfs.c").is_file()
     subprocess.run(["python3", str(patcher), str(qemu)], check=True)
     assert console.count("webpc_qemu_capture_surface(con->surface);") == 1
     assert block_meson.count("'webpc-opfs.c'") == 1
