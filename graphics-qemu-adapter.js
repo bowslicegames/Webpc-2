@@ -122,6 +122,10 @@
     if (event.cancelable) event.preventDefault();
   }
 
+  function sendKeyCode(browserCode, down) {
+    return sendInput({ type: "key", codeValue: browserKeyToLinux(browserCode), buttons: down ? 1 : 0 });
+  }
+
   function sendInput(event) {
     if (!attached || !moduleRef) return false;
     const type = event.type === "pointer" ? 2 : event.type === "key" ? 1 : 0;
@@ -150,5 +154,5 @@
     status = null;
   }
 
-  window.WebPCQemuGraphics = Object.freeze({ connect, disconnect, sendInput });
+  window.WebPCQemuGraphics = Object.freeze({ connect, disconnect, sendInput, sendKeyCode });
 })();
