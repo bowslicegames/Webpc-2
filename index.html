@@ -3241,9 +3241,48 @@ async function bootQEMU() {
         "rootfs",
         "Downloading the sparse 8 GiB virtual disk (only allocated blocks are transferred)."
     );
-    let rootDiskBinary = await rootDiskBlob.arrayBuffer();
-    downloaded.delete(FILES.rootfsDisk);
-    rootDiskBlob = null;
+    async function prepareWebPCOpfsDisk(blob) {
+        if (!navigator.storage || typeof navigator.storage.getDirectory !== "function") {
+            throw new Error("This browser does not provide the Origin Private File System required for an 8 GiB persistent guest disk.");
+        }
+        let persistent = false;
+        try { persistent = await navigator.storage.persist(); } catch (_) {}
+        const root = await navigator.storage.getDirectory();
+        const diskName = "webpc-disk-rootfs-v1.qcow2";
+        const markerName = "webpc-disk-rootfs-v1.ready";
+        const diskHandle = await root.getFileHandle(diskName, { create: true });
+        let initialized = false;
+        try {
+            const markerHandle = await root.getFileHandle(markerName);
+            const markerFile = await markerHandle.getFile();
+            initialized = (await markerFile.text()) === "webpc-disk-rootfs-v1:" + blob.size;
+        } catch (_) {}
+        if (!initialized) {
+            const existing = await diskHandle.getFile();
+            if (existing.size > blob.size) {
+                throw new Error("An existing OPFS disk has data but its initialization marker is missing; refusing to overwrite it.");
+            }
+            const writable = await diskHandle.createWritable({ keepExistingData: false });
+            await writable.write(blob);
+            await writable.close();
+            const markerHandle = await root.getFileHandle(markerName, { create: true });
+            const markerWriter = await markerHandle.createWritable({ keepExistingData: false });
+            await markerWriter.write("webpc-disk-rootfs-v1:" + blob.size);
+            await markerWriter.close();
+        }
+        const diskFile = await diskHandle.getFile();
+        if (diskFile.size < blob.size) {
+            throw new Error("OPFS disk initialization is incomplete: stored file is shorter than the signed release asset.");
+        }
+        let estimate = {};
+        try { estimate = await navigator.storage.estimate(); } catch (_) {}
+        return {
+            size: diskFile.size,
+            persistent,
+            usage: Number(estimate.usage || 0),
+            quota: Number(estimate.quota || 0)
+        };
+    }
 
 
     /*
@@ -3376,9 +3415,25 @@ async function bootQEMU() {
         */
         preRun:
             [mod => {
-                try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}
-                mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", new Uint8Array(rootDiskBinary));
-                rootDiskBinary = null;
+                const dependency = "webpc-opfs-disk-initialization";
+                mod.addRunDependency(dependency);
+                prepareWebPCOpfsDisk(rootDiskBlob).then(info => {
+                    downloaded.delete(FILES.rootfsDisk);
+                    rootDiskBlob = null;
+                    const available = info.quota ? Math.max(0, info.quota - info.usage) : 0;
+                    noteBootSignal("Persistent OPFS disk ready: " +
+                        (info.size / 1048576).toFixed(1) + " MiB allocated; " +
+                        (info.persistent ? "persistent storage granted" : "browser persistence not guaranteed") +
+                        (info.quota ? "; " + (available / 1073741824).toFixed(1) + " GiB browser quota remaining" : ""));
+                    if (info.quota && available < 4.5 * 1073741824) {
+                        noteBootSignal("WARNING: browser storage quota may be too small for the full Minecraft asset set.");
+                    }
+                    mod.removeRunDependency(dependency);
+                }).catch(error => {
+                    noteBootSignal("OPFS disk initialization failed: " + (error && error.message ? error.message : String(error)));
+                    mod.removeRunDependency(dependency);
+                    if (typeof mod.abort === "function") mod.abort("Persistent OPFS disk initialization failed.");
+                });
             }]
     };
 
@@ -3416,7 +3471,7 @@ async function bootQEMU() {
         )
     );
 
-    // The qcow2 guest disk is written into MEMFS in Module.preRun; no huge raw disk is preloaded.
+    // The qcow2 guest disk is streamed into OPFS in Module.preRun; it is not copied into MEMFS.
 
 
     /*
@@ -3604,7 +3659,7 @@ async function bootQEMU() {
         "earlyprintk=ttyS0 console=ttyS0 console=tty0 root=/dev/vda loglevel=7 hostname=webpc2 ip=dhcp",
 
         "-drive",
-        "id=test,file=/pack-rootfs/disk-rootfs.img,format=qcow2,if=none",
+        "id=test,file=webpc-opfs:webpc-disk-rootfs-v1.qcow2,format=qcow2,if=none",
 
         "-device",
         "virtio-blk-pci,drive=test",
