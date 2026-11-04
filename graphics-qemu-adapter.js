@@ -65,8 +65,10 @@
     try {
       const w = moduleRef._webpc_get_framebuffer_width() | 0;
       const h = moduleRef._webpc_get_framebuffer_height() | 0;
-      const generation = moduleRef._webpc_get_framebuffer_generation() | 0;
-      if (generation === lastGeneration || w < 1 || h < 1 || w * h > MAX_PIXELS) return;
+      const generation = moduleRef._webpc_get_framebuffer_generation() >>> 0;
+      /* The native publisher uses an odd/even sequence counter. Odd means
+         QEMU is writing; a changed counter means the copy raced a new frame. */
+      if (generation === lastGeneration || (generation & 1) || w < 1 || h < 1 || w * h > MAX_PIXELS) return;
       const ptr = moduleRef._webpc_get_framebuffer_ptr() >>> 0;
       const bytes = w * h * 4;
       if (!moduleRef.HEAPU8 || ptr + bytes > moduleRef.HEAPU8.length) {
@@ -75,8 +77,10 @@
       }
       const frame = new Uint8Array(bytes);
       frame.set(moduleRef.HEAPU8.subarray(ptr, ptr + bytes));
+      const completedGeneration = moduleRef._webpc_get_framebuffer_generation() >>> 0;
+      if (completedGeneration !== generation || (completedGeneration & 1)) return;
       window.WebPCGraphicsBridge.presentFrame({ width: w, height: h, pixels: frame });
-      lastGeneration = generation;
+      lastGeneration = completedGeneration;
       report("Guest display connected · " + w + "×" + h + " · frame " + generation);
     } catch (error) {
       report("Guest framebuffer error: " + (error && error.message ? error.message : String(error)));
