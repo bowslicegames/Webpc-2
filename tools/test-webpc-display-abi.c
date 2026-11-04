@@ -9,7 +9,7 @@ int main(void) {
     memset(first, 0x31, sizeof(first));
     memset(second, 0x7a, sizeof(second));
     assert(webpc_publish_frame(first, 2, 2) == 0);
-    uint32_t ptr = webpc_get_framebuffer_ptr();
+    WebPCFramebufferPtr ptr = webpc_get_framebuffer_ptr();
     uint32_t generation = webpc_get_framebuffer_generation();
     assert(ptr != 0 && (generation & 1u) == 0);
     assert(webpc_get_framebuffer_width() == 2);
