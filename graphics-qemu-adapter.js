@@ -100,9 +100,23 @@
     if (event.cancelable) event.preventDefault();
   }
 
+  function browserKeyToLinux(code) {
+    const map = {
+      8:14, 9:15, 13:28, 16:42, 17:29, 18:56, 27:1, 32:57,
+      33:104, 34:109, 35:107, 36:102, 37:105, 38:103, 39:106, 40:108,
+      45:110, 46:111, 48:11, 49:2, 50:3, 51:4, 52:5, 53:6, 54:7, 55:8, 56:9, 57:10,
+      65:30, 66:48, 67:46, 68:32, 69:18, 70:33, 71:34, 72:35, 73:23, 74:36,
+      75:37, 76:38, 77:50, 78:49, 79:24, 80:25, 81:16, 82:19, 83:31, 84:20,
+      85:22, 86:47, 87:17, 88:45, 89:21, 90:44,
+      91:125, 93:126, 186:39, 187:13, 188:51, 189:12, 190:52, 191:53,
+      192:41, 219:26, 220:43, 221:27, 222:40
+    };
+    return map[Number(code)] || 0;
+  }
+
   function onKey(event) {
     window.WebPCGraphicsBridge.sendInput({
-      type: "key", codeValue: event.keyCode || 0,
+      type: "key", codeValue: browserKeyToLinux(event.keyCode || 0),
       buttons: event.type === "keydown" ? 1 : 0
     });
     if (event.cancelable) event.preventDefault();
