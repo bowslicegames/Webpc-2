@@ -147,3 +147,7 @@ jobs:
           grep -Fx 'name = "webpc"' wrangler.toml
           grep -Fx 'directory = "."' wrangler.toml
           grep -Fx 'run_worker_first = true' wrangler.toml
+
+      - name: Compile the guest display ABI storage
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -c qemu-webpc-display/webpc-display-abi.c -o /tmp/webpc-display-abi.o
