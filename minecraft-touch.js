@@ -1,6 +1,6 @@
 /* iPad-oriented Minecraft touch controls and guest-window presentation shell.
- * This forwards controls to the QEMU adapter. Actual game input only works
- * after the native QEMU input ABI is wired to QEMU input devices.
+ * This forwards controls through the browser adapter into the experimental
+ * QEMU Linux input queue (keyboard, absolute tablet and relative look events).
  */
 (() => {
   "use strict";
