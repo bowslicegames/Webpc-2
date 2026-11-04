@@ -23,20 +23,23 @@ WEBPC_EXPORT int webpc_publish_frame(const uint8_t *rgba, uint32_t width, uint32
         framebuffer = (uint8_t *)malloc((size_t)WEBPC_MAX_WIDTH * WEBPC_MAX_HEIGHT * 4u);
         if (!framebuffer) return -2;
     }
-    fb_generation = (fb_generation + 1u) | 1u; /* odd means a frame is in flight */
-    __sync_synchronize();
+    uint32_t generation = __atomic_load_n(&fb_generation, __ATOMIC_RELAXED);
+    generation = (generation & ~1u) + 1u;
+    __atomic_store_n(&fb_generation, generation, __ATOMIC_RELEASE); /* odd: writer active */
     memcpy(framebuffer, rgba, (size_t)width * height * 4u);
-    fb_width = width;
-    fb_height = height;
-    __sync_synchronize();
-    ++fb_generation; /* even means a complete frame is published */
+    __atomic_store_n(&fb_width, width, __ATOMIC_RELAXED);
+    __atomic_store_n(&fb_height, height, __ATOMIC_RELAXED);
+    __atomic_store_n(&fb_generation, generation + 1u, __ATOMIC_RELEASE); /* even: frame complete */
     return 0;
 }
 
-WEBPC_EXPORT WebPCFramebufferPtr webpc_get_framebuffer_ptr(void) { return (WebPCFramebufferPtr)(uintptr_t)framebuffer; }
-WEBPC_EXPORT uint32_t webpc_get_framebuffer_width(void) { return fb_width; }
-WEBPC_EXPORT uint32_t webpc_get_framebuffer_height(void) { return fb_height; }
-WEBPC_EXPORT uint32_t webpc_get_framebuffer_generation(void) { return fb_generation; }
+WEBPC_EXPORT WebPCFramebufferPtr webpc_get_framebuffer_ptr(void) {
+    uint8_t *ptr = __atomic_load_n(&framebuffer, __ATOMIC_ACQUIRE);
+    return (WebPCFramebufferPtr)(uintptr_t)ptr;
+}
+WEBPC_EXPORT uint32_t webpc_get_framebuffer_width(void) { return __atomic_load_n(&fb_width, __ATOMIC_ACQUIRE); }
+WEBPC_EXPORT uint32_t webpc_get_framebuffer_height(void) { return __atomic_load_n(&fb_height, __ATOMIC_ACQUIRE); }
+WEBPC_EXPORT uint32_t webpc_get_framebuffer_generation(void) { return __atomic_load_n(&fb_generation, __ATOMIC_ACQUIRE); }
 WEBPC_EXPORT int32_t webpc_send_input(int32_t type, int32_t code, int32_t x, int32_t y, int32_t buttons) {
     if (type != 1 && type != 2) return -2;
     uint32_t write_at = __atomic_load_n(&wr, __ATOMIC_RELAXED);
