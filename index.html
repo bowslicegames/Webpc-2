@@ -3635,19 +3635,17 @@ async function bootQEMU() {
         "usb-tablet",
 
         /*
-            Keep the guest at the upstream browser-example size.
+            Minecraft needs substantially more guest RAM than the old
+            shell-only VM. 1536 MiB leaves room for Alpine, Xorg, Prism
+            and a small vanilla Java heap inside the 2300 MiB Wasm limit.
         */
         "-m",
-        "512M",
+        "1536M",
 
         /*
-            Use single-threaded TCG for browser compatibility. Keep the
-            translated-block cache bounded to 128 MiB rather than
-            reserving a 500 MiB cache alongside a 512 MiB guest.
-            This reduces host/Wasm memory pressure; it is a tuning
-            trade-off, not a promise of higher FPS. MTTCG remains
-            disabled because it adds worker activity and is fragile
-            on iPad/WebKit.
+            Keep single-threaded TCG for the iPad/WebKit baseline and
+            bound its translated-block cache to 128 MiB. This is still
+            software CPU emulation; it does not provide GPU acceleration.
         */
         "-accel",
         "tcg,tb-size=128",
