@@ -33,6 +33,12 @@ jobs:
         working-directory: qemu-src
         run: git submodule update --init --depth=1 roms/seabios
 
+      - name: Repair obsolete upstream zlib archive URL
+        run: |
+          set -eux
+          sed -i 's#curl -Ls https://zlib.net/zlib-$ZLIB_VERSION.tar.xz | tar xJC /zlib --strip-components=1#curl -fLs https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz | tar xzC /zlib --strip-components=1#' qemu-src/Dockerfile
+          grep -Fq 'https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz' qemu-src/Dockerfile
+
       - name: Apply and verify WebPC framebuffer hook
         run: |
           set -eux
