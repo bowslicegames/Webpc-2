@@ -98,7 +98,7 @@ EM_JS(int, webpc_opfs_flush, (void), {
     }
 });
 
-EM_JS(void, webpc_opfs_close, (void), {
+EM_JS(void, webpc_opfs_close_handle, (void), {
     try {
         if (globalThis.__webpcOpfsAccessHandle) {
             globalThis.__webpcOpfsAccessHandle.close();
@@ -171,6 +171,8 @@ static int coroutine_fn webpc_opfs_co_preadv(BlockDriverState *bs,
     WebPCOPFSState *state = bs->opaque;
     int64_t position = offset;
     int i;
+    (void)bytes;
+    (void)flags;
 
     if (!state->opened) return -EIO;
     for (i = 0; i < qiov->niov; i++) {
@@ -196,6 +198,8 @@ static int coroutine_fn webpc_opfs_co_pwritev(BlockDriverState *bs,
     WebPCOPFSState *state = bs->opaque;
     int64_t position = offset;
     int i;
+    (void)bytes;
+    (void)flags;
 
     if (!state->opened) return -EIO;
     for (i = 0; i < qiov->niov; i++) {
@@ -224,6 +228,8 @@ static int coroutine_fn webpc_opfs_co_truncate(BlockDriverState *bs,
                                                 Error **errp)
 {
     WebPCOPFSState *state = bs->opaque;
+    (void)exact;
+    (void)flags;
     if (!state->opened || offset < 0) return -EINVAL;
     if (prealloc != PREALLOC_MODE_OFF) {
         error_setg(errp, "WebPC OPFS does not support preallocation");
@@ -240,7 +246,7 @@ static void webpc_opfs_close(BlockDriverState *bs)
 {
     WebPCOPFSState *state = bs->opaque;
     if (state->opened) {
-        webpc_opfs_close();
+        webpc_opfs_close_handle();
         state->opened = false;
     }
     g_clear_pointer(&state->filename, g_free);
