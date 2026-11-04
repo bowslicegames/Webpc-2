@@ -46,7 +46,7 @@
     }
     attached = true;
     lastGeneration = -1;
-    pollHandle = window.setInterval(copyFrame, 1000 / 15);
+    pollHandle = window.setInterval(copyFrame, 1000 / 30);
     window.WebPCGraphicsBridge.setInputSink(sendInput);
     canvas.tabIndex = 0;
     canvas.style.outlineOffset = "2px";
@@ -132,5 +132,5 @@
     status = null;
   }
 
-  window.WebPCQemuGraphics = Object.freeze({ connect, disconnect });
+  window.WebPCQemuGraphics = Object.freeze({ connect, disconnect, sendInput });
 })();
