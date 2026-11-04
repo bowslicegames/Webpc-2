@@ -19,14 +19,16 @@ WEBPC_EXPORT int webpc_publish_frame(const uint8_t *rgba, uint32_t width, uint32
         (uint64_t)width * height * 4u > SIZE_MAX) return -1;
     /* Allocate once at the maximum supported size. Keeping the address stable
        prevents JS HEAPU8 readers racing a realloc during a display resize. */
-    if (!framebuffer) {
-        framebuffer = (uint8_t *)malloc((size_t)WEBPC_MAX_WIDTH * WEBPC_MAX_HEIGHT * 4u);
-        if (!framebuffer) return -2;
+    uint8_t *fb = __atomic_load_n(&framebuffer, __ATOMIC_ACQUIRE);
+    if (!fb) {
+        fb = (uint8_t *)malloc((size_t)WEBPC_MAX_WIDTH * WEBPC_MAX_HEIGHT * 4u);
+        if (!fb) return -2;
+        __atomic_store_n(&framebuffer, fb, __ATOMIC_RELEASE);
     }
     uint32_t generation = __atomic_load_n(&fb_generation, __ATOMIC_RELAXED);
     generation = (generation & ~1u) + 1u;
     __atomic_store_n(&fb_generation, generation, __ATOMIC_RELEASE); /* odd: writer active */
-    memcpy(framebuffer, rgba, (size_t)width * height * 4u);
+    memcpy(fb, rgba, (size_t)width * height * 4u);
     __atomic_store_n(&fb_width, width, __ATOMIC_RELAXED);
     __atomic_store_n(&fb_height, height, __ATOMIC_RELAXED);
     __atomic_store_n(&fb_generation, generation + 1u, __ATOMIC_RELEASE); /* even: frame complete */
