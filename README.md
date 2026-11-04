@@ -102,5 +102,6 @@ The large runtime binaries are kept in GitHub Release `V1` because committing th
 
 ## Documentation
 
+- [Guest GPU integration attempt and remaining build gates (2026-11-04)](docs/guest-gpu-integration-attempt-2026-11-04.md)
 - [Full audit and remaining work (2026-11-02)](docs/audit-2026-11-02.md)
 - [Guest services and disk notes](docs/guest-services-and-4gb-disk.md)
