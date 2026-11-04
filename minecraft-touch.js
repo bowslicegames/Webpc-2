@@ -41,7 +41,7 @@
   const keyNames = {87:"W",65:"A",83:"S",68:"D",32:" ",16:"Shift",69:"E",81:"Q",27:"Escape",9:"Tab"};
   const keyEvent = (code, down) => {
     if (window.WebPCQemuGraphics && window.WebPCQemuGraphics.sendInput) {
-      window.WebPCQemuGraphics.sendInput({type:"key",codeValue:code,buttons:down?1:0});
+      window.WebPCQemuGraphics.sendKeyCode(code,down);
     }
   };
   const mouseEvent = (button, down, x=canvas.width/2, y=canvas.height/2) => {
