@@ -32,7 +32,14 @@ static void webpc_process_input(uint32_t width, uint32_t height)
                 changed = true;
             }
         } else if (event.type == 2) {
-            if (event.code == 254) {
+            if (event.code == 253) {
+                InputButton wheel = event.x < 0 ? INPUT_BUTTON_WHEEL_UP : INPUT_BUTTON_WHEEL_DOWN;
+                qemu_input_queue_btn(NULL, wheel, true);
+                qemu_input_event_sync();
+                qemu_input_queue_btn(NULL, wheel, false);
+                qemu_input_event_sync();
+                continue;
+            } else if (event.code == 254) {
                 qemu_input_update_buttons(NULL, button_map, webpc_old_buttons,
                                           (uint32_t)event.buttons);
                 webpc_old_buttons = (uint32_t)event.buttons;
