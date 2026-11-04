@@ -1,5 +1,4 @@
 #include "qemu/osdep.h"
-#include <pixman.h>
 #include "ui/surface.h"
 #include "webpc-display-abi.h"
 #include "ui/input.h"
@@ -12,6 +11,8 @@ static int webpc_last_x, webpc_last_y;
 static bool webpc_have_pointer;
 static QEMUTimer *webpc_input_timer;
 static uint32_t webpc_input_width, webpc_input_height;
+static uint8_t *webpc_rgba_buffer;
+static size_t webpc_rgba_capacity;
 
 static void webpc_process_input(uint32_t width, uint32_t height)
 {
@@ -82,12 +83,19 @@ static void webpc_input_timer_cb(void *opaque)
 
 void webpc_qemu_capture_surface(DisplaySurface *surface)
 {
-    static pixman_image_t *rgba_surface;
-    static int cached_width, cached_height;
-    int width, height;
+    int width, height, stride;
+    pixman_format_code_t format;
+    const uint32_t *src;
+    uint8_t *dst;
+    uint32_t rshift, gshift, bshift, ashift;
+    bool has_alpha;
+
     if (!surface || is_placeholder(surface)) return;
-    width=surface_width(surface); height=surface_height(surface);
-    if (width<1 || height<1) return;
+    width = surface_width(surface);
+    height = surface_height(surface);
+    if (width < 1 || height < 1 ||
+        (uint64_t)width * (uint64_t)height > WEBPC_CAPTURE_MAX_PIXELS) return;
+
     webpc_input_width = (uint32_t)width;
     webpc_input_height = (uint32_t)height;
     if (!webpc_input_timer) {
@@ -95,15 +103,47 @@ void webpc_qemu_capture_surface(DisplaySurface *surface)
         timer_mod(webpc_input_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + 8);
     }
     webpc_process_input(webpc_input_width, webpc_input_height);
-    if ((uint64_t)width*(uint64_t)height>WEBPC_CAPTURE_MAX_PIXELS) return;
-    if (!rgba_surface || width!=cached_width || height!=cached_height) {
-        if (rgba_surface) pixman_image_unref(rgba_surface);
-        rgba_surface=pixman_image_create_bits(PIXMAN_a8b8g8r8,width,height,NULL,0);
-        if (!rgba_surface) { cached_width=cached_height=0; return; }
-        cached_width=width; cached_height=height;
+
+    format = surface_format(surface);
+    switch (format) {
+    case PIXMAN_x8r8g8b8:
+        rshift = 16; gshift = 8; bshift = 0; ashift = 0; has_alpha = false;
+        break;
+    case PIXMAN_a8r8g8b8:
+        rshift = 16; gshift = 8; bshift = 0; ashift = 24; has_alpha = true;
+        break;
+    case PIXMAN_x8b8g8r8:
+        rshift = 0; gshift = 8; bshift = 16; ashift = 0; has_alpha = false;
+        break;
+    case PIXMAN_a8b8g8r8:
+        rshift = 0; gshift = 8; bshift = 16; ashift = 24; has_alpha = true;
+        break;
+    default:
+        return;
     }
-    pixman_image_composite32(PIXMAN_OP_SRC,surface->image,NULL,rgba_surface,
-                             0,0,0,0,0,0,width,height);
-    webpc_publish_frame((const uint8_t *)pixman_image_get_data(rgba_surface),
-                        (uint32_t)width,(uint32_t)height);
+
+    stride = surface_stride(surface);
+    if (stride < width * 4) return;
+    size_t required = (size_t)width * (size_t)height * 4u;
+    if (required > webpc_rgba_capacity) {
+        uint8_t *next = realloc(webpc_rgba_buffer, required);
+        if (!next) return;
+        webpc_rgba_buffer = next;
+        webpc_rgba_capacity = required;
+    }
+
+    src = (const uint32_t *)surface_data(surface);
+    dst = webpc_rgba_buffer;
+    for (int y = 0; y < height; y++) {
+        const uint32_t *src_row = (const uint32_t *)((const uint8_t *)src + (size_t)y * stride);
+        uint8_t *dst_row = dst + (size_t)y * (size_t)width * 4u;
+        for (int x = 0; x < width; x++) {
+            uint32_t pixel = src_row[x];
+            dst_row[x * 4 + 0] = (uint8_t)(pixel >> rshift);
+            dst_row[x * 4 + 1] = (uint8_t)(pixel >> gshift);
+            dst_row[x * 4 + 2] = (uint8_t)(pixel >> bshift);
+            dst_row[x * 4 + 3] = has_alpha ? (uint8_t)(pixel >> ashift) : 255u;
+        }
+    }
+    webpc_publish_frame(dst, (uint32_t)width, (uint32_t)height);
 }
