@@ -25,6 +25,8 @@ jobs:
         run: |
           node --check graphics-bridge.js
           node --check graphics-qemu-adapter.js
+          node --check webpc-gpu.js
+          node tools/test-webpc-gpu.cjs
           node --check minecraft-touch.js
           node tools/test-graphics-bridge.cjs
           gcc -std=c11 -Wall -Wextra -Werror -fsyntax-only -Iqemu-webpc-display qemu-webpc-display/webpc-display-abi.c
