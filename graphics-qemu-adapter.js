@@ -63,12 +63,12 @@
   function copyFrame() {
     if (!attached || !moduleRef) return;
     try {
+      /* Read the sequence counter before touching dimensions or pixels. */
+      const generation = moduleRef._webpc_get_framebuffer_generation() >>> 0;
+      if (generation === lastGeneration || (generation & 1)) return;
       const w = moduleRef._webpc_get_framebuffer_width() | 0;
       const h = moduleRef._webpc_get_framebuffer_height() | 0;
-      const generation = moduleRef._webpc_get_framebuffer_generation() >>> 0;
-      /* The native publisher uses an odd/even sequence counter. Odd means
-         QEMU is writing; a changed counter means the copy raced a new frame. */
-      if (generation === lastGeneration || (generation & 1) || w < 1 || h < 1 || w * h > MAX_PIXELS) return;
+      if (w < 1 || h < 1 || w * h > MAX_PIXELS) return;
       const ptr = moduleRef._webpc_get_framebuffer_ptr() >>> 0;
       const bytes = w * h * 4;
       if (!moduleRef.HEAPU8 || ptr + bytes > moduleRef.HEAPU8.length) {
