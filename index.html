@@ -1051,7 +1051,7 @@ button:active {
           <section class="desktop-window" id="minecraftWindow" aria-label="Minecraft launcher window">
             <div class="window-titlebar"><span>🟩</span><span class="window-title">Minecraft Java Edition</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body"><div class="info-content">
-              <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Java 21 runtime from here. Setup runs as a background guest task, so the File Manager and terminal remain usable while packages download. The Minecraft window uses WebPC GPU display (WebGL 2) for hardware-accelerated guest-frame presentation, with iPad touch controls and a 30 FPS cap. QEMU must still provide a guest framebuffer and native input; guest OpenGL command translation is a separate backend milestone.</p><div class="info-status" id="guestDisplayStatus">WebPC GPU display: WebGL 2 ready; waiting for guest framebuffer</div><canvas id="guestDisplayCanvas" width="640" height="360" aria-label="Minecraft guest display" style="display:block;width:100%;max-width:720px;aspect-ratio:16/9;background:#05080d;border:1px solid #ffffff33;border-radius:8px;margin:10px 0;image-rendering:pixelated"></canvas><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="ui-button" id="guestDisplayStats">Display diagnostics</button></div><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button" id="repairApk">Repair APK / install nano</button><button class="ui-button primary" id="installJava">Install Java 21</button><div class="info-status" id="apkStatus" style="flex-basis:100%">APK package manager: not checked</div></div></div>
+              <div class="info-card"><h3>Minecraft Java Edition</h3><p>Install the Java 21 runtime from here. Setup runs as a background guest task, so the File Manager and terminal remain usable while packages download. The browser has a WebGL 2 frame presenter and iPad touch controls. The current QEMU binary does not yet export the guest framebuffer/input ABI, and there is no guest OpenGL/LWJGL translation, so the game display will remain blank until those native components are built and connected.</p><div class="info-status" id="guestDisplayStatus">WebPC GPU display: WebGL 2 ready; waiting for guest framebuffer</div><canvas id="guestDisplayCanvas" width="640" height="360" aria-label="Minecraft guest display" style="display:block;width:100%;max-width:720px;aspect-ratio:16/9;background:#05080d;border:1px solid #ffffff33;border-radius:8px;margin:10px 0;image-rendering:pixelated"></canvas><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="ui-button" id="guestDisplayStats">Display diagnostics</button></div><div class="info-status" id="minecraftStatus">Java status: not checked</div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="checkJava">Check Java</button><button class="ui-button" id="repairApk">Repair APK / install nano</button><button class="ui-button primary" id="installJava">Install Java 21</button><button class="ui-button" id="launchMinecraft">Launch Minecraft</button><div class="info-status" id="apkStatus" style="flex-basis:100%">APK package manager: not checked</div></div></div>
               
             </div><div class="window-resize" aria-hidden="true"></div></div>
           </section>
@@ -5236,7 +5236,52 @@ main();
       box.textContent=out.includes("WEBPC_JAVA_MISSING")?"Java status: not installed yet. We will fix package/network setup next.":"Java status: installed · "+out.slice(0,180);
     });
   }
+
   document.getElementById("checkJava").addEventListener("click",()=>checkJavaStatus(true));
+
+  /* Best-effort launcher entry point. It never downloads an untrusted launcher
+     or pretends the serial-only guest has a working graphical display. */
+  document.getElementById("launchMinecraft").addEventListener("click", () => {
+    const box=document.getElementById("minecraftStatus");
+    if (!shellReadyNow()) { box.textContent="Minecraft launch: Linux is still starting."; return; }
+    if (!window.confirm("Attempt to launch an installed Minecraft Java launcher? This checks Java, a supported launcher and a guest graphical display. The current QEMU build is headless, so a playable window is not expected yet.")) return;
+    const taskId="wpc-mc-launch-"+Date.now().toString(36);
+    const taskStatus="/tmp/"+taskId+".status", taskLog="/tmp/"+taskId+".log";
+    const inner=[
+      "set +e",
+      "echo '=== WebPC Minecraft Java launch attempt ==='",
+      "echo '[1/4] Java runtime'",
+      "if ! command -v java >/dev/null 2>&1; then echo 'BLOCKED: Java is not installed. Use Install Java 21 first.'; rc=10",
+      "else java -version 2>&1; rc=0; fi",
+      "echo '[2/4] Guest display availability'",
+      "echo \"DISPLAY=${DISPLAY:-<unset>} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-<unset>}\"",
+      "if [ -z \"${DISPLAY:-}\" ] && [ -z \"${WAYLAND_DISPLAY:-}\" ]; then echo 'BLOCKED: this QEMU guest has no X11/Wayland display server. The browser canvas is not exposed as a Linux display.'; rc=11; fi",
+      "echo '[3/4] Launcher discovery'",
+      "launcher=''",
+      "for candidate in prismlauncher PrismLauncher minecraft-launcher hmcl; do if command -v \"$candidate\" >/dev/null 2>&1; then launcher=$(command -v \"$candidate\"); break; fi; done",
+      "if [ -z \"$launcher\" ] && [ -d /root/Downloads ]; then",
+      "  jar=$(find /root/Downloads -maxdepth 1 -type f \\( -iname 'hmcl*.jar' -o -iname 'minecraft-launcher*.jar' \\) -print -quit 2>/dev/null)",
+      "  if [ -n \"$jar\" ]; then launcher=\"java -jar $jar\"; fi",
+      "fi",
+      "if [ -z \"$launcher\" ] && [ \"$rc\" -eq 0 ]; then echo 'BLOCKED: no supported installed launcher found (Prism Launcher, HMCL, or Minecraft Launcher).'; rc=12; fi",
+      "echo '[4/4] Launch'",
+      "if [ \"$rc\" -eq 0 ]; then",
+      "  mkdir -p /root/.minecraft/logs",
+      "  if [ -f /root/.minecraft/launcher_profiles.json ] || [ -d /root/.local/share/PrismLauncher/instances ]; then echo 'Existing launcher/game data detected.'; else echo 'No existing Minecraft profile detected; launcher may require setup and account sign-in.'; fi",
+      "  if echo \"$launcher\" | grep -q '^java -jar '; then jar_path=${launcher#java -jar }; nohup java -jar \"$jar_path\" > /root/.minecraft/logs/webpc-launcher.log 2>&1 </dev/null &",
+      "  else nohup \"$launcher\" > /root/.minecraft/logs/webpc-launcher.log 2>&1 </dev/null & fi",
+      "  pid=$!; echo \"Launcher process started: PID $pid\"; sleep 3; if kill -0 \"$pid\" 2>/dev/null; then echo 'Launcher process is still running; inspect /root/.minecraft/logs/webpc-launcher.log.'; rc=0; else echo 'Launcher exited during startup:'; tail -n 40 /root/.minecraft/logs/webpc-launcher.log; rc=13; fi",
+      "else echo 'No launcher process started. See the blocking reason above.'; fi",
+      "printf '%s\\n' \"$rc\" > "+JSON.stringify(taskStatus),
+      "exit \"$rc\""
+    ].join("\n");
+    const taskScript="/tmp/"+taskId+".sh";
+    const launch="printf '%s' "+ "''" + " >/dev/null";
+    const encoded=b64(inner);
+    const command="printf '%s' "+shellQuote(encoded)+" | base64 -d > "+shellQuote(taskScript)+" && chmod 700 "+shellQuote(taskScript)+" && (nohup /bin/sh "+shellQuote(taskScript)+" </dev/null > "+shellQuote(taskLog)+" 2>&1 & echo WEBPC_TASK_STARTED:$!)";
+    startBackgroundTask("java","Minecraft launch attempt",command,taskStatus,taskLog,box);
+  });
+
   const installJavaButton = document.getElementById("installJava");
   installJavaButton.addEventListener("click", () => {
     if (!shellReadyNow()) { document.getElementById("minecraftStatus").textContent = "Linux is still starting."; return; }
