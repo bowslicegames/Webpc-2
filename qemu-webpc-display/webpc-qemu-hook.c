@@ -3,11 +3,15 @@
 #include "webpc-display-abi.h"
 #include "ui/input.h"
 #include "qapi/qapi-types-ui.h"
+#include "qemu/clock.h"
+#include "qemu/timer.h"
 #define WEBPC_CAPTURE_MAX_PIXELS (2048u * 2048u)
 
 static uint32_t webpc_old_buttons;
 static int webpc_last_x, webpc_last_y;
 static bool webpc_have_pointer;
+static QEMUTimer *webpc_input_timer;
+static uint32_t webpc_input_width, webpc_input_height;
 
 static void webpc_process_input(uint32_t width, uint32_t height)
 {
@@ -61,6 +65,13 @@ static void webpc_process_input(uint32_t width, uint32_t height)
     }
     if (changed) qemu_input_event_sync();
 }
+
+static void webpc_input_timer_cb(void *opaque)
+{
+    webpc_process_input(webpc_input_width, webpc_input_height);
+    timer_mod(webpc_input_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + 8);
+}
+
 void webpc_qemu_capture_surface(DisplaySurface *surface)
 {
     static pixman_image_t *rgba_surface;
@@ -68,8 +79,15 @@ void webpc_qemu_capture_surface(DisplaySurface *surface)
     int width, height;
     if (!surface || is_placeholder(surface)) return;
     width=surface_width(surface); height=surface_height(surface);
-    webpc_process_input((uint32_t)width, (uint32_t)height);
-    if (width<1 || height<1 || (uint64_t)width*(uint64_t)height>WEBPC_CAPTURE_MAX_PIXELS) return;
+    if (width<1 || height<1) return;
+    webpc_input_width = (uint32_t)width;
+    webpc_input_height = (uint32_t)height;
+    if (!webpc_input_timer) {
+        webpc_input_timer = timer_new_ms(QEMU_CLOCK_REALTIME, webpc_input_timer_cb, NULL);
+        timer_mod(webpc_input_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + 8);
+    }
+    webpc_process_input(webpc_input_width, webpc_input_height);
+    if ((uint64_t)width*(uint64_t)height>WEBPC_CAPTURE_MAX_PIXELS) return;
     if (!rgba_surface || width!=cached_width || height!=cached_height) {
         if (rgba_surface) pixman_image_unref(rgba_surface);
         rgba_surface=pixman_image_create_bits(PIXMAN_a8b8g8r8,width,height,NULL,0);
