@@ -5365,7 +5365,7 @@ main();
       "echo 'Configured Xorg modesetting and Mesa llvmpipe. Guest VGA/DRM availability will be checked when the display starts.'",
       "if command -v java >/dev/null 2>&1; then java -version 2>&1; java_rc=$?; else echo 'ERROR: java executable is not on PATH'; java_rc=127; fi",
       "if command -v prismlauncher >/dev/null 2>&1; then prismlauncher --version 2>&1 || true; else echo 'ERROR: Prism Launcher executable is missing'; java_rc=127; fi",
-      "if [ \"$java_rc\" -eq 0 ] && java -version 2>&1 | grep -Eq 'version \\"?21([. +\\"-]|$)|openjdk 21' && command -v prismlauncher >/dev/null 2>&1 && command -v Xorg >/dev/null 2>&1; then rc=0; echo 'SUCCESS: Java 21, Prism Launcher, Xorg and Mesa runtime packages are installed.'; else",
+      "if [ \"$java_rc\" -eq 0 ] && java -version 2>&1 | grep -Eq 'version .?21|openjdk 21' && command -v prismlauncher >/dev/null 2>&1 && command -v Xorg >/dev/null 2>&1; then rc=0; echo 'SUCCESS: Java 21, Prism Launcher, Xorg and Mesa runtime packages are installed.'; else",
       "  echo 'ERROR: Java verification did not confirm a runnable Java 21 runtime.'; rc=1",
       "  echo '[7/7] Package and network diagnostics'",
       "  echo 'Configured repositories:'; cat /etc/apk/repositories 2>/dev/null || true",
