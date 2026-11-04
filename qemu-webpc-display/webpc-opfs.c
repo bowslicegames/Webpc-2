@@ -126,6 +126,7 @@ static int webpc_opfs_file_open(BlockDriverState *bs, QDict *options,
     WebPCOPFSState *state = bs->opaque;
     const char *filename = qdict_get_try_str(options, "filename");
     int ret;
+    (void)flags;
 
     if (!filename || !*filename || strchr(filename, '/') ||
         strchr(filename, '\\') || !strcmp(filename, ".") ||
