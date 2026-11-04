@@ -27,7 +27,11 @@ jobs:
           repository: ktock/qemu-wasm
           ref: 0ef7b4e2814b231705d8371dd7997f5b72e70baf
           path: qemu-src
-          submodules: recursive
+          submodules: false
+
+      - name: Fetch only the x86 PC firmware submodule
+        working-directory: qemu-src
+        run: git submodule update --init --depth=1 roms/seabios
 
       - name: Apply and verify WebPC framebuffer hook
         run: |
