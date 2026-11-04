@@ -2,6 +2,9 @@ name: Build experimental WebPC QEMU framebuffer runtime
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - experimental/minecraft-guest-display
 
 permissions:
   contents: read
