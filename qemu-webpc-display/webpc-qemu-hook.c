@@ -12,7 +12,7 @@ static bool webpc_have_pointer;
 static void webpc_process_input(uint32_t width, uint32_t height)
 {
     WebPCInputEvent event;
-    static const uint32_t button_map[INPUT_BUTTON__MAX] = {
+    static uint32_t button_map[INPUT_BUTTON__MAX] = {
         [INPUT_BUTTON_LEFT] = 1u,
         [INPUT_BUTTON_RIGHT] = 2u,
         [INPUT_BUTTON_MIDDLE] = 4u,
@@ -31,6 +31,8 @@ static void webpc_process_input(uint32_t width, uint32_t height)
             if (event.code == 255) {
                 qemu_input_queue_rel(NULL, INPUT_AXIS_X, event.x);
                 qemu_input_queue_rel(NULL, INPUT_AXIS_Y, event.y);
+                changed = true;
+                continue;
             } else {
                 int x = MAX(0, MIN((int)width - 1, event.x));
                 int y = MAX(0, MIN((int)height - 1, event.y));
@@ -45,7 +47,7 @@ static void webpc_process_input(uint32_t width, uint32_t height)
                 webpc_last_y = y;
                 webpc_have_pointer = true;
             }
-            qemu_input_update_buttons(NULL, (uint32_t *)button_map,
+            qemu_input_update_buttons(NULL, button_map,
                                       webpc_old_buttons, (uint32_t)event.buttons);
             webpc_old_buttons = (uint32_t)event.buttons;
             changed = true;
