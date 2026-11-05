@@ -50,6 +50,7 @@ jobs:
           grep -Fq "'webpc-qemu-hook.c'" qemu-src/ui/meson.build
           grep -Fq "'webpc-opfs.c'" qemu-src/block/meson.build
           grep -Fq 'block_init(bdrv_webpc_opfs_init)' qemu-src/block/webpc-opfs.c
+          grep -Fq '    .bdrv_needs_filename = true,' qemu-src/block/webpc-opfs.c
 
       - name: Build the pinned Emscripten toolchain image
         run: docker build --pull -t webpc-qemu-build qemu-src
@@ -141,7 +142,7 @@ jobs:
           p = Path("_worker.js")
           s = p.read_text()
           s, release_count = re.subn(
-              r'(const RELEASE_BASE =\s*")[^"]+(");',
+              r'(const QEMU_RELEASE_BASE =\s*")[^"]+(");',
               lambda m: m.group(1) + "https://github.com/bowslicegames/Webpc-2/releases/download/" + sys.argv[1] + "/" + m.group(2),
               s, count=1
           )
@@ -151,7 +152,7 @@ jobs:
               s, count=1
           )
           if release_count != 1 or pin_count != 1:
-              raise SystemExit("Could not safely update the Worker release URL and static commit pin.")
+              raise SystemExit("Could not safely update the Worker QEMU release URL and static commit pin.")
           p.write_text(s)
           PY
           git add _worker.js
