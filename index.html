@@ -4805,8 +4805,9 @@ main();
     }
     const originalTermios = lineDiscipline.termios;
     const rawTermios = originalTermios.clone();
-    rawTermios.lflag &= ~1; // ISIG
+    rawTermios.lflag &= ~(1 | 2); // ISIG | ICANON
     rawTermios.ISIG_P = false;
+    rawTermios.ICANON_P = false;
     lineDiscipline.termios = rawTermios;
     try { terminal.paste(value); }
     finally { lineDiscipline.termios = originalTermios; }
