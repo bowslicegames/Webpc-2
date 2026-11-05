@@ -36,6 +36,14 @@ jobs:
           if not release or not pin:
               raise SystemExit("Worker release activation patterns do not match the actual multiline constants")
           print("Worker release URL and static commit activation patterns verified.")
+          build = Path(".github/workflows/build-qemu-framebuffer.yml").read_text()
+          for marker in (
+              "actual_size = artifact.stat().st_size",
+              "size_pattern = re.compile(",
+              "Could not update KNOWN_SIZES entry",
+          ):
+              if marker not in build:
+                  raise SystemExit("QEMU build must derive KNOWN_SIZES from real artifacts: " + marker)
           PY
 
       - name: Check graphics transport and QEMU ABI starter
