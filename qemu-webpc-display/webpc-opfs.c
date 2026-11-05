@@ -156,7 +156,7 @@ static int webpc_opfs_file_open(BlockDriverState *bs, QDict *options,
 
     filename = qemu_opt_get(opts, "filename");
     if (!filename || !*filename || strchr(filename, '/') ||
-        strchr(filename, '\\\\') || !strcmp(filename, ".") ||
+        strchr(filename, '\\') || !strcmp(filename, ".") ||
         !strcmp(filename, "..")) {
         error_setg(errp, "WebPC OPFS accepts a single safe filename");
         qemu_opts_del(opts);
