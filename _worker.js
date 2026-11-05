@@ -36,7 +36,7 @@ const STATIC_FILES = new Set([
 ]);
 
 const RELEASE_BASE =
-  "https://github.com/bowslicegames/Webpc-2/releases/download/V1/";
+  "https://github.com/bowslicegames/Webpc-2/releases/download/webpc-opfs-42023061825/"
 
 /*
  * Pin the small application files to a known Git commit.
@@ -47,7 +47,7 @@ const RELEASE_BASE =
  * Worker itself is already new.
  */
 const STATIC_COMMIT =
-  "2ce3cff3d0d6ec5176c0e28c7b515cb804d997db";
+  "38b899722ad36feb9d5c727e73c19f02bc9b85bb"
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
