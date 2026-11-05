@@ -4826,9 +4826,9 @@ main();
     const wrapped = "printf '%s' '" + encodedPayload + "' | base64 -d | sh";
     try {
       if (wrapped.length <= 1400) {
-        terminal.paste("stty -echo 2>/dev/null\\r");
+        terminal.paste("stty -echo 2>/dev/null\r");
         setTimeout(() => {
-          if (pending === p) terminal.paste(wrapped + "\\r");
+          if (pending === p) terminal.paste(wrapped + "\r");
         }, 80);
       } else {
         /*
@@ -4847,11 +4847,11 @@ main();
         const sendNextTransportLine = () => {
           if (pending !== p || transportIndex >= commands.length) return;
           try {
-            terminal.paste(commands[transportIndex++] + "\\r");
+            terminal.paste(commands[transportIndex++] + "\r");
             if (transportIndex < commands.length) setTimeout(sendNextTransportLine, 90);
           } catch (e) { finish(e, ""); }
         };
-        terminal.paste("stty -echo 2>/dev/null\\r");
+        terminal.paste("stty -echo 2>/dev/null\r");
         setTimeout(sendNextTransportLine, 80);
       }
     } catch (e) { finish(e, ""); }
