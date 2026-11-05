@@ -1545,16 +1545,16 @@ function updateWebpcSerialLog(chunk) {
     let value = String(chunk == null ? "" : chunk);
     /* Strip terminal control sequences while retaining line breaks and printable text. */
     value = value
-        .replace(/\\x1B\\][^\\x07]*(?:\\x07|\\x1B\\\\)/g, "")
-        .replace(/\\x1B\\[[0-?]*[ -/]*[@-~]/g, "")
-        .replace(/\\x1B[@-_]/g, "")
-        .replace(/\\r\\n/g, "\\n")
-        .replace(/\\r/g, "\\n")
-        .replace(/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]/g, "");
+        .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, "")
+        .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")
+        .replace(/\x1B[@-_]/g, "")
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
     if (!value) return;
     webpcSerialLogBuffer = (webpcSerialLogBuffer + value).slice(-12000);
-    const lines = webpcSerialLogBuffer.split("\\n");
-    output.textContent = lines.slice(-12).join("\\n").slice(-2600) || "Waiting for Linux serial output…";
+    const lines = webpcSerialLogBuffer.split("\n");
+    output.textContent = lines.slice(-12).join("\n").slice(-2600) || "Waiting for Linux serial output…";
     output.scrollTop = output.scrollHeight;
 }
 
