@@ -2,6 +2,7 @@
 # Install the complete Minecraft Java runtime into the baked WebPC Alpine disk.
 # Run only inside the target x86_64 Alpine root filesystem during the disk build.
 # This script is executed by the reproducible 8 GiB disk-image workflow.
+# Image build revision: OPFS-safe legacy migration and QEMU device compatibility.
 set -eu
 
 ALPINE_VERSION="$(cut -d. -f1,2 /etc/alpine-release)"
