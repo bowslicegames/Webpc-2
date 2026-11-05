@@ -109,8 +109,8 @@ try {
       document.querySelector("#startupStage")?.innerText || "",
     detail: document.querySelector("#stageDetail")?.innerText || "",
     error: document.querySelector("#errorBox")?.innerText || "",
-    diskStatus: document.body.innerText.match(/Persistent OPFS disk ready:[^\n]*/)?.[0] || ""
-    ,bodyTail: document.body.innerText.slice(-5000)
+    diskStatus: document.body.innerText.match(/Persistent OPFS disk ready:[^\n]*/)?.[0] || "",
+    bodyTail: document.body.innerText.slice(-5000)
   }));
 
   console.log("Guest boot result:", JSON.stringify(result, null, 2));
