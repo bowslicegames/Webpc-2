@@ -36,7 +36,7 @@ const STATIC_FILES = new Set([
 ]);
 
 const QEMU_RELEASE_BASE =
-  "https://github.com/bowslicegames/Webpc-2/releases/download/webpc-opfs-42069367768/"
+  "https://github.com/bowslicegames/Webpc-2/releases/download/webpc-opfs-42069367768/";
 
 /*
  * The OPFS build release intentionally contains only the newly compiled
