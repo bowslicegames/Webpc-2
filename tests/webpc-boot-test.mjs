@@ -93,9 +93,12 @@ try {
     const login = document.querySelector("#webpcLoginScreen");
     const error = document.querySelector("#errorBox")?.innerText || "";
     const detail = document.querySelector("#stageDetail")?.innerText || "";
+    const body = document.body.innerText || "";
     return !!login?.classList.contains("visible") ||
       detail.includes("Linux shell detected") ||
-      error.includes("WEBPC 2 STARTUP ERROR");
+      error.includes("WEBPC 2 STARTUP ERROR") ||
+      body.includes("Block protocol 'webpc-opfs' doesn't support the option") ||
+      body.includes("WebPC OPFS accepts a single safe filename");
   }, null, { timeout: 480000, polling: 1000 });
 
   const result = await page.evaluate(() => ({
@@ -107,12 +110,17 @@ try {
     detail: document.querySelector("#stageDetail")?.innerText || "",
     error: document.querySelector("#errorBox")?.innerText || "",
     diskStatus: document.body.innerText.match(/Persistent OPFS disk ready:[^\n]*/)?.[0] || ""
+    ,bodyTail: document.body.innerText.slice(-5000)
   }));
 
   console.log("Guest boot result:", JSON.stringify(result, null, 2));
+  if (result.bodyTail.includes("Block protocol 'webpc-opfs' doesn't support the option") ||
+      result.bodyTail.includes("WebPC OPFS accepts a single safe filename")) {
+    throw new Error("QEMU rejected the OPFS disk filename: " + result.bodyTail.slice(-1800));
+  }
   if (result.error.includes("WEBPC 2 STARTUP ERROR") || !result.loginVisible &&
       !result.detail.includes("Linux shell detected")) {
-    throw new Error("Guest did not reach the Linux login prompt or shell.");
+    throw new Error("Guest did not reach the Linux login prompt or shell: " + result.bodyTail.slice(-1800));
   }
   if (!/Serial boot signal: RECEIVED/i.test(result.bootSignal) &&
       !/Linux shell detected/i.test(result.detail)) {
