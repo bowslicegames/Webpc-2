@@ -35,8 +35,22 @@ const STATIC_FILES = new Set([
   "xterm-pty/index.mjs"
 ]);
 
-const RELEASE_BASE =
-  "https://github.com/bowslicegames/Webpc-2/releases/download/webpc-opfs-42023061825/"
+const QEMU_RELEASE_BASE =
+  "https://github.com/bowslicegames/Webpc-2/releases/download/webpc-opfs-42023061825/";
+
+/*
+ * The OPFS build release intentionally contains only the newly compiled
+ * QEMU runtime. Keep firmware, kernel, initramfs, rootfs and networking
+ * assets on the complete, stable V1 release until they are republished.
+ */
+const BASE_ASSETS_RELEASE_BASE =
+  "https://github.com/bowslicegames/Webpc-2/releases/download/V1/";
+
+const QEMU_RELEASE_ASSETS = new Set([
+  "out.js",
+  "qemu-system-x86_64.wasm",
+  "qemu-system-x86_64.worker.js"
+]);
 
 /*
  * Pin the small application files to a known Git commit.
@@ -185,7 +199,8 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
 <h1>WebPC 2 Worker is ACTIVE</h1>
 <p><strong>Cloudflare Worker:</strong> running</p>
 <p><strong>Asset proxy:</strong> active</p>
-<p><strong>Release:</strong> V1</p>
+<p><strong>QEMU runtime release:</strong> ${QEMU_RELEASE_BASE.split("/").filter(Boolean).slice(-2, -1)[0]}</p>
+<p><strong>Base assets release:</strong> ${BASE_ASSETS_RELEASE_BASE.split("/").filter(Boolean).slice(-2, -1)[0]}</p>
 <p><strong>QEMU asset:</strong> allowed</p>
 <p><strong>Cross-origin isolation:</strong> enabled</p>
 </main>
@@ -559,8 +574,11 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         }
       }
 
+      const releaseBase = QEMU_RELEASE_ASSETS.has(filename)
+        ? QEMU_RELEASE_BASE
+        : BASE_ASSETS_RELEASE_BASE;
       const upstreamURL =
-        RELEASE_BASE + encodeURIComponent(filename);
+        releaseBase + encodeURIComponent(filename);
 
       try {
         const upstream = await fetch(upstreamURL, {
