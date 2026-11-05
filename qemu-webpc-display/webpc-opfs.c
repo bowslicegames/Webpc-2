@@ -261,6 +261,8 @@ static void webpc_opfs_close(BlockDriverState *bs)
 static BlockDriver bdrv_webpc_opfs = {
     .format_name = "webpc-opfs",
     .protocol_name = "webpc-opfs",
+    /* QEMU strips the parsed filename unless the protocol driver declares it needs one. */
+    .bdrv_needs_filename = true,
     .instance_size = sizeof(WebPCOPFSState),
     .bdrv_file_open = webpc_opfs_file_open,
     .bdrv_parse_filename = webpc_opfs_parse_filename,
