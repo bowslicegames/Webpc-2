@@ -12,12 +12,15 @@ let page;
 
 async function getExpectedRelease() {
   if (explicitRelease) return explicitRelease;
-  const response = await fetch(baseUrl + "/worker-test", { signal: AbortSignal.timeout(30000) });
-  if (!response.ok) throw new Error("Worker diagnostics returned HTTP " + response.status);
-  const html = await response.text();
-  const match = html.match(/QEMU runtime release:[^>]*>([^<\s]+)/i);
-  if (!match) throw new Error("Could not read the active QEMU release tag from /worker-test");
-  return match[1];
+  /*
+   * Read the expected release tag from the checked-out Worker source, then
+   * verify that the deployed Worker serves that exact tag in its response
+   * header. Do not depend on diagnostic-page HTML formatting.
+   */
+  const workerSource = fs.readFileSync(new URL("../_worker.js", import.meta.url), "utf8");
+  const match = workerSource.match(/const QEMU_RELEASE_BASE\\s*=\\s*"([^"]+)"/);
+  if (!match) throw new Error("Could not read QEMU_RELEASE_BASE from the checked-out Worker source");
+  return match[1].split("/").filter(Boolean).pop();
 }
 
 async function waitForRelease(expected) {
