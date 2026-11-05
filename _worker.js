@@ -584,13 +584,42 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         releaseBase + encodeURIComponent(filename);
 
       try {
-        const upstream = await fetch(upstreamURL, {
-          method: request.method === "HEAD" ? "HEAD" : "GET",
-          redirect: "follow",
-          headers: {
-            "Accept": "application/octet-stream"
+        /*
+         * GitHub Releases redirects large files to release-assets storage.
+         * Cloudflare occasionally receives transient 502/503/504 responses
+         * from that edge even though the release asset exists. Retry only
+         * transient failures; never turn a genuine 404 into a successful
+         * response or cache an error body as a binary asset.
+         */
+        let upstream = null;
+        let lastUpstreamError = null;
+        let assetAttempts = 0;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          assetAttempts = attempt + 1;
+          try {
+            upstream = await fetch(upstreamURL, {
+              method: request.method === "HEAD" ? "HEAD" : "GET",
+              redirect: "follow",
+              headers: {
+                "Accept": "application/octet-stream"
+              }
+            });
+            if (upstream.ok || (upstream.status < 500 && upstream.status !== 429)) {
+              break;
+            }
+            lastUpstreamError = new Error("GitHub returned " + upstream.status + " " + upstream.statusText);
+            try { await upstream.body?.cancel(); } catch (_) {}
+          } catch (fetchError) {
+            lastUpstreamError = fetchError;
+            upstream = null;
           }
-        });
+          if (attempt < 3) {
+            await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1)));
+          }
+        }
+        if (!upstream) {
+          throw lastUpstreamError || new Error("GitHub asset fetch failed without a response");
+        }
 
         if (!upstream.ok) {
           return new Response(
@@ -630,6 +659,7 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         headers.set("Cross-Origin-Embedder-Policy", "require-corp");
         headers.set("X-WebPC-Worker", "active");
         headers.set("X-WebPC-Asset", filename);
+        headers.set("X-WebPC-Asset-Attempts", String(assetAttempts));
         headers.set(
           "X-WebPC-Release",
           QEMU_RELEASE_ASSETS.has(filename) ? QEMU_RELEASE_TAG : BASE_ASSETS_RELEASE_TAG
