@@ -12,6 +12,7 @@
 #include "qapi/error.h"
 #include "qapi/qmp/qdict.h"
 #include "qemu/module.h"
+#include "qemu/option.h"
 #include "block/block-io.h"
 #include "block/block_int.h"
 
@@ -19,6 +20,24 @@ typedef struct WebPCOPFSState {
     char *filename;
     bool opened;
 } WebPCOPFSState;
+
+/*
+ * Consume the protocol filename through QemuOpts, matching QEMU's built-in
+ * file protocol. Leaving it in the block-layer QDict causes the final
+ * unknown-option check to reject "filename" after the protocol has opened.
+ */
+static QemuOptsList webpc_opfs_runtime_opts = {
+    .name = "webpc-opfs",
+    .head = QTAILQ_HEAD_INITIALIZER(webpc_opfs_runtime_opts.head),
+    .desc = {
+        {
+            .name = "filename",
+            .type = QEMU_OPT_STRING,
+            .help = "Name of the OPFS disk file",
+        },
+        { /* end of list */ }
+    },
+};
 
 EM_ASYNC_JS(int, webpc_opfs_open, (const char *filename), {
     try {
@@ -124,20 +143,29 @@ static int webpc_opfs_file_open(BlockDriverState *bs, QDict *options,
                                 int flags, Error **errp)
 {
     WebPCOPFSState *state = bs->opaque;
-    const char *filename = qdict_get_try_str(options, "filename");
+    QemuOpts *opts;
+    const char *filename;
     int ret;
     (void)flags;
 
+    opts = qemu_opts_create(&webpc_opfs_runtime_opts, NULL, 0, &error_abort);
+    if (!qemu_opts_absorb_qdict(opts, options, errp)) {
+        qemu_opts_del(opts);
+        return -EINVAL;
+    }
+
+    filename = qemu_opt_get(opts, "filename");
     if (!filename || !*filename || strchr(filename, '/') ||
-        strchr(filename, '\\') || !strcmp(filename, ".") ||
+        strchr(filename, '\\\\') || !strcmp(filename, ".") ||
         !strcmp(filename, "..")) {
         error_setg(errp, "WebPC OPFS accepts a single safe filename");
+        qemu_opts_del(opts);
         return -EINVAL;
     }
 
     state->filename = g_strdup(filename);
-    /* The block layer validates unconsumed protocol options after open. */
-    qdict_del(options, "filename");
+    qemu_opts_del(opts);
+
     ret = webpc_opfs_open(state->filename);
     if (ret < 0) {
         error_setg(errp, "Unable to open OPFS disk '%s'; check browser storage permission and disk initialization",
