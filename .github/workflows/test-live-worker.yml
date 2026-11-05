@@ -20,8 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - name: Check out the expected Worker revision
+      - name: Check out the latest main revision (including generated disk metadata)
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Wait for the latest Worker deployment and verify its desktop
         env:
