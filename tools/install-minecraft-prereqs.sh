@@ -63,7 +63,8 @@ apk add --no-cache \
 echo "=== Configuring Java defaults ==="
 mkdir -p /etc/profile.d
 cat > /etc/profile.d/webpc-java.sh <<'WEBPC_JAVA_EOF'
-export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+JAVA_BIN="$(command -v java)"
+export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$JAVA_BIN")")")"
 export PATH="$JAVA_HOME/bin:$PATH"
 WEBPC_JAVA_EOF
 chmod 644 /etc/profile.d/webpc-java.sh
@@ -134,7 +135,9 @@ command -v xinit
 test -x /usr/local/bin/webpc-minecraft-display
 test -s /etc/X11/xorg.conf.d/20-webpc.conf
 test -s /etc/profile.d/webpc-java.sh
-ldd /usr/lib/jvm/java-21-openjdk/lib/libawt_xawt.so 2>&1 | tee /tmp/webpc-java-awt-ldd.txt
+JAVA_AWT="$(find /usr/lib/jvm -name libawt_xawt.so -type f -print -quit 2>/dev/null)"
+if [ -z "$JAVA_AWT" ]; then echo "Java AWT native library is missing." >&2; exit 23; fi
+ldd "$JAVA_AWT" 2>&1 | tee /tmp/webpc-java-awt-ldd.txt
 if grep -q 'not found' /tmp/webpc-java-awt-ldd.txt; then
   echo "Java AWT has unresolved shared-library dependencies." >&2
   exit 21
