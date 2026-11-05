@@ -145,7 +145,7 @@ jobs:
           sudo mount --bind /sys /mnt/webpc-rootfs/sys
           sudo cp /etc/resolv.conf /mnt/webpc-rootfs/etc/resolv.conf
           sudo chroot /mnt/webpc-rootfs /bin/sh /root/webpc-install-minecraft-prereqs.sh
-          sudo chroot /mnt/webpc-rootfs /bin/sh -ec '
+          sudo chroot /mnt/webpc-rootfs /bin/sh -xec '
             java -version 2>&1 | tee /tmp/webpc-java-build-check.txt
             grep -Eq "version.*21|openjdk.*21" /tmp/webpc-java-build-check.txt
             command -v prismlauncher
@@ -154,7 +154,7 @@ jobs:
             test -x /usr/local/bin/webpc-minecraft-display
             test -s /etc/webpc-minecraft-prereqs
             test -x /etc/local.d/webpc-migrate-legacy.start
-            rc-update show default 2>/dev/null | grep -q local
+            test -e /etc/runlevels/default/local
             ! ldd "$(command -v prismlauncher)" 2>&1 | grep -q "not found"
             echo "PASS: Java 21 and Minecraft prerequisites are baked into the ext4 guest disk."
           '
