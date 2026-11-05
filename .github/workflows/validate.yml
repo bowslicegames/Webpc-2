@@ -18,6 +18,14 @@ jobs:
         with:
           node-version: 22
 
+      - name: Check baked Minecraft prerequisite installer
+        run: |
+          sh -n tools/install-minecraft-prereqs.sh
+          grep -Fq 'openjdk21-jre' tools/install-minecraft-prereqs.sh
+          grep -Fq 'prismlauncher' tools/install-minecraft-prereqs.sh
+          grep -Fq 'webpc-minecraft-display' tools/install-minecraft-prereqs.sh
+          grep -Fq 'Baking and verifying Minecraft Java 21 prerequisites' .github/workflows/build-dynamic-disk.yml || grep -Fq 'Bake and verify Minecraft Java 21 prerequisites' .github/workflows/build-dynamic-disk.yml
+
       - name: Check Worker JavaScript syntax
         run: node --check _worker.js
 
