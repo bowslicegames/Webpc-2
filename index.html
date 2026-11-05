@@ -3268,6 +3268,50 @@ async function bootQEMU() {
         "rootfs",
         "Downloading the sparse 8 GiB virtual disk (only allocated blocks are transferred)."
     );
+    // Give every published base image its own OPFS filename. Never overwrite
+    // the user's previous persistent disk when a new baked image is released.
+    const opfsDiskName = "webpc-disk-rootfs-" + ASSET_CACHE_NAME + ".qcow2";
+    const opfsMigrationMarkerName = opfsDiskName + ".migration-done";
+    window.__webpcOpfsDiskName = opfsDiskName;
+    let legacyDiskBinary = null;
+    let legacyDiskName = null;
+    try {
+        const opfsRoot = await navigator.storage.getDirectory();
+        let migrationAlreadyDone = false;
+        try {
+            const doneHandle = await opfsRoot.getFileHandle(opfsMigrationMarkerName);
+            const doneFile = await doneHandle.getFile();
+            migrationAlreadyDone = (await doneFile.text()) === "WEBPC_LEGACY_DISK_MIGRATION_DONE";
+        } catch (_) {}
+        if (!migrationAlreadyDone) {
+            const candidates = [];
+            let oversizedLegacyDisk = false;
+            for await (const [name, handle] of opfsRoot.entries()) {
+                if (name === opfsDiskName || !/^webpc-disk-rootfs-.*\\.qcow2$/.test(name) ||
+                    !handle || handle.kind !== "file") continue;
+                const file = await handle.getFile();
+                if (file.size < 4) continue;
+                if (file.size > 512 * 1024 * 1024) {
+                    oversizedLegacyDisk = true;
+                    continue;
+                }
+                const header = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+                if (header[0] === 0x51 && header[1] === 0x46 && header[2] === 0x49 && header[3] === 0xfb) {
+                    candidates.push({name, file});
+                }
+            }
+            candidates.sort((a, b) => b.file.lastModified - a.file.lastModified);
+            if (candidates.length) {
+                legacyDiskName = candidates[0].name;
+                legacyDiskBinary = await candidates[0].file.arrayBuffer();
+                noteBootSignal("Found the previous persistent disk. Attaching it read-only so user files can be migrated safely.");
+            } else if (oversizedLegacyDisk) {
+                noteBootSignal("A previous OPFS disk backup is larger than the automatic migration memory limit. It has been preserved, but automatic file migration is deferred.");
+            }
+        }
+    } catch (error) {
+        noteBootSignal("Could not inspect previous OPFS disk backups: " + (error && error.message ? error.message : String(error)));
+    }
     async function prepareWebPCOpfsDisk(blob) {
         if (!navigator.storage || typeof navigator.storage.getDirectory !== "function") {
             throw new Error("This browser does not provide the Origin Private File System required for an 8 GiB persistent guest disk.");
@@ -3275,19 +3319,19 @@ async function bootQEMU() {
         let persistent = false;
         try { persistent = await navigator.storage.persist(); } catch (_) {}
         const root = await navigator.storage.getDirectory();
-        const diskName = "webpc-disk-rootfs-v1.qcow2";
-        const markerName = "webpc-disk-rootfs-v1.ready";
+        const diskName = opfsDiskName;
+        const markerName = diskName + ".ready";
         const diskHandle = await root.getFileHandle(diskName, { create: true });
         let initialized = false;
         try {
             const markerHandle = await root.getFileHandle(markerName);
             const markerFile = await markerHandle.getFile();
-            initialized = (await markerFile.text()) === "webpc-disk-rootfs-v1:" + blob.size;
+            initialized = (await markerFile.text()) === diskName + ":" + blob.size;
         } catch (_) {}
         if (!initialized) {
             const existing = await diskHandle.getFile();
-            if (existing.size > blob.size) {
-                throw new Error("An existing OPFS disk has data but its initialization marker is missing; refusing to overwrite it.");
+            if (existing.size > 0 && existing.size >= blob.size) {
+                throw new Error("An existing OPFS disk has data but its initialization marker is missing; refusing to overwrite it. The previous disk is preserved.");
             }
             const writable = await diskHandle.createWritable({ keepExistingData: false });
             try {
@@ -3303,7 +3347,7 @@ async function bootQEMU() {
             }
             const markerHandle = await root.getFileHandle(markerName, { create: true });
             const markerWriter = await markerHandle.createWritable({ keepExistingData: false });
-            await markerWriter.write("webpc-disk-rootfs-v1:" + blob.size);
+            await markerWriter.write(diskName + ":" + blob.size);
             await markerWriter.close();
         }
         const diskFile = await diskHandle.getFile();
@@ -3470,6 +3514,13 @@ async function bootQEMU() {
                     mod.removeRunDependency(dependency);
                     if (typeof mod.abort === "function") mod.abort("Persistent OPFS disk initialization failed.");
                 });
+            },
+            mod => {
+                if (!legacyDiskBinary) return;
+                try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}
+                mod.FS.writeFile("/pack-rootfs/legacy-rootfs.qcow2", new Uint8Array(legacyDiskBinary));
+                legacyDiskBinary = null;
+                noteBootSignal("Previous OPFS disk attached read-only for one-time user-data migration.");
             }]
     };
 
@@ -3693,10 +3744,17 @@ async function bootQEMU() {
         "earlyprintk=ttyS0 console=ttyS0 console=tty0 root=/dev/vda loglevel=7 hostname=webpc2 ip=dhcp",
 
         "-drive",
-        "id=test,file=webpc-opfs:webpc-disk-rootfs-v1.qcow2,format=qcow2,if=none",
+        "id=test,file=webpc-opfs:" + opfsDiskName + ",format=qcow2,if=none",
 
         "-device",
         "virtio-blk-pci,drive=test",
+
+        ...(legacyDiskName ? [
+            "-drive",
+            "id=legacy,file=/pack-rootfs/legacy-rootfs.qcow2,format=qcow2,if=none,readonly=on",
+            "-device",
+            "virtio-blk-pci,drive=legacy,readonly=on"
+        ] : []),
 
         /*
             Browser networking:
@@ -4939,6 +4997,22 @@ main();
       try { s = dec.decode(data instanceof Uint8Array ? data : new Uint8Array(data)); } catch (_) {}
     }
     if (!s) return;
+    const migrationBuffer = ((window.__webpcLegacyMigrationOutput || "") + s).slice(-512);
+    window.__webpcLegacyMigrationOutput = migrationBuffer;
+    if (migrationBuffer.includes("WEBPC_LEGACY_DISK_MIGRATION_DONE") &&
+        !window.__webpcLegacyMigrationMarkerWriting && window.__webpcOpfsDiskName) {
+      window.__webpcLegacyMigrationMarkerWriting = true;
+      navigator.storage.getDirectory().then(async root => {
+        const handle = await root.getFileHandle(window.__webpcOpfsDiskName + ".migration-done", {create:true});
+        const writer = await handle.createWritable({keepExistingData:false});
+        await writer.write("WEBPC_LEGACY_DISK_MIGRATION_DONE");
+        await writer.close();
+        noteBootSignal("Previous disk data migrated. The original OPFS disk remains available as a backup.");
+      }).catch(error => {
+        window.__webpcLegacyMigrationMarkerWriting = false;
+        console.warn("Could not save OPFS migration marker:", error);
+      });
+    }
     if (recoveryAttempt) {
       recoveryOutputBuffer = (recoveryOutputBuffer + s).slice(-8192);
       if (recoveryOutputBuffer.includes(recoveryAttempt.token)) {
