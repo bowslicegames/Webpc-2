@@ -9,8 +9,8 @@ if [ "$ALPINE_VERSION" != "3.21" ]; then
   exit 10
 fi
 
-# Ensure the matching community repository is enabled; Prism Launcher and
-# OpenJDK 21 are published there for Alpine 3.21 x86_64.
+# Ensure the matching Alpine 3.21 community repository is enabled; OpenJDK 21
+# is published there for x86_64.
 if ! grep -Eq '^[[:space:]]*https?://[^[:space:]]+/community/?([[:space:]]*)$' /etc/apk/repositories; then
   awk '
     { print }
