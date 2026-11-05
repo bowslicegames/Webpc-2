@@ -153,7 +153,7 @@ jobs:
           p = Path("_worker.js")
           s = p.read_text()
           s, release_count = re.subn(
-              r'(const QEMU_RELEASE_BASE =\s*")[^"]+("\\s*;)',
+              r'(const QEMU_RELEASE_BASE =\s*")[^"]+("\s*;)',
               lambda m: m.group(1) + "https://github.com/bowslicegames/Webpc-2/releases/download/" + sys.argv[1] + "/" + m.group(2),
               s, count=1
           )
