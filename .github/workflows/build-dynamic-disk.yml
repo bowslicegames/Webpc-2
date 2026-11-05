@@ -320,6 +320,15 @@ jobs:
           fi
           git push origin HEAD:main
 
+      - name: Deploy the updated Worker with Wrangler when credentials are configured
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eux
+          npx --yes wrangler@4 deploy
+
       - name: Verify the published disk asset
         env:
           GH_TOKEN: ${{ github.token }}
