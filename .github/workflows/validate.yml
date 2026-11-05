@@ -26,6 +26,8 @@ jobs:
           grep -Fq 'prismlauncher' tools/install-minecraft-prereqs.sh
           grep -Fq 'webpc-minecraft-display' tools/install-minecraft-prereqs.sh
           grep -Fq 'Baking and verifying Minecraft Java 21 prerequisites' .github/workflows/build-dynamic-disk.yml || grep -Fq 'Bake and verify Minecraft Java 21 prerequisites' .github/workflows/build-dynamic-disk.yml
+          grep -Fq -- '--repository=https://dl-cdn.alpinelinux.org/alpine/v3.22/community prismlauncher' index.html
+          ! grep -Fq 'apk add --no-cache --update-cache openjdk21-jre prismlauncher' index.html
 
       - name: Check Worker JavaScript syntax
         run: node --check _worker.js
