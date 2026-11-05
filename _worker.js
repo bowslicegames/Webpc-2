@@ -63,7 +63,7 @@ const BASE_ASSETS_RELEASE_TAG = BASE_ASSETS_RELEASE_BASE.split("/").filter(Boole
  * because the browser can then show an old startup screen while the
  * Worker itself is already new.
  */
-const STATIC_COMMIT = "2285fd465d4b78b990a8b33383d5cf9e49115d0b"
+const STATIC_COMMIT = "cf4c518d105614e64d49ddb9be4415bc28c1fa9f"
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
