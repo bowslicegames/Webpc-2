@@ -61,6 +61,10 @@ try {
   const context = await browser.newContext();
   page = await context.newPage();
   page.setDefaultTimeout(30000);
+  const diskAssetResponsePromise = page.waitForResponse(
+    response => new URL(response.url()).pathname === "/assets/disk-rootfs-qcow2.img",
+    { timeout: 480000 }
+  );
   page.on("console", message => {
     if (message.type() === "error") consoleErrors.push(message.text());
   });
@@ -103,6 +107,12 @@ try {
       body.includes("Block protocol 'webpc-opfs' doesn't support the option") ||
       body.includes("WebPC OPFS accepts a single safe filename");
   }, null, { timeout: 480000, polling: 1000 });
+
+  const diskAssetResponse = await diskAssetResponsePromise;
+  if (!diskAssetResponse.ok()) {
+    throw new Error("Prebuilt guest disk asset returned HTTP " + diskAssetResponse.status());
+  }
+  console.log("Verified the browser downloaded the prebuilt Minecraft guest disk:", diskAssetResponse.status());
 
   const result = await page.evaluate(() => ({
     loginVisible: !!document.querySelector("#webpcLoginScreen")?.classList.contains("visible"),
