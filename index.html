@@ -4838,7 +4838,11 @@ main();
       setTimeout(() => {
         if (recoveryAttempt !== attempt) return;
         try {
-          terminal.paste("stty echo 2>/dev/null || true; printf '\\n" + attempt.token + "\\n'\r");
+          const splitAt = Math.floor(attempt.token.length / 2);
+          const markerLeft = attempt.token.slice(0, splitAt);
+          const markerRight = attempt.token.slice(splitAt);
+          terminal.paste("stty echo 2>/dev/null || true; printf '\\n%s%s\\n' '" +
+            markerLeft + "' '" + markerRight + "'\r");
         } catch (error) { failAppChannelRecovery(attempt, error); }
       }, 500);
     } catch (error) {
