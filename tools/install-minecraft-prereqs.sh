@@ -195,7 +195,9 @@ command -v Xorg
 command -v xinit
 test -x /usr/local/bin/webpc-minecraft-display
 test -s /etc/X11/xorg.conf.d/20-webpc.conf
-test -s /etc/profile.d/webpc-java.sh\ntest -x /etc/local.d/webpc-migrate-legacy.start\nrc-update show default 2>/dev/null | grep -q local
+test -s /etc/profile.d/webpc-java.sh
+test -x /etc/local.d/webpc-migrate-legacy.start
+rc-update show default 2>/dev/null | grep -q local
 JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
 export LD_LIBRARY_PATH="$JAVA_HOME/lib/server:$JAVA_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 JAVA_AWT="$(find /usr/lib/jvm -name libawt_xawt.so -type f -print -quit 2>/dev/null)"
