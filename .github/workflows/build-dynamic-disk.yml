@@ -25,10 +25,20 @@ jobs:
       - name: Check out WebPC 2
         uses: actions/checkout@v4
 
-      - name: Install disk image tools
+      - name: Install disk image tools only when missing
         run: |
-          sudo apt-get update
-          sudo apt-get install -y e2fsprogs qemu-utils python3
+          set -eux
+          missing=()
+          command -v e2fsck >/dev/null 2>&1 || missing+=(e2fsprogs)
+          command -v qemu-img >/dev/null 2>&1 || missing+=(qemu-utils)
+          command -v python3 >/dev/null 2>&1 || missing+=(python3)
+          if (( ${#missing[@]} )); then
+            sudo apt-get update
+            sudo apt-get install -y "${missing[@]}"
+          fi
+          e2fsck -V
+          qemu-img --version
+          python3 --version
 
       - name: Download the current known-good runtime assets
         env:
