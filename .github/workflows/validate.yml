@@ -32,6 +32,8 @@ jobs:
           grep -Fq 'rc-update add local default' tools/install-minecraft-prereqs.sh
           grep -Fq 'const opfsDiskName = "webpc-disk-rootfs-" + ASSET_CACHE_NAME + ".qcow2";' index.html
           grep -Fq 'legacy-rootfs.qcow2' index.html
+          grep -Fq '"virtio-blk-pci,drive=legacy"' index.html
+          ! grep -Fq '"virtio-blk-pci,drive=legacy,readonly=on"' index.html
           grep -Fq 'WEBPC_LEGACY_DISK_MIGRATION_DONE' index.html
           grep -Fq 'OPFS-backed qcow2 architecture' .github/workflows/build-dynamic-disk.yml
 
