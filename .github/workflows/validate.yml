@@ -22,6 +22,7 @@ jobs:
       - name: Check baked Minecraft prerequisite installer
         run: |
           sh -n tools/install-minecraft-prereqs.sh
+          ! grep -Fq '\\n' tools/install-minecraft-prereqs.sh
           grep -Fq 'openjdk21-jre' tools/install-minecraft-prereqs.sh
           grep -Fq 'prismlauncher' tools/install-minecraft-prereqs.sh
           grep -Fq 'webpc-minecraft-display' tools/install-minecraft-prereqs.sh
