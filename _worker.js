@@ -64,7 +64,7 @@ const BASE_ASSETS_RELEASE_TAG = BASE_ASSETS_RELEASE_BASE.split("/").filter(Boole
  * Worker itself is already new.
  */
 const STATIC_COMMIT =
-  "38b899722ad36feb9d5c727e73c19f02bc9b85bb"
+  "c0895673cf44602f974e407eff14feb29fb53724"
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
