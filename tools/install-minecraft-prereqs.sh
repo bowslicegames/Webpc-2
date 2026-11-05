@@ -144,6 +144,8 @@ command -v xinit
 test -x /usr/local/bin/webpc-minecraft-display
 test -s /etc/X11/xorg.conf.d/20-webpc.conf
 test -s /etc/profile.d/webpc-java.sh
+JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
+export LD_LIBRARY_PATH="$JAVA_HOME/lib/server:$JAVA_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 JAVA_AWT="$(find /usr/lib/jvm -name libawt_xawt.so -type f -print -quit 2>/dev/null)"
 if [ -z "$JAVA_AWT" ]; then echo "Java AWT native library is missing." >&2; exit 23; fi
 ldd "$JAVA_AWT" 2>&1 | tee /tmp/webpc-java-awt-ldd.txt
