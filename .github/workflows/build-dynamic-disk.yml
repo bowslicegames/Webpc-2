@@ -327,6 +327,9 @@ jobs:
         run: |
           set -eux
           if [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            # The Wrangler assets directory is the repository root; discard
+            # temporary 8 GiB disk-build files before publishing static assets.
+            rm -rf work
             npx --yes wrangler@4 deploy
           else
             echo "::warning::Cloudflare deploy skipped; add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets to enable automatic deployment."
