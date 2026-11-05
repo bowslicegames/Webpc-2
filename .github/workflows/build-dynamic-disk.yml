@@ -153,6 +153,8 @@ jobs:
             command -v xinit
             test -x /usr/local/bin/webpc-minecraft-display
             test -s /etc/webpc-minecraft-prereqs
+            test -x /etc/local.d/webpc-migrate-legacy.start
+            rc-update show default 2>/dev/null | grep -q local
             ! ldd "$(command -v prismlauncher)" 2>&1 | grep -q "not found"
             echo "PASS: Java 21 and Minecraft prerequisites are baked into the ext4 guest disk."
           '
@@ -242,23 +244,22 @@ jobs:
           elif '        FILES.rootfsDisk,' not in s:
               raise SystemExit("Pre-boot asset list does not include the disk.")
 
-          old_download = '    await downloadAsset(\n        FILES.rootfsData,\n        "rootfs",\n        "Downloading the Alpine Linux root filesystem."\n    );'
-          new_download = '    let rootDiskBlob = await downloadAsset(\n        FILES.rootfsDisk,\n        "rootfs",\n        "Downloading the sparse 8 GiB virtual disk (only allocated blocks are transferred)."\n    );\n    let rootDiskBinary = await rootDiskBlob.arrayBuffer();\n    downloaded.delete(FILES.rootfsDisk);\n    rootDiskBlob = null;'
-          old_prerun = '    preRun:\n            []'
-          new_prerun = '    preRun:\n            [mod => {\n                try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}\n                mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", new Uint8Array(rootDiskBinary));\n                rootDiskBinary = null;\n            }]'
-          if old_prerun in s:
-              s = s.replace(old_prerun, new_prerun, 1)
-          elif 'mod.FS.writeFile("/pack-rootfs/disk-rootfs.img", new Uint8Array(rootDiskBinary))' not in s:
-              raise SystemExit("Cannot find disk preRun initializer.")
-
-          old_loader = '    await loadScript(\n        blobURL(\n            FILES.rootfsLoader\n        )\n    );'
-          if old_loader in s:
-              s = s.replace(old_loader, '    // The qcow2 guest disk is written into MEMFS in Module.preRun; no huge raw disk is preloaded.', 1)
-          elif 'no huge raw disk is preloaded' not in s:
-              raise SystemExit("Cannot find the rootfs loader import to replace.")
+          # Keep the OPFS-backed qcow2 architecture. The browser streams the
+          # published image into a versioned OPFS file; it must not copy the
+          # whole new disk into MEMFS or replace the user's previous disk.
+          if 'let rootDiskBlob = await downloadAsset(' not in s:
+              raise SystemExit("The OPFS disk download path is missing.")
+          if 'prepareWebPCOpfsDisk(rootDiskBlob)' not in s:
+              raise SystemExit("The OPFS disk initialization path is missing.")
+          if 'const opfsDiskName = "webpc-disk-rootfs-" + ASSET_CACHE_NAME + ".qcow2";' not in s:
+              raise SystemExit("The versioned OPFS disk naming/migration path is missing.")
+          if 'id=test,file=webpc-opfs:' not in s or 'format=qcow2' not in s:
+              raise SystemExit("The QEMU OPFS qcow2 drive configuration is incomplete.")
+          if 'legacy-rootfs.qcow2' not in s or 'WEBPC_LEGACY_DISK_MIGRATION_DONE' not in s:
+              raise SystemExit("The previous persistent disk migration path is missing.")
 
           import os
-          cache_name = f'webpc-runtime-assets-v4-{os.environ["GITHUB_RUN_ID"]}-qcow2'
+          cache_name = f'webpc-runtime-assets-v6-{os.environ["GITHUB_RUN_ID"]}-qcow2'
           s, cache_count = re.subn(
               r'const ASSET_CACHE_NAME = "[^"]+";',
               f'const ASSET_CACHE_NAME = "{cache_name}";',
