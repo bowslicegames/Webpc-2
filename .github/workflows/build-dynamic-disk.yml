@@ -14,7 +14,7 @@ permissions:
 
 # Rebuilds are guarded, repeatable, and followed by a Worker pin refresh and live check.
 concurrency:
-  group: webpc-dynamic-disk-release
+  group: webpc-dynamic-disk-release-v2
   cancel-in-progress: true
 
 jobs:
