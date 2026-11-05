@@ -3753,7 +3753,7 @@ async function bootQEMU() {
             "-drive",
             "id=legacy,file=/pack-rootfs/legacy-rootfs.qcow2,format=qcow2,if=none,readonly=on",
             "-device",
-            "virtio-blk-pci,drive=legacy,readonly=on"
+            "virtio-blk-pci,drive=legacy"
         ] : []),
 
         /*
