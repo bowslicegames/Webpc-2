@@ -127,6 +127,57 @@ exec prismlauncher "$@"
 WEBPC_MC_EOF
 chmod 755 /usr/local/bin/webpc-minecraft-display
 
+echo "=== Installing one-time migration for the previous persistent OPFS disk ==="
+mkdir -p /etc/local.d /var/lib/webpc /mnt/webpc-legacy
+cat > /etc/local.d/webpc-migrate-legacy.start <<'WEBPC_MIGRATE_EOF'
+#!/bin/sh
+set +e
+marker=/var/lib/webpc/legacy-migration-v1.done
+if [ -f "$marker" ]; then
+  echo "WEBPC_LEGACY_DISK_MIGRATION_DONE"
+  exit 0
+fi
+if [ ! -b /dev/vdb ]; then
+  exit 0
+fi
+mkdir -p /mnt/webpc-legacy /var/lib/webpc
+if ! mount -t ext4 -o ro,noload /dev/vdb /mnt/webpc-legacy 2>/dev/null; then
+  echo "WEBPC_LEGACY_DISK_MIGRATION_FAILED: previous disk could not be mounted read-only"
+  exit 0
+fi
+copy_tree() {
+  source_path="$1"
+  target_path="$2"
+  if [ -d "$source_path" ]; then
+    mkdir -p "$target_path"
+    cp -a -n "$source_path"/. "$target_path"/ 2>/dev/null || true
+  fi
+}
+# Preserve user data and manually installed applications without overwriting
+# the new Java/Xorg/Mesa system packages or the new system configuration.
+copy_tree /mnt/webpc-legacy/root /root
+copy_tree /mnt/webpc-legacy/home /home
+copy_tree /mnt/webpc-legacy/opt /opt
+copy_tree /mnt/webpc-legacy/usr/local /usr/local
+copy_tree /mnt/webpc-legacy/srv /srv
+copy_tree /mnt/webpc-legacy/var/games /var/games
+if [ -f /mnt/webpc-legacy/lib/apk/db/installed ]; then
+  sed -n 's/^P://p' /mnt/webpc-legacy/lib/apk/db/installed > /var/lib/webpc/legacy-apk-packages.txt
+fi
+sync
+umount /mnt/webpc-legacy 2>/dev/null || true
+touch "$marker"
+echo "WEBPC_LEGACY_DISK_MIGRATION_DONE"
+exit 0
+WEBPC_MIGRATE_EOF
+chmod 755 /etc/local.d/webpc-migrate-legacy.start
+if [ -x /etc/init.d/local ]; then
+  rc-update add local default
+else
+  echo "OpenRC local service is missing; cannot enable legacy-disk migration." >&2
+  exit 24
+fi
+
 echo "=== Verifying the installed runtime ==="
 apk info -e openjdk21-jre
 apk info -e prismlauncher
@@ -143,7 +194,7 @@ command -v Xorg
 command -v xinit
 test -x /usr/local/bin/webpc-minecraft-display
 test -s /etc/X11/xorg.conf.d/20-webpc.conf
-test -s /etc/profile.d/webpc-java.sh
+test -s /etc/profile.d/webpc-java.sh\ntest -x /etc/local.d/webpc-migrate-legacy.start\nrc-update show default 2>/dev/null | grep -q local
 JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
 export LD_LIBRARY_PATH="$JAVA_HOME/lib/server:$JAVA_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 JAVA_AWT="$(find /usr/lib/jvm -name libawt_xawt.so -type f -print -quit 2>/dev/null)"
