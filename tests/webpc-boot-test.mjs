@@ -14,7 +14,7 @@ async function getExpectedRelease() {
   const response = await fetch(baseUrl + "/worker-test", { signal: AbortSignal.timeout(30000) });
   if (!response.ok) throw new Error("Worker diagnostics returned HTTP " + response.status);
   const html = await response.text();
-  const match = html.match(/QEMU runtime release:<\\/strong>\\s*([^<\\s]+)/i);
+  const match = html.match(/QEMU runtime release:[^>]*>([^<\\s]+)/i);
   if (!match) throw new Error("Could not read the active QEMU release tag from /worker-test");
   return match[1];
 }
