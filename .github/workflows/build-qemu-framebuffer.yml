@@ -8,7 +8,7 @@ on:
       - experimental/minecraft-guest-display
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: webpc-qemu-framebuffer-build
@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ !contains(github.event.head_commit.message, '[skip qemu build]') }}
     runs-on: ubuntu-22.04
     timeout-minutes: 150
     steps:
@@ -93,3 +94,66 @@ jobs:
           path: artifacts/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish OPFS-enabled QEMU runtime as a versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          TAG="webpc-opfs-${GITHUB_RUN_ID}"
+          gh release create "$TAG" \
+            artifacts/out.js#out.js \
+            artifacts/qemu-system-x86_64.wasm#qemu-system-x86_64.wasm \
+            artifacts/qemu-system-x86_64.worker.js#qemu-system-x86_64.worker.js \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "WebPC OPFS-enabled QEMU runtime ${GITHUB_RUN_NUMBER}" \
+            --notes "Built from ${GITHUB_SHA}. Includes the WebPC OPFS block protocol and browser SyncAccessHandle bridge. Production is switched only after all build and link checks pass."
+
+      - name: Activate the verified runtime in the Cloudflare Worker
+        run: |
+          set -eux
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          TAG="webpc-opfs-${GITHUB_RUN_ID}"
+          python3 <<'PY'
+          import os, re
+          from pathlib import Path
+          p = Path("index.html")
+          s = p.read_text()
+          s, count = re.subn(
+              r'const ASSET_CACHE_NAME = "[^"]+";',
+              f'const ASSET_CACHE_NAME = "webpc-runtime-assets-v5-opfs-{os.environ["GITHUB_RUN_ID"]}";',
+              s, count=1
+          )
+          if count != 1:
+              raise SystemExit("Could not rotate the browser runtime cache.")
+          p.write_text(s)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Prepare browser cache for verified OPFS runtime [skip qemu build]"
+          INDEX_COMMIT="$(git rev-parse HEAD)"
+          python3 - "$TAG" "$INDEX_COMMIT" <<'PY'
+          import re, sys
+          from pathlib import Path
+          p = Path("_worker.js")
+          s = p.read_text()
+          s, release_count = re.subn(
+              r'(const RELEASE_BASE =\s*")[^"]+(");',
+              lambda m: m.group(1) + "https://github.com/bowslicegames/Webpc-2/releases/download/" + sys.argv[1] + "/" + m.group(2),
+              s, count=1
+          )
+          s, pin_count = re.subn(
+              r'(const STATIC_COMMIT =\s*")[0-9a-f]+(");',
+              lambda m: m.group(1) + sys.argv[2] + m.group(2),
+              s, count=1
+          )
+          if release_count != 1 or pin_count != 1:
+              raise SystemExit("Could not safely update the Worker release URL and static commit pin.")
+          p.write_text(s)
+          PY
+          git add _worker.js
+          git commit -m "Activate verified OPFS QEMU runtime [skip qemu build]"
+          git push origin HEAD:main
