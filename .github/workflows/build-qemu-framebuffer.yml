@@ -140,6 +140,27 @@ jobs:
           )
           if count != 1:
               raise SystemExit("Could not rotate the browser runtime cache.")
+          # Keep the browser's strict download-size manifest in sync with the
+          # exact binaries produced by this build, rather than stale constants.
+          for filename in (
+              "qemu-system-x86_64.wasm",
+              "out.js",
+              "qemu-system-x86_64.worker.js",
+          ):
+              artifact = Path("artifacts") / filename
+              if not artifact.is_file() or artifact.stat().st_size <= 0:
+                  raise SystemExit(f"Missing or empty runtime artifact: {filename}")
+              actual_size = artifact.stat().st_size
+              size_pattern = re.compile(
+                  r'("' + re.escape(filename) + r'"\\s*:\\s*)\\d+'
+              )
+              s, size_count = size_pattern.subn(
+                  lambda match: match.group(1) + str(actual_size),
+                  s,
+                  count=1,
+              )
+              if size_count != 1:
+                  raise SystemExit(f"Could not update KNOWN_SIZES entry for {filename}")
           p.write_text(s)
           PY
           git config user.name "github-actions[bot]"
