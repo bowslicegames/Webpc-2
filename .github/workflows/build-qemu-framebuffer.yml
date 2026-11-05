@@ -47,6 +47,8 @@ jobs:
           grep -Fq 'webpc_qemu_capture_surface(con->surface)' qemu-src/ui/console.c
           grep -Fq "'webpc-display-abi.c'" qemu-src/ui/meson.build
           grep -Fq "'webpc-qemu-hook.c'" qemu-src/ui/meson.build
+          grep -Fq "'webpc-opfs.c'" qemu-src/block/meson.build
+          grep -Fq 'block_init(bdrv_webpc_opfs_init)' qemu-src/block/webpc-opfs.c
 
       - name: Build the pinned Emscripten toolchain image
         run: docker build --pull -t webpc-qemu-build qemu-src
@@ -72,6 +74,17 @@ jobs:
           test -s artifacts/qemu-system-x86_64.worker.js
           file artifacts/*
           ls -lh artifacts
+
+      - name: Verify OPFS protocol and JavaScript bridge are linked into the runtime
+        run: |
+          set -eux
+          # The protocol must be present in the linked Wasm module, not merely
+          # copied into the source tree or compiled as an unused object.
+          grep -a -Fq 'webpc-opfs' artifacts/qemu-system-x86_64.wasm
+          # EM_ASYNC_JS bridge code must be emitted into the Emscripten loader.
+          grep -a -Fq '__webpcOpfsAccessHandle' artifacts/out.js
+          sha256sum artifacts/out.js artifacts/qemu-system-x86_64.wasm artifacts/qemu-system-x86_64.worker.js
+          printf 'Verified linked WebPC OPFS block protocol and browser bridge.\\n'
 
       - name: Upload experimental QEMU build
         uses: actions/upload-artifact@v4
