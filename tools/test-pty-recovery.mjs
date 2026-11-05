@@ -32,7 +32,7 @@ assert.deepEqual(signals, ["SIGINT"]);
 
 // Restore normal terminal input settings.
 master.ldisc.termios = originalTermios;
-onData("x");
-assert.deepEqual(slave.read(), [120]);
+onData("x\\n");
+assert.deepEqual(slave.read(), [120, 10]);
 
 console.log("PASS: raw Ctrl+C reaches the guest PTY and normal input is restored.");
