@@ -22,8 +22,9 @@ assert.deepEqual(slave.read(), []);
 // Recovery disables ISIG temporarily so the literal byte reaches the guest.
 const originalTermios = master.ldisc.termios;
 const rawTermios = originalTermios.clone();
-rawTermios.lflag &= ~1;
+rawTermios.lflag &= ~(1 | 2);
 rawTermios.ISIG_P = false;
+rawTermios.ICANON_P = false;
 master.ldisc.termios = rawTermios;
 onData("\x03");
 assert.deepEqual(slave.read(), [3]);
