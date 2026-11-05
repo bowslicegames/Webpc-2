@@ -152,7 +152,7 @@ jobs:
                   raise SystemExit(f"Missing or empty runtime artifact: {filename}")
               actual_size = artifact.stat().st_size
               size_pattern = re.compile(
-                  r'("' + re.escape(filename) + r'"\\s*:\\s*)\\d+'
+                  r'("' + re.escape(filename) + r'"\s*:\s*)\d+'
               )
               s, size_count = size_pattern.subn(
                   lambda match: match.group(1) + str(actual_size),
