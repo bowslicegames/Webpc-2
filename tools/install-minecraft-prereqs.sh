@@ -34,7 +34,6 @@ apk update
 echo "=== Installing Minecraft Java 21, Prism, Xorg and Mesa ==="
 apk add --no-cache \
   openjdk21-jre \
-  prismlauncher \
   xorg-server \
   xf86-input-libinput \
   xinit \
@@ -59,6 +58,14 @@ apk add --no-cache \
   fontconfig \
   font-dejavu \
   alsa-lib
+
+# Prism is not published for Alpine 3.21 x86_64. Try the signed v3.22
+# community package as a single, ABI-checked package while keeping the guest
+# base OS and all shared libraries on the stable v3.21 repositories.
+echo "=== Installing the signed Prism Launcher package ==="
+apk add --no-cache \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/v3.22/community \
+  prismlauncher
 
 echo "=== Configuring Java defaults ==="
 mkdir -p /etc/profile.d
@@ -130,6 +137,7 @@ apk info -e mesa-egl
 java -version 2>&1 | tee /tmp/webpc-java-version.txt
 grep -Eq 'version "21|openjdk version "21' /tmp/webpc-java-version.txt
 command -v prismlauncher
+test -x "$(command -v prismlauncher)"
 command -v Xorg
 command -v xinit
 test -x /usr/local/bin/webpc-minecraft-display
