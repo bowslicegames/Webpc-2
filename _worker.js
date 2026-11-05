@@ -36,7 +36,7 @@ const STATIC_FILES = new Set([
 ]);
 
 const QEMU_RELEASE_BASE =
-  "https://github.com/bowslicegames/Webpc-2/releases/download/webpc-opfs-42069367768/";
+  "https://github.com/bowslicegames/Webpc-2/releases/download/webpc-opfs-42075823908/"
 
 /*
  * The OPFS build release intentionally contains only the newly compiled
@@ -64,7 +64,7 @@ const BASE_ASSETS_RELEASE_TAG = BASE_ASSETS_RELEASE_BASE.split("/").filter(Boole
  * Worker itself is already new.
  */
 const STATIC_COMMIT =
-  "7425756bb877097282f9ea4f515c8cdd1a76fc01"
+  "862c929db2ea41c32f56444bd2ac21add80a4318"
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
