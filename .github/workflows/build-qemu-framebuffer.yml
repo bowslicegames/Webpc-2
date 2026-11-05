@@ -57,7 +57,10 @@ jobs:
           grep -Fq "'webpc-opfs.c'" qemu-src/block/meson.build
           grep -Fq 'block_init(bdrv_webpc_opfs_init)' qemu-src/block/webpc-opfs.c
           grep -Fq '    .bdrv_needs_filename = true,' qemu-src/block/webpc-opfs.c
-          grep -Fq 'qdict_del(options, "filename")' qemu-src/block/webpc-opfs.c
+          grep -Fq 'static QemuOptsList webpc_opfs_runtime_opts' qemu-src/block/webpc-opfs.c
+          grep -Fq 'qemu_opts_absorb_qdict(opts, options, errp)' qemu-src/block/webpc-opfs.c
+          grep -Fq 'qemu_opt_get(opts, "filename")' qemu-src/block/webpc-opfs.c
+          ! grep -Fq 'qdict_del(options, "filename")' qemu-src/block/webpc-opfs.c
 
       - name: Build the pinned Emscripten toolchain image
         run: docker build --pull -t webpc-qemu-build qemu-src
