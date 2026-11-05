@@ -1,0 +1,58 @@
+name: WebPC browser boot test
+
+on:
+  workflow_call:
+    inputs:
+      expected_release_tag:
+        description: "QEMU release tag that must be active before the boot test starts"
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      expected_release_tag:
+        description: "Optional QEMU release tag to test; blank tests the currently active release"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  browser-boot:
+    name: Boot Alpine in headless Chromium with a fresh OPFS disk
+    runs-on: ubuntu-22.04
+    timeout-minutes: 18
+    steps:
+      - name: Check out WebPC boot test
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright
+        run: npm install --no-save playwright@1.56.1
+
+      - name: Install headless Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Check boot test JavaScript syntax
+        run: node --check tests/webpc-boot-test.mjs
+
+      - name: Boot WebPC and wait for the real Alpine login prompt
+        env:
+          WEBPC_BASE_URL: https://webpc.bowslicegames.workers.dev
+          WEBPC_EXPECTED_RELEASE: ${{ inputs.expected_release_tag }}
+        run: node tests/webpc-boot-test.mjs
+
+      - name: Upload boot diagnostics if the test fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webpc-boot-test-diagnostics-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
