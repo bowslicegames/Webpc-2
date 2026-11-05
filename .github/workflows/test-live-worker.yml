@@ -152,14 +152,23 @@ jobs:
           done
           test "$stack_ready" -eq 1
 
-          # Confirm the live diagnostic and both sides of split-release routing.
-          curl --fail --silent --show-error --location --max-time 20 \
-            https://webpc.bowslicegames.workers.dev/worker-test -o work/worker-test.html
-          grep -Fq "QEMU runtime release:</strong> $qemu_release_tag" work/worker-test.html
-          grep -Fq 'Base assets release:</strong> V1' work/worker-test.html
-          curl --fail --silent --show-error --location --head --max-time 30 \
-            https://webpc.bowslicegames.workers.dev/assets/out.js -D work/out-headers.txt -o /dev/null
-          grep -Fiq "X-WebPC-Release: $qemu_release_tag" work/out-headers.txt
+          # Wait until both the Worker script and its static-file pin are current.
+          release_routes_ready=0
+          for attempt in $(seq 1 24); do
+            curl --silent --show-error --location --max-time 20 \
+              https://webpc.bowslicegames.workers.dev/worker-test -o work/worker-test.html || true
+            curl --silent --show-error --location --head --max-time 20 \
+              https://webpc.bowslicegames.workers.dev/assets/out.js -D work/out-headers.txt -o /dev/null || true
+            if grep -Fq "QEMU runtime release:</strong> $qemu_release_tag" work/worker-test.html \
+              && grep -Fq 'Base assets release:</strong> V1' work/worker-test.html \
+              && grep -Fiq "X-WebPC-Release: $qemu_release_tag" work/out-headers.txt; then
+              release_routes_ready=1
+              break
+            fi
+            echo "Waiting for split-release routing to deploy (attempt $attempt/24)…"
+            sleep 5
+          done
+          test "$release_routes_ready" -eq 1
           curl --fail --silent --show-error --location --head --max-time 30 \
             https://webpc.bowslicegames.workers.dev/assets/load-rom.data -D work/base-headers.txt -o /dev/null
           grep -Fiq 'X-WebPC-Release: V1' work/base-headers.txt
