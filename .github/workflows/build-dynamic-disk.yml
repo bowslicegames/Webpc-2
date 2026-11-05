@@ -333,7 +333,12 @@ jobs:
     needs: build-dynamic-disk
     uses: ./.github/workflows/validate.yml
 
+  live-worker:
+    name: Verify the deployed Worker serves the new disk and static commit
+    needs: [build-dynamic-disk, validate]
+    uses: ./.github/workflows/test-live-worker.yml
+
   boot-test:
     name: Boot the published Minecraft-ready guest disk
-    needs: [build-dynamic-disk, validate]
+    needs: [build-dynamic-disk, validate, live-worker]
     uses: ./.github/workflows/boot-test.yml
