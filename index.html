@@ -4655,6 +4655,42 @@ main();
   const controls = document.getElementById("controls");
   const app = document.getElementById("app");
   let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "", selectedFilePath = null, commandChannelStalled = false, homeDirsInitialized = false;
+  /*
+   * iPadOS can suspend JavaScript timers while another app is foregrounded.
+   * Pause in-flight command deadlines while hidden and grant a fresh response
+   * window when WebPC returns, rather than poisoning the app broker.
+   */
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      if (pending && pending.timeout) {
+        clearTimeout(pending.timeout);
+        pending.timeout = null;
+        pending.pausedForBackground = true;
+      }
+      return;
+    }
+    if (pending && pending.pausedForBackground && !pending.timeout) {
+      pending.pausedForBackground = false;
+      armGuestCommandTimeout(pending, Math.max(pending.timeoutMs || 20000, 90000));
+    }
+    updateRuntimeStatus();
+  });
+  function armGuestCommandTimeout(job, delay) {
+    if (!job || pending !== job) return;
+    if (job.timeout) clearTimeout(job.timeout);
+    job.timeout = setTimeout(() => {
+      if (pending !== job) return;
+      if (document.visibilityState === "hidden") {
+        job.timeout = null;
+        job.pausedForBackground = true;
+        return;
+      }
+      commandChannelStalled = true;
+      const stopped = new Error("The guest command channel did not respond after WebPC resumed. The Linux task may still be running; inspect its task log before restarting the VM.");
+      drainServiceQueues("The guest command channel is temporarily unresponsive. Check task logs and retry after WebPC resumes.");
+      job.finish(stopped, job.text);
+    }, delay);
+  }
   const BASE_HOME = "/root";
   const enc = new TextEncoder();
   const dec = new TextDecoder();
@@ -4760,6 +4796,9 @@ main();
     pending = p;
     function finish(err, result) {
       if (p.timeout) clearTimeout(p.timeout);
+      if (terminal && terminal.options && p.previousDisableStdin !== undefined) {
+        terminal.options.disableStdin = p.previousDisableStdin;
+      }
       if (pending === p) pending = null;
       commandBusy = false;
       updateRuntimeStatus();
@@ -4773,13 +4812,20 @@ main();
     const commandTimeoutMs = job.command.includes("WEBPC_DECOMPRESS_OK") ? 180000 :
       (job.command.includes("WEBPC_TASK_STARTED") ? 60000 :
         (job.command.includes("WEBPC_APKINDEX_OK") ? 45000 : 20000));
-    p.timeout = setTimeout(() => {
-      if (pending !== p) return;
-      commandChannelStalled = true;
-      const stopped = new Error("No response from the shell. Reload the VM before retrying so app commands cannot overlap.");
-      drainServiceQueues("The shell stopped responding. Reload the VM before running more app tasks.");
-      finish(stopped, p.text);
-    }, commandTimeoutMs);
+    p.timeoutMs = commandTimeoutMs;
+    p.previousDisableStdin = terminal && terminal.options
+      ? terminal.options.disableStdin
+      : undefined;
+    /*
+     * The detached Linux task writes to its own log/status files. Dispatch
+     * app-control bytes directly through the PTY API, not by pasting text
+     * into xterm; temporarily lock physical Terminal typing so it cannot
+     * interleave with a broker transaction. The current QEMU image still
+     * exposes one serial transport, so this isolates the UI/input path but
+     * is not a second virtual serial device.
+     */
+    if (terminal && terminal.options) terminal.options.disableStdin = true;
+    armGuestCommandTimeout(p, commandTimeoutMs);
     // Keep the markers out of the command line echoed by the interactive shell.
     // Otherwise the broker can mistake the echoed command for its real output and
     // finish before file operations have actually run.
@@ -4790,7 +4836,8 @@ main();
     const wrapped = "printf '%s' '" + encodedPayload + "' | base64 -d | sh";
     try {
       if (wrapped.length <= 1400) {
-        terminal.paste(wrapped + "\r");
+        if (!masterPTY || typeof masterPTY.write !== "function") throw new Error("Guest PTY transport is unavailable for desktop app commands.");
+        masterPTY.write(wrapped + "\r");
       } else {
         /*
          * iOS terminals can truncate very long pasted shell lines. Transport
@@ -4808,7 +4855,8 @@ main();
         const sendNextTransportLine = () => {
           if (pending !== p || transportIndex >= commands.length) return;
           try {
-            terminal.paste(commands[transportIndex++] + "\r");
+            if (!masterPTY || typeof masterPTY.write !== "function") throw new Error("Guest PTY transport is unavailable for desktop app commands.");
+            masterPTY.write(commands[transportIndex++] + "\r");
             if (transportIndex < commands.length) setTimeout(sendNextTransportLine, 90);
           } catch (e) { finish(e, ""); }
         };
@@ -4907,6 +4955,7 @@ main();
     const win = document.getElementById(id); if (!win) return;
     win.classList.add("open"); win.style.zIndex = ++zTop;
     if (id === "terminalWindow") attachTerminal();
+    else if (terminal && typeof terminal.blur === "function") terminal.blur();
     if (id === "fileWindow") { if (shellReadyNow()) refreshFiles(); else fileStatus.textContent="Waiting for the Alpine shell…"; }
     if (id === "minecraftWindow") checkJavaStatus(false);
      if (id === "servicesWindow") renderServiceTasks();
@@ -5036,7 +5085,7 @@ main();
   }
   const fileMenu=document.getElementById("fileMenu"), fileMenuPopup=document.getElementById("fileMenuPopup"), fileDecompress=document.getElementById("fileDecompress"), fileInstallPackage=document.getElementById("fileInstallPackage");
   const backgroundTasks = new Map();
-  function renderServiceTasks(){const list=document.getElementById("serviceTaskList"),summary=document.getElementById("serviceSummary");if(!list||!summary)return;list.replaceChildren();const tasks=[...backgroundTasks.values()].sort((a,b)=>b.started-a.started);summary.textContent=tasks.length?tasks.length+" task(s) tracked. Long jobs run as detached Linux processes; short control messages still use the shared serial bridge.":"No background tasks started this session.";if(!tasks.length){const e=document.createElement("div");e.className="task-empty";e.textContent="No background tasks yet. Start a download, archive extraction, or Java setup to see it here.";list.appendChild(e);return;}tasks.forEach(t=>{const c=document.createElement("article");c.className="task-card";const h=document.createElement("div");h.className="task-card-head";const n=document.createElement("span");n.textContent=(t.kind==="java"?"☕ ":t.kind==="download"?"⬇️ ":t.kind==="unzip"?"📦 ":"⚙️ ")+t.label;n.style.flex="1";const p=document.createElement("span");p.className="service-pill";p.textContent=t.state||"Running";h.append(n,p);c.appendChild(h);const m=document.createElement("div");m.className="task-card-meta";m.textContent="Started "+Math.round((Date.now()-t.started)/1000)+"s ago · log: "+t.logPath;c.appendChild(m);if(t.lastDetail){const d=document.createElement("div");d.className="task-card-meta";d.textContent=t.lastDetail;c.appendChild(d);}const actions=document.createElement("div");actions.className="task-card-actions";const log=document.createElement("button");log.className="ui-button";log.textContent="View log";log.onclick=()=>runGuestForService(t.kind==="java"?"minecraft":"files","tail -n 35 "+JSON.stringify(t.logPath)+" 2>/dev/null || true",(err,out)=>{t.lastDetail=err?err.message:(out||"(empty log)").slice(-1800);renderServiceTasks();});actions.appendChild(log);const restart=document.createElement("button");restart.className="ui-button";restart.textContent="Restart";restart.disabled=!t.pid;restart.onclick=()=>{if(!confirm("Restart "+t.label+"? This will stop the current process and relaunch it."))return;t.state="Restarting";t.lastDetail="Sending restart request…";renderServiceTasks();const svc=t.kind==="java"?"minecraft":"files";const restartCmd="pkill -TERM -P "+Number(t.pid||0)+" 2>/dev/null || true; kill "+Number(t.pid||0)+" 2>/dev/null || true; rm -f "+JSON.stringify(t.statusPath)+"; : > "+JSON.stringify(t.logPath)+"; "+t.command;runGuestForService(svc,restartCmd,(err,out)=>{const pm=(out||"").match(/WEBPC_TASK_STARTED:([0-9]+)/);if(err||!pm){t.state="Restart failed";t.lastDetail=err?err.message:(out||"No start confirmation returned").slice(-500);renderServiceTasks();return;}t.pid=Number(pm[1]);t.started=Date.now();t.state="Running";t.lastDetail="Restarted";renderServiceTasks();pollBackgroundTask(t.statusPath);});};actions.appendChild(restart);if(t.pid){const stop=document.createElement("button");stop.className="ui-button";stop.textContent="Stop task";stop.onclick=()=>{if(confirm("Stop "+t.label+"?"))runGuestForService(t.kind==="java"?"minecraft":"files","pkill -TERM -P "+Number(t.pid)+" 2>/dev/null || true; kill "+Number(t.pid)+" 2>/dev/null || true; printf '143\\n' > "+JSON.stringify(t.statusPath),(err)=>{t.state="Stop requested";t.lastDetail=err?err.message:"Signal sent";renderServiceTasks();});};actions.appendChild(stop);}c.appendChild(actions);list.appendChild(c);});}
+  function renderServiceTasks(){const list=document.getElementById("serviceTaskList"),summary=document.getElementById("serviceSummary");if(!list||!summary)return;list.replaceChildren();const tasks=[...backgroundTasks.values()].sort((a,b)=>b.started-a.started);summary.textContent=tasks.length?tasks.length+" task(s) tracked. Long jobs run as detached Linux processes with separate log/status files; app-control bytes bypass visible Terminal input. The VM still has one underlying guest serial transport.":"No background tasks started this session.";if(!tasks.length){const e=document.createElement("div");e.className="task-empty";e.textContent="No background tasks yet. Start a download, archive extraction, or Java setup to see it here.";list.appendChild(e);return;}tasks.forEach(t=>{const c=document.createElement("article");c.className="task-card";const h=document.createElement("div");h.className="task-card-head";const n=document.createElement("span");n.textContent=(t.kind==="java"?"☕ ":t.kind==="download"?"⬇️ ":t.kind==="unzip"?"📦 ":"⚙️ ")+t.label;n.style.flex="1";const p=document.createElement("span");p.className="service-pill";p.textContent=t.state||"Running";h.append(n,p);c.appendChild(h);const m=document.createElement("div");m.className="task-card-meta";m.textContent="Started "+Math.round((Date.now()-t.started)/1000)+"s ago · log: "+t.logPath;c.appendChild(m);if(t.lastDetail){const d=document.createElement("div");d.className="task-card-meta";d.textContent=t.lastDetail;c.appendChild(d);}const actions=document.createElement("div");actions.className="task-card-actions";const log=document.createElement("button");log.className="ui-button";log.textContent="View log";log.onclick=()=>runGuestForService(t.kind==="java"?"minecraft":"files","tail -n 35 "+JSON.stringify(t.logPath)+" 2>/dev/null || true",(err,out)=>{t.lastDetail=err?err.message:(out||"(empty log)").slice(-1800);renderServiceTasks();});actions.appendChild(log);const restart=document.createElement("button");restart.className="ui-button";restart.textContent="Restart";restart.disabled=!t.pid;restart.onclick=()=>{if(!confirm("Restart "+t.label+"? This will stop the current process and relaunch it."))return;t.state="Restarting";t.lastDetail="Sending restart request…";renderServiceTasks();const svc=t.kind==="java"?"minecraft":"files";const restartCmd="pkill -TERM -P "+Number(t.pid||0)+" 2>/dev/null || true; kill "+Number(t.pid||0)+" 2>/dev/null || true; rm -f "+JSON.stringify(t.statusPath)+"; : > "+JSON.stringify(t.logPath)+"; "+t.command;runGuestForService(svc,restartCmd,(err,out)=>{const pm=(out||"").match(/WEBPC_TASK_STARTED:([0-9]+)/);if(err||!pm){t.state="Restart failed";t.lastDetail=err?err.message:(out||"No start confirmation returned").slice(-500);renderServiceTasks();return;}t.pid=Number(pm[1]);t.started=Date.now();t.state="Running";t.lastDetail="Restarted";renderServiceTasks();pollBackgroundTask(t.statusPath);});};actions.appendChild(restart);if(t.pid){const stop=document.createElement("button");stop.className="ui-button";stop.textContent="Stop task";stop.onclick=()=>{if(confirm("Stop "+t.label+"?"))runGuestForService(t.kind==="java"?"minecraft":"files","pkill -TERM -P "+Number(t.pid)+" 2>/dev/null || true; kill "+Number(t.pid)+" 2>/dev/null || true; printf '143\\n' > "+JSON.stringify(t.statusPath),(err)=>{t.state="Stop requested";t.lastDetail=err?err.message:"Signal sent";renderServiceTasks();});};actions.appendChild(stop);}c.appendChild(actions);list.appendChild(c);});}
   function setTaskStatus(target, text, bad) {
     if (!target) return;
     target.textContent = text;
