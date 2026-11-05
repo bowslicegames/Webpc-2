@@ -106,6 +106,20 @@ jobs:
           if (html.includes("browserLoading")) {
             throw new Error("Stale browserLoading reference remains in the desktop lifecycle code");
           }
+          const brokerStart = html.indexOf("function pumpGuestQueue()");
+          const brokerEnd = html.indexOf("window.webpcDesktopConsumeOutput", brokerStart);
+          const broker = html.slice(brokerStart, brokerEnd);
+          for (const marker of ["armGuestCommandTimeout", "masterPTY.write", "pausedForBackground"]) {
+            if (!broker.includes(marker) && !html.includes(marker)) {
+              throw new Error("Resume-safe desktop app broker marker missing: " + marker);
+            }
+          }
+          if (broker.includes("terminal.paste(")) {
+            throw new Error("Desktop app commands must not be pasted into the visible Terminal widget");
+          }
+          if (!html.includes("The VM still has one underlying guest serial transport")) {
+            throw new Error("Desktop task UI must accurately disclose the shared guest serial transport");
+          }
           if (!html.includes('const BASE_HOME = "/root";') ||
               !html.includes('value="/root/Desktop"')) {
             throw new Error("File Manager home must match the Alpine root account's /root home");
