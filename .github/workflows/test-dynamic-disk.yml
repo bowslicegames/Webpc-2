@@ -66,6 +66,15 @@ jobs:
           print(f"PASS: 8 GiB virtual disk, {physical} physical bytes.")
           PY
           qemu-img convert -f qcow2 -O raw -S 4k work/disk-rootfs-qcow2.img work/disk-rootfs.raw
+          sudo debugfs -R 'cat /etc/webpc-minecraft-prereqs' work/disk-rootfs.raw > work/minecraft-prereqs.txt
+          cat work/minecraft-prereqs.txt
+          grep -q 'OpenJDK Runtime Environment' work/minecraft-prereqs.txt
+          grep -q 'openjdk21-jre' work/minecraft-prereqs.txt
+          grep -q 'prismlauncher' work/minecraft-prereqs.txt
+          sudo debugfs -R 'stat /usr/bin/prismlauncher' work/disk-rootfs.raw > work/prism-file-check.txt
+          grep -q 'Inode:' work/prism-file-check.txt
+          sudo debugfs -R 'stat /etc/local.d/webpc-migrate-legacy.start' work/disk-rootfs.raw > work/migration-file-check.txt
+          grep -q 'Inode:' work/migration-file-check.txt
           sudo e2fsck -fn work/disk-rootfs.raw
           echo "Guest /etc/passwd:"
           sudo debugfs -R 'cat /etc/passwd' work/disk-rootfs.raw || true
