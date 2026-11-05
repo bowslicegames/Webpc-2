@@ -52,6 +52,9 @@ const QEMU_RELEASE_ASSETS = new Set([
   "qemu-system-x86_64.worker.js"
 ]);
 
+const QEMU_RELEASE_TAG = QEMU_RELEASE_BASE.split("/").filter(Boolean).pop();
+const BASE_ASSETS_RELEASE_TAG = BASE_ASSETS_RELEASE_BASE.split("/").filter(Boolean).pop();
+
 /*
  * Pin the small application files to a known Git commit.
  *
@@ -199,8 +202,8 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
 <h1>WebPC 2 Worker is ACTIVE</h1>
 <p><strong>Cloudflare Worker:</strong> running</p>
 <p><strong>Asset proxy:</strong> active</p>
-<p><strong>QEMU runtime release:</strong> ${QEMU_RELEASE_BASE.split("/").filter(Boolean).slice(-2, -1)[0]}</p>
-<p><strong>Base assets release:</strong> ${BASE_ASSETS_RELEASE_BASE.split("/").filter(Boolean).slice(-2, -1)[0]}</p>
+<p><strong>QEMU runtime release:</strong> ${QEMU_RELEASE_TAG}</p>
+<p><strong>Base assets release:</strong> ${BASE_ASSETS_RELEASE_TAG}</p>
 <p><strong>QEMU asset:</strong> allowed</p>
 <p><strong>Cross-origin isolation:</strong> enabled</p>
 </main>
@@ -627,6 +630,10 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         headers.set("Cross-Origin-Embedder-Policy", "require-corp");
         headers.set("X-WebPC-Worker", "active");
         headers.set("X-WebPC-Asset", filename);
+        headers.set(
+          "X-WebPC-Release",
+          QEMU_RELEASE_ASSETS.has(filename) ? QEMU_RELEASE_TAG : BASE_ASSETS_RELEASE_TAG
+        );
         headers.set(
           "Cache-Control",
           filename.endsWith(".js") || filename.endsWith(".mjs")
