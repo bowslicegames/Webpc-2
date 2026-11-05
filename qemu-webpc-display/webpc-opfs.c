@@ -136,6 +136,8 @@ static int webpc_opfs_file_open(BlockDriverState *bs, QDict *options,
     }
 
     state->filename = g_strdup(filename);
+    /* The block layer validates unconsumed protocol options after open. */
+    qdict_del(options, "filename");
     ret = webpc_opfs_open(state->filename);
     if (ret < 0) {
         error_setg(errp, "Unable to open OPFS disk '%s'; check browser storage permission and disk initialization",
