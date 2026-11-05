@@ -4830,19 +4830,22 @@ main();
     // Otherwise the broker can mistake the echoed command for its real output and
     // finish before file operations have actually run.
     const payload = "printf '\\n" + begin + "\\n'; " + job.command +
-      "; __webpc_exit_code=$?; if [ \"$__webpc_exit_code\" -eq 0 ]; then printf '\\n" + end +
+      "; __webpc_exit_code=$?; stty echo 2>/dev/null || true; if [ \"$__webpc_exit_code\" -eq 0 ]; then printf '\\n" + end +
       "\\n'; else printf '\\n" + fail + "\\n'; fi";
     const encodedPayload = b64(payload);
     const wrapped = "printf '%s' '" + encodedPayload + "' | base64 -d | sh";
     try {
       if (wrapped.length <= 1400) {
         if (!masterPTY || typeof masterPTY.write !== "function") throw new Error("Guest PTY transport is unavailable for desktop app commands.");
-        masterPTY.write(wrapped + "\r");
+        masterPTY.write("stty -echo 2>/dev/null\\r");
+        setTimeout(() => {
+          if (pending === p) masterPTY.write(wrapped + "\\r");
+        }, 80);
       } else {
         /*
-         * iOS terminals can truncate very long pasted shell lines. Transport
-         * large commands as small base64 chunks, then execute the staged script.
-         * Each line is short enough for the guest's interactive shell.
+         * Large app commands are staged in short PTY writes. Terminal input
+         * is locked and TTY echo is disabled for the transport lines, so the
+         * app script itself is not dumped into the visible terminal window.
          */
         const commandFile = "/tmp/.webpc-command-" + id + ".sh";
         const commands = [": > " + shellQuote(commandFile)];
@@ -4856,11 +4859,12 @@ main();
           if (pending !== p || transportIndex >= commands.length) return;
           try {
             if (!masterPTY || typeof masterPTY.write !== "function") throw new Error("Guest PTY transport is unavailable for desktop app commands.");
-            masterPTY.write(commands[transportIndex++] + "\r");
+            masterPTY.write(commands[transportIndex++] + "\\r");
             if (transportIndex < commands.length) setTimeout(sendNextTransportLine, 90);
           } catch (e) { finish(e, ""); }
         };
-        sendNextTransportLine();
+        masterPTY.write("stty -echo 2>/dev/null\\r");
+        setTimeout(sendNextTransportLine, 80);
       }
     } catch (e) { finish(e, ""); }
   }
