@@ -2,6 +2,12 @@ name: Build and enable dynamic 8 GiB WebPC disk
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/install-minecraft-prereqs.sh"
+      - ".github/workflows/build-dynamic-disk.yml"
 
 permissions:
   contents: write
@@ -116,6 +122,43 @@ jobs:
           test "$rc" -le 1
           sudo dumpe2fs -h work/disk-rootfs.raw 2>/dev/null | grep -E 'Block size|Block count|Free blocks'
           test "$(stat -c '%s' work/disk-rootfs.raw)" -eq "$target"
+
+      - name: Bake and verify Minecraft Java 21 prerequisites inside the guest disk
+        run: |
+          set -eux
+          test -s tools/install-minecraft-prereqs.sh
+          sh -n tools/install-minecraft-prereqs.sh
+          sudo mkdir -p /mnt/webpc-rootfs
+          cleanup() {
+            sudo umount /mnt/webpc-rootfs/dev/pts 2>/dev/null || true
+            sudo umount /mnt/webpc-rootfs/dev 2>/dev/null || true
+            sudo umount /mnt/webpc-rootfs/proc 2>/dev/null || true
+            sudo umount /mnt/webpc-rootfs/sys 2>/dev/null || true
+            sudo umount /mnt/webpc-rootfs 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          sudo mount -o loop work/disk-rootfs.raw /mnt/webpc-rootfs
+          sudo install -D -m 755 tools/install-minecraft-prereqs.sh /mnt/webpc-rootfs/root/webpc-install-minecraft-prereqs.sh
+          sudo mount --bind /dev /mnt/webpc-rootfs/dev
+          sudo mount --bind /dev/pts /mnt/webpc-rootfs/dev/pts
+          sudo mount -t proc proc /mnt/webpc-rootfs/proc
+          sudo mount --bind /sys /mnt/webpc-rootfs/sys
+          sudo cp /etc/resolv.conf /mnt/webpc-rootfs/etc/resolv.conf
+          sudo chroot /mnt/webpc-rootfs /bin/sh /root/webpc-install-minecraft-prereqs.sh
+          sudo chroot /mnt/webpc-rootfs /bin/sh -ec '
+            java -version 2>&1 | tee /tmp/webpc-java-build-check.txt
+            grep -Eq "version \\"21|openjdk version \\"21" /tmp/webpc-java-build-check.txt
+            command -v prismlauncher
+            command -v Xorg
+            command -v xinit
+            test -x /usr/local/bin/webpc-minecraft-display
+            test -s /etc/webpc-minecraft-prereqs
+            ! ldd "$(command -v prismlauncher)" 2>&1 | grep -q "not found"
+            echo "PASS: Java 21 and Minecraft prerequisites are baked into the ext4 guest disk."
+          '
+          cleanup
+          trap - EXIT
+          sudo e2fsck -f -n work/disk-rootfs.raw
 
       - name: Convert to a sparse dynamically growing qcow2 disk
         run: |
