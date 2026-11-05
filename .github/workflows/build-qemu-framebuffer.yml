@@ -1,5 +1,7 @@
 name: Build WebPC QEMU framebuffer runtime
 
+# Rebuild and republish the OPFS protocol after the filename-retention fix.
+
 on:
   workflow_dispatch:
   push:
