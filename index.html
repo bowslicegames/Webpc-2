@@ -4806,6 +4806,7 @@ main();
     const originalTermios = lineDiscipline.termios;
     const rawTermios = originalTermios.clone();
     rawTermios.lflag &= ~1; // ISIG
+    rawTermios.ISIG_P = false;
     lineDiscipline.termios = rawTermios;
     try { terminal.paste(value); }
     finally { lineDiscipline.termios = originalTermios; }
@@ -4836,7 +4837,7 @@ main();
       setTimeout(() => {
         if (recoveryAttempt !== attempt) return;
         try {
-          terminal.paste("stty echo 2>/dev/null || true; printf '\\n" + attempt.token + "\\n'\\r");
+          terminal.paste("stty echo 2>/dev/null || true; printf '\\n" + attempt.token + "\\n'\r");
         } catch (error) { failAppChannelRecovery(attempt, error); }
       }, 500);
     } catch (error) {
