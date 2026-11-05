@@ -8,6 +8,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const consoleErrors = [];
 const pageErrors = [];
 const failedRequests = [];
+let page;
 
 async function getExpectedRelease() {
   if (explicitRelease) return explicitRelease;
@@ -55,7 +56,7 @@ try {
   await waitForRelease(expectedRelease);
 
   const context = await browser.newContext();
-  const page = await context.newPage();
+  page = await context.newPage();
   page.setDefaultTimeout(30000);
   page.on("console", message => {
     if (message.type() === "error") consoleErrors.push(message.text());
@@ -123,11 +124,30 @@ try {
 } catch (error) {
   console.error("FAIL:", error.stack || error.message);
   fs.mkdirSync("test-results", { recursive: true });
+  let liveSnapshot = null;
+  if (page) {
+    try {
+      liveSnapshot = await page.evaluate(() => ({
+        url: location.href,
+        loginVisible: !!document.querySelector("#webpcLoginScreen")?.classList.contains("visible"),
+        serial: document.querySelector("#webpcSerialLog")?.innerText || "",
+        bootSignal: document.querySelector("#linuxBootSignal")?.innerText || "",
+        stage: document.querySelector("#mainStage")?.innerText || "",
+        detail: document.querySelector("#stageDetail")?.innerText || "",
+        error: document.querySelector("#errorBox")?.innerText || "",
+        bodyTail: document.body.innerText.slice(-5000)
+      }));
+      await page.screenshot({ path: "test-results/boot-failure.png", fullPage: true });
+    } catch (snapshotError) {
+      liveSnapshot = { snapshotError: String(snapshotError) };
+    }
+  }
   fs.writeFileSync("test-results/boot-diagnostics.json", JSON.stringify({
     error: error.stack || error.message,
     consoleErrors,
     pageErrors,
-    failedRequests
+    failedRequests,
+    liveSnapshot
   }, null, 2));
   throw error;
 } finally {
