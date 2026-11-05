@@ -2906,7 +2906,7 @@ async function createTerminal() {
 
                     const controlByte = String.fromCharCode(code & 31);
                     if (masterPTY && typeof masterPTY.write === "function") {
-                        masterPTY.write(controlByte);
+                        sendGuestInput(controlByte);
                     } else if (terminal && typeof terminal.paste === "function") {
                         terminal.paste(controlByte);
                     }
@@ -4183,8 +4183,16 @@ function updateNanoUiFromOutput(chunk, lastLine) {
     }
 }
 
+function sendGuestInput(value) {
+    if (!terminal || typeof terminal.paste !== "function") {
+        throw new Error("Terminal input transport is unavailable.");
+    }
+    terminal.paste(value);
+    return true;
+}
+
 function writeNanoInput(value) {
-    if (masterPTY && typeof masterPTY.write === "function") masterPTY.write(value);
+    if (masterPTY && typeof masterPTY.write === "function") sendGuestInput(value);
     else if (terminal && typeof terminal.paste === "function") terminal.paste(value);
     else return false;
     return true;
@@ -4268,7 +4276,7 @@ function setupControls() {
         webpcCtrlModifierArmed = false;
         updateCtrlModifierButton();
         if (masterPTY && typeof masterPTY.write === "function") {
-            masterPTY.write("\x1b");
+            sendGuestInput("\x1b");
         } else if (terminal && typeof terminal.paste === "function") {
             terminal.paste("\x1b");
         }
@@ -4796,9 +4804,6 @@ main();
     pending = p;
     function finish(err, result) {
       if (p.timeout) clearTimeout(p.timeout);
-      if (terminal && terminal.options && p.previousDisableStdin !== undefined) {
-        terminal.options.disableStdin = p.previousDisableStdin;
-      }
       if (pending === p) pending = null;
       commandBusy = false;
       updateRuntimeStatus();
@@ -4813,19 +4818,12 @@ main();
       (job.command.includes("WEBPC_TASK_STARTED") ? 60000 :
         (job.command.includes("WEBPC_APKINDEX_OK") ? 45000 : 20000));
     p.timeoutMs = commandTimeoutMs;
-    p.previousDisableStdin = terminal && terminal.options
-      ? terminal.options.disableStdin
-      : undefined;
     /*
-     * The detached Linux task writes to its own log/status files. Dispatch
-     * app-control bytes directly through the PTY API, not by pasting text
-     * into xterm; temporarily lock physical Terminal typing so it cannot
-     * interleave with a broker transaction. The current QEMU image still
-     * exposes one serial transport, so this isolates the UI/input path but
-     * is not a second virtual serial device.
+     * xterm-pty's master is an xterm addon, not an input-writable PTY.
+     * Programmatic guest input must use Terminal.paste(), which emits input
+     * into the PTY master. The guest still has one shared serial transport.
      */
-    if (terminal && terminal.options) terminal.options.disableStdin = true;
-    armGuestCommandTimeout(p, commandTimeoutMs);
+armGuestCommandTimeout(p, commandTimeoutMs);
     // Keep the markers out of the command line echoed by the interactive shell.
     // Otherwise the broker can mistake the echoed command for its real output and
     // finish before file operations have actually run.
@@ -4836,10 +4834,9 @@ main();
     const wrapped = "printf '%s' '" + encodedPayload + "' | base64 -d | sh";
     try {
       if (wrapped.length <= 1400) {
-        if (!masterPTY || typeof masterPTY.write !== "function") throw new Error("Guest PTY transport is unavailable for desktop app commands.");
-        masterPTY.write("stty -echo 2>/dev/null\\r");
+        sendGuestInput("stty -echo 2>/dev/null\\r");
         setTimeout(() => {
-          if (pending === p) masterPTY.write(wrapped + "\\r");
+          if (pending === p) sendGuestInput(wrapped + "\\r");
         }, 80);
       } else {
         /*
@@ -4858,12 +4855,11 @@ main();
         const sendNextTransportLine = () => {
           if (pending !== p || transportIndex >= commands.length) return;
           try {
-            if (!masterPTY || typeof masterPTY.write !== "function") throw new Error("Guest PTY transport is unavailable for desktop app commands.");
-            masterPTY.write(commands[transportIndex++] + "\\r");
+            sendGuestInput(commands[transportIndex++] + "\\r");
             if (transportIndex < commands.length) setTimeout(sendNextTransportLine, 90);
           } catch (e) { finish(e, ""); }
         };
-        masterPTY.write("stty -echo 2>/dev/null\\r");
+        sendGuestInput("stty -echo 2>/dev/null\\r");
         setTimeout(sendNextTransportLine, 80);
       }
     } catch (e) { finish(e, ""); }
