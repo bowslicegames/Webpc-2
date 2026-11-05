@@ -3287,7 +3287,7 @@ async function bootQEMU() {
             const candidates = [];
             let oversizedLegacyDisk = false;
             for await (const [name, handle] of opfsRoot.entries()) {
-                if (name === opfsDiskName || !/^webpc-disk-rootfs-.*\\.qcow2$/.test(name) ||
+                if (name === opfsDiskName || !/^webpc-disk-rootfs-.*\.qcow2$/.test(name) ||
                     !handle || handle.kind !== "file") continue;
                 const file = await handle.getFile();
                 if (file.size < 4) continue;
