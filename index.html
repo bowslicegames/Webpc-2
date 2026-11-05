@@ -1328,7 +1328,7 @@ function assetURL(filename) {
  * Cache storage is best-effort: if Safari/iOS evicts it or denies
  * quota, WebPC simply downloads the assets again from the network.
  */
-const ASSET_CACHE_NAME = "webpc-runtime-assets-v5-opfs-42075823908";
+const ASSET_CACHE_NAME = "webpc-runtime-assets-v5-opfs-42075823908-sizefix";
 let assetCachePromise = null;
 
 function openAssetCache() {
@@ -1437,7 +1437,7 @@ const FILES = {
 const KNOWN_SIZES = {
 
     "qemu-system-x86_64.wasm":
-        41402712,
+        41403561,
 
     "load-rom.data":
         473088,
