@@ -1,6 +1,7 @@
 name: Build WebPC QEMU framebuffer runtime
 
 # Rebuild and republish the OPFS protocol after the filename-retention fix.
+# Boot gate validates the published runtime in headless Chromium against a fresh OPFS disk.
 
 on:
   workflow_dispatch:
