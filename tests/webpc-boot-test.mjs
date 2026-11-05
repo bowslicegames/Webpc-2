@@ -18,7 +18,7 @@ async function getExpectedRelease() {
    * header. Do not depend on diagnostic-page HTML formatting.
    */
   const workerSource = fs.readFileSync(new URL("../_worker.js", import.meta.url), "utf8");
-  const match = workerSource.match(/const QEMU_RELEASE_BASE\\s*=\\s*"([^"]+)"/);
+  const match = workerSource.match(/const QEMU_RELEASE_BASE\s*=\s*"([^"]+)"/);
   if (!match) throw new Error("Could not read QEMU_RELEASE_BASE from the checked-out Worker source");
   return match[1].split("/").filter(Boolean).pop();
 }
