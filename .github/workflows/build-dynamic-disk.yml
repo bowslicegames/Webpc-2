@@ -316,3 +316,13 @@ jobs:
           set -eux
           gh release view V1 --repo "${{ github.repository }}" --json assets \
             --jq '.assets[] | select(.name == "disk-rootfs-qcow2.img") | {name,size}'
+
+  validate:
+    name: Validate the baked guest image and browser application
+    needs: build-dynamic-disk
+    uses: ./.github/workflows/validate.yml
+
+  boot-test:
+    name: Boot the published Minecraft-ready guest disk
+    needs: [build-dynamic-disk, validate]
+    uses: ./.github/workflows/boot-test.yml
