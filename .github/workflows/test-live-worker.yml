@@ -152,6 +152,15 @@ jobs:
           done
           test "$stack_ready" -eq 1
 
+          # The boot test previously failed because this valid V1 asset
+          # intermittently received a GitHub-release 502 through the Worker.
+          # Probe the exact asset route and require the Worker's retry header.
+          curl --fail --silent --show-error --location --head --max-time 60 \
+            https://webpc.bowslicegames.workers.dev/assets/c2w-net-proxy.wasm.gzip \
+            -D work/c2w-asset-headers.txt -o /dev/null
+          grep -Fiq 'X-WebPC-Asset: c2w-net-proxy.wasm.gzip' work/c2w-asset-headers.txt
+          grep -Eiq '^X-WebPC-Asset-Attempts: [1-4]' work/c2w-asset-headers.txt
+
           # Wait until both the Worker script and its static-file pin are current.
           release_routes_ready=0
           for attempt in $(seq 1 24); do
