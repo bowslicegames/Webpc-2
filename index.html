@@ -1318,7 +1318,8 @@ const BASE = "/assets/";
 function assetURL(filename) {
 
     return BASE +
-        encodeURIComponent(filename);
+        encodeURIComponent(filename) +
+        "?v=" + encodeURIComponent(ASSET_CACHE_NAME);
 }
 
 /*
@@ -1436,7 +1437,7 @@ const FILES = {
 const KNOWN_SIZES = {
 
     "qemu-system-x86_64.wasm":
-        40799480,
+        41402712,
 
     "load-rom.data":
         473088,
@@ -1466,7 +1467,7 @@ const KNOWN_SIZES = {
         1167089,
 
     "out.js":
-        240815,
+        234504,
 
     "qemu-system-x86_64.worker.js":
         6000,
