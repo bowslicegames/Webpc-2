@@ -2,6 +2,7 @@ name: Check deployed WebPC Worker assets
 
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     paths:
       - ".github/workflows/test-live-worker.yml"
@@ -71,7 +72,7 @@ jobs:
               if grep -Fq 'Actual used blocks still consume browser memory' work/live-index.html \
                 && grep -Fq 'webpcRunGuestForService' work/live-index.html \
                 && grep -Fq 'format=qcow2' work/live-index.html \
-                && grep -Fq 'const ASSET_CACHE_NAME = "webpc-runtime-assets-v5-opfs-' work/live-index.html \
+                && grep -Fq 'const ASSET_CACHE_NAME = "webpc-runtime-assets-v6-' work/live-index.html \
                 && grep -Fq 'Discarding invalid cached WebPC asset:' work/live-index.html \
                 && grep -Fq 'const BASE_HOME = "/root";' work/live-index.html \
                 && grep -Fq 'value="/root/Desktop"' work/live-index.html \
