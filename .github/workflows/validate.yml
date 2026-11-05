@@ -28,6 +28,12 @@ jobs:
           grep -Fq 'Baking and verifying Minecraft Java 21 prerequisites' .github/workflows/build-dynamic-disk.yml || grep -Fq 'Bake and verify Minecraft Java 21 prerequisites' .github/workflows/build-dynamic-disk.yml
           grep -Fq -- '--repository=https://dl-cdn.alpinelinux.org/alpine/v3.22/community prismlauncher' index.html
           ! grep -Fq 'apk add --no-cache --update-cache openjdk21-jre prismlauncher' index.html
+          grep -Fq 'webpc-migrate-legacy.start' tools/install-minecraft-prereqs.sh
+          grep -Fq 'rc-update add local default' tools/install-minecraft-prereqs.sh
+          grep -Fq 'const opfsDiskName = "webpc-disk-rootfs-" + ASSET_CACHE_NAME + ".qcow2";' index.html
+          grep -Fq 'legacy-rootfs.qcow2' index.html
+          grep -Fq 'WEBPC_LEGACY_DISK_MIGRATION_DONE' index.html
+          grep -Fq 'OPFS-backed qcow2 architecture' .github/workflows/build-dynamic-disk.yml
 
       - name: Check Worker JavaScript syntax
         run: node --check _worker.js
