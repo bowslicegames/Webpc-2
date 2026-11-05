@@ -26,7 +26,7 @@ jobs:
           node --check tests/webpc-boot-test.mjs
           test -s .github/workflows/boot-test.yml
           grep -Fq 'waitForFunction' tests/webpc-boot-test.mjs
-          grep -Fq 'webpc-opfs' tests/webpc-boot-test.mjs
+          grep -Fq 'Persistent OPFS disk ready' tests/webpc-boot-test.mjs
 
       - name: Check graphics transport and QEMU ABI starter
         run: |
