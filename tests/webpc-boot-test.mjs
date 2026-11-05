@@ -64,7 +64,7 @@ try {
   const diskAssetResponsePromise = page.waitForResponse(
     response => new URL(response.url()).pathname === "/assets/disk-rootfs-qcow2.img",
     { timeout: 480000 }
-  );
+  ).catch(error => ({ waitError: error.message }));
   page.on("console", message => {
     if (message.type() === "error") consoleErrors.push(message.text());
   });
@@ -109,6 +109,10 @@ try {
   }, null, { timeout: 480000, polling: 1000 });
 
   const diskAssetResponse = await diskAssetResponsePromise;
+  if (!diskAssetResponse || diskAssetResponse.waitError) {
+    throw new Error("The browser did not request the prebuilt guest disk: " +
+      (diskAssetResponse?.waitError || "no response"));
+  }
   if (!diskAssetResponse.ok()) {
     throw new Error("Prebuilt guest disk asset returned HTTP " + diskAssetResponse.status());
   }
