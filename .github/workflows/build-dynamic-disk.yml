@@ -147,7 +147,7 @@ jobs:
           sudo chroot /mnt/webpc-rootfs /bin/sh /root/webpc-install-minecraft-prereqs.sh
           sudo chroot /mnt/webpc-rootfs /bin/sh -ec '
             java -version 2>&1 | tee /tmp/webpc-java-build-check.txt
-            grep -Eq 'version "21|openjdk version "21' /tmp/webpc-java-build-check.txt
+            grep -Eq "version.*21|openjdk.*21" /tmp/webpc-java-build-check.txt
             command -v prismlauncher
             command -v Xorg
             command -v xinit
