@@ -1018,7 +1018,7 @@ button:active {
 
 
     <div id="desktop" aria-label="WebPC desktop">
-      <div id="desktopTop"><span>◈ WebPC Desktop</span><span id="desktopStatus">Starting Alpine Linux…</span></div>
+      <div id="desktopTop"><span>◈ WebPC Desktop</span><span id="desktopStatus">Starting Alpine Linux…</span><button class="ui-button" id="recoverAppChannel" type="button" style="display:none;white-space:nowrap">Interrupt &amp; recover apps</button></div>
       <div id="desktopArea">
         <button class="desktop-shortcut" id="shortcut-files" data-open-app="files"><span class="shortcut-icon">📁</span><span class="shortcut-label">File Manager</span></button>
         <button class="desktop-shortcut" id="shortcut-terminal" data-open-app="terminal"><span class="shortcut-icon">▣</span><span class="shortcut-label">Terminal</span></button>
@@ -4494,6 +4494,7 @@ main();
   const desktop = document.getElementById("desktop");
   if (!desktop) return;
   const status = document.getElementById("desktopStatus");
+  const recoverButton = document.getElementById("recoverAppChannel");
   const graphicsStatus = document.getElementById("graphicsStatus");
   if (graphicsStatus) {
     const canvas = document.createElement("canvas");
@@ -4655,6 +4656,7 @@ main();
   const controls = document.getElementById("controls");
   const app = document.getElementById("app");
   let zTop = 20, activeFolder = "Desktop", commandBusy = false, pending = null, outputBuffer = "", selectedFilePath = null, commandChannelStalled = false, homeDirsInitialized = false;
+  let recoveryAttempt = null, recoveryOutputBuffer = "";
   /*
    * iPadOS can suspend JavaScript timers while another app is foregrounded.
    * Pause in-flight command deadlines while hidden and grant a fresh response
@@ -4686,7 +4688,7 @@ main();
         return;
       }
       commandChannelStalled = true;
-      const stopped = new Error("The guest command channel did not respond after WebPC resumed. The Linux task may still be running; inspect its task log before restarting the VM.");
+      const stopped = new Error("The guest command channel stopped responding. Use Interrupt & recover apps to test the shell before restarting the VM.");
       drainServiceQueues("The guest command channel is temporarily unresponsive. Check task logs and retry after WebPC resumes.");
       job.finish(stopped, job.text);
     }, delay);
@@ -4723,8 +4725,13 @@ main();
   function updateRuntimeStatus() {
     if (!status || !shellReadyNow()) return;
     const queued = queuedCommandCount();
+    if (recoverButton) {
+      recoverButton.style.display = commandChannelStalled ? "inline-flex" : "none";
+      recoverButton.disabled = !!recoveryAttempt;
+      recoverButton.textContent = recoveryAttempt ? "Recovering…" : "Interrupt & recover apps";
+    }
     if (commandChannelStalled) {
-      status.textContent = "App command channel stalled · reopen the VM to recover";
+      status.textContent = recoveryAttempt ? "Recovering the guest shell…" : "App command channel stalled · recovery available";
     } else if (commandBusy) {
       status.textContent = "Linux shell ready · app task running" +
         (queued ? " · " + queued + " queued (" + queueSummary() + ")" : "");
@@ -4784,6 +4791,60 @@ main();
       }
     }
   }
+  /*
+   * Recover a shell that stopped responding without resetting QEMU or the
+   * OPFS disk. The browser-side xterm-pty line discipline normally consumes
+   * Ctrl+C as a local SIGINT event; temporarily disable its ISIG bit so the
+   * actual 0x03 byte reaches the guest's serial console. Restore termios
+   * immediately after xterm has synchronously dispatched the input byte.
+   */
+  function sendRawGuestControlByte(value) {
+    const lineDiscipline = masterPTY && masterPTY.ldisc;
+    if (!lineDiscipline || !lineDiscipline.termios || typeof terminal.paste !== "function") {
+      throw new Error("The PTY does not expose the input path needed for safe recovery.");
+    }
+    const originalTermios = lineDiscipline.termios;
+    const rawTermios = originalTermios.clone();
+    rawTermios.lflag &= ~1; // ISIG
+    lineDiscipline.termios = rawTermios;
+    try { terminal.paste(value); }
+    finally { lineDiscipline.termios = originalTermios; }
+  }
+  function failAppChannelRecovery(attempt, error) {
+    if (recoveryAttempt !== attempt) return;
+    if (attempt.timeout) clearTimeout(attempt.timeout);
+    recoveryAttempt = null;
+    recoveryOutputBuffer = "";
+    updateRuntimeStatus();
+    if (status) status.textContent = "Recovery was not confirmed. The guest may still be busy; try recovery again or restart WebPC if it remains unresponsive." +
+      (error ? " " + String(error.message || error).slice(0, 180) : "");
+  }
+  function recoverAppChannel() {
+    if (!commandChannelStalled || recoveryAttempt) return;
+    if (!shellReadyNow() || !terminal || typeof terminal.paste !== "function") {
+      if (status) status.textContent = "Recovery unavailable: the guest PTY is not ready.";
+      return;
+    }
+    const attempt = {token:"__WEBPC_RECOVER_" + unique() + "__", timeout:null};
+    recoveryAttempt = attempt;
+    recoveryOutputBuffer = "";
+    updateRuntimeStatus();
+    try {
+      // Interrupt a foreground command or cancel an unfinished shell input line.
+      sendRawGuestControlByte("\x03");
+      attempt.timeout = setTimeout(() => failAppChannelRecovery(attempt), 15000);
+      setTimeout(() => {
+        if (recoveryAttempt !== attempt) return;
+        try {
+          terminal.paste("stty echo 2>/dev/null || true; printf '\\n" + attempt.token + "\\n'\\r");
+        } catch (error) { failAppChannelRecovery(attempt, error); }
+      }, 500);
+    } catch (error) {
+      failAppChannelRecovery(attempt, error);
+    }
+  }
+  if (recoverButton) recoverButton.addEventListener("click", recoverAppChannel);
+
   function pumpGuestQueue() {
     if (commandChannelStalled || commandBusy || pending || !queuedCommandCount() || !shellReadyNow()) return;
     const job = takeNextQueuedJob();
@@ -4867,12 +4928,27 @@ main();
     } catch (e) { finish(e, ""); }
   }
   window.webpcDesktopConsumeOutput = function (data) {
-    if (!pending) return;
     let s = typeof data === "string" ? data : "";
     if (!s && data && typeof data.length === "number") {
       try { s = dec.decode(data instanceof Uint8Array ? data : new Uint8Array(data)); } catch (_) {}
     }
     if (!s) return;
+    if (recoveryAttempt) {
+      recoveryOutputBuffer = (recoveryOutputBuffer + s).slice(-8192);
+      if (recoveryOutputBuffer.includes(recoveryAttempt.token)) {
+        const recovered = recoveryAttempt;
+        if (recovered.timeout) clearTimeout(recovered.timeout);
+        recoveryAttempt = null;
+        recoveryOutputBuffer = "";
+        commandChannelStalled = false;
+        outputBuffer = "";
+        updateRuntimeStatus();
+        if (status) status.textContent = "App connection recovered. You can retry the interrupted task.";
+        pumpGuestQueue();
+        return;
+      }
+    }
+    if (!pending) return;
     const p = pending;
     let incoming = s;
     if (!p.found) {
