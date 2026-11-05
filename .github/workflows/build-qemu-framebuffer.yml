@@ -8,6 +8,10 @@ on:
     branches:
       - main
       - experimental/minecraft-guest-display
+    paths:
+      - "qemu-webpc-display/**"
+      - "tools/patch-qemu-webpc-display.py"
+      - ".github/workflows/build-qemu-framebuffer.yml"
 
 permissions:
   contents: write
