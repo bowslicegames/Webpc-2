@@ -28,22 +28,35 @@ jobs:
           mkdir -p work
           curl --fail --silent --show-error --location --max-time 30 \
             https://api.github.com/repos/bowslicegames/Webpc-2/releases/tags/V1 \
-            -o work/release.json
+            -o work/release-v1.json
+          qemu_release_tag="$(node -e 'const s=require("fs").readFileSync("_worker.js","utf8"); const m=s.match(/const QEMU_RELEASE_BASE =\s*"([^"]+)"/); if(!m) process.exit(2); process.stdout.write(m[1].split("/").filter(Boolean).pop());')"
+          curl --fail --silent --show-error --location --max-time 30 \
+            "https://api.github.com/repos/bowslicegames/Webpc-2/releases/tags/$qemu_release_tag" \
+            -o work/release-qemu.json
           node <<'NODE'
           const fs = require("fs");
           const html = fs.readFileSync("index.html", "utf8");
+          const worker = fs.readFileSync("_worker.js", "utf8");
           const match = html.match(/const KNOWN_SIZES = \{([\s\S]*?)\n\};/);
           if (!match) throw new Error("Runtime size manifest is missing");
           const known = Object.fromEntries([...match[1].matchAll(/"([^"]+)":\s*(\d+)/g)]
             .map(item => [item[1], Number(item[2])]));
-          const release = JSON.parse(fs.readFileSync("work/release.json", "utf8"));
-          const actual = Object.fromEntries(release.assets.map(asset => [asset.name, asset.size]));
+          const base = JSON.parse(fs.readFileSync("work/release-v1.json", "utf8"));
+          const qemu = JSON.parse(fs.readFileSync("work/release-qemu.json", "utf8"));
+          const baseAssets = Object.fromEntries(base.assets.map(asset => [asset.name, asset.size]));
+          const qemuAssets = Object.fromEntries(qemu.assets.map(asset => [asset.name, asset.size]));
+          const qemuNames = new Set(["out.js", "qemu-system-x86_64.wasm", "qemu-system-x86_64.worker.js"]);
           for (const [name, size] of Object.entries(known)) {
-            const expected = name === "stack.js" ? fs.statSync("stack.js").size : actual[name];
-            if (expected === undefined) throw new Error("Manifest asset is absent from Release V1: " + name);
+            const expected = name === "stack.js" ? fs.statSync("stack.js").size
+              : (qemuNames.has(name) ? qemuAssets[name] : baseAssets[name]);
+            if (expected === undefined) throw new Error("Manifest asset is absent from its selected release: " + name);
             if (size !== expected) throw new Error("Incorrect size for " + name + ": manifest " + size + ", actual " + expected);
           }
-          console.log("Verified", Object.keys(known).length, "runtime asset sizes against Release V1 and the pinned stack module.");
+          if (!worker.includes('const BASE_ASSETS_RELEASE_BASE =') ||
+              !worker.includes('const QEMU_RELEASE_ASSETS = new Set([')) {
+            throw new Error("Worker does not implement split-release routing");
+          }
+          console.log("Verified", Object.keys(known).length, "runtime asset sizes against the split releases and pinned stack module.");
           NODE
           ready=0
           for attempt in $(seq 1 24); do
@@ -52,7 +65,7 @@ jobs:
               if grep -Fq 'Actual used blocks still consume browser memory' work/live-index.html \
                 && grep -Fq 'webpcRunGuestForService' work/live-index.html \
                 && grep -Fq 'format=qcow2' work/live-index.html \
-                && grep -Fq 'const ASSET_CACHE_NAME = "webpc-runtime-assets-v4-' work/live-index.html \
+                && grep -Fq 'const ASSET_CACHE_NAME = "webpc-runtime-assets-v5-opfs-' work/live-index.html \
                 && grep -Fq 'Discarding invalid cached WebPC asset:' work/live-index.html \
                 && grep -Fq 'const BASE_HOME = "/root";' work/live-index.html \
                 && grep -Fq 'value="/root/Desktop"' work/live-index.html \
@@ -138,6 +151,18 @@ jobs:
             sleep 5
           done
           test "$stack_ready" -eq 1
+
+          # Confirm the live diagnostic and both sides of split-release routing.
+          curl --fail --silent --show-error --location --max-time 20 \
+            https://webpc.bowslicegames.workers.dev/worker-test -o work/worker-test.html
+          grep -Fq "QEMU runtime release:</strong> $qemu_release_tag" work/worker-test.html
+          grep -Fq 'Base assets release:</strong> V1' work/worker-test.html
+          curl --fail --silent --show-error --location --head --max-time 30 \
+            https://webpc.bowslicegames.workers.dev/assets/out.js -D work/out-headers.txt -o /dev/null
+          grep -Fiq "X-WebPC-Release: $qemu_release_tag" work/out-headers.txt
+          curl --fail --silent --show-error --location --head --max-time 30 \
+            https://webpc.bowslicegames.workers.dev/assets/load-rom.data -D work/base-headers.txt -o /dev/null
+          grep -Fiq 'X-WebPC-Release: V1' work/base-headers.txt
           # Confirm the live Worker serves the new bridge module, not a stale
           # pinned copy that still buffers whole responses.
           grep -Fq 'MAX_RESPONSE_BUFFER_BYTES' work/live-stack.js
@@ -162,7 +187,7 @@ jobs:
             -o work/direct-large.bin
           curl --fail --silent --show-error --location --retry 2 --retry-delay 2 --max-time 180 \
             -D work/proxy-headers.txt \
-            -H 'X-WebPC-Proxy-Target: https://github.com/bowslicegames/Webpc-2/releases/download/V1/qemu-system-x86_64.wasm' \
+            -H "X-WebPC-Proxy-Target: https://github.com/bowslicegames/Webpc-2/releases/download/$qemu_release_tag/qemu-system-x86_64.wasm" \
             https://webpc.bowslicegames.workers.dev/net-proxy \
             -o work/proxy-large.bin
           grep -Fiq 'X-WebPC-Proxy-Body: streamed' work/proxy-headers.txt
