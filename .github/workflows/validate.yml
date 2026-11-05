@@ -27,6 +27,16 @@ jobs:
           test -s .github/workflows/boot-test.yml
           grep -Fq 'waitForFunction' tests/webpc-boot-test.mjs
           grep -Fq 'Persistent OPFS disk ready' tests/webpc-boot-test.mjs
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          worker = Path("_worker.js").read_text()
+          release = re.search(r'(const QEMU_RELEASE_BASE =\s*")[^"]+("\s*;)', worker)
+          pin = re.search(r'(const STATIC_COMMIT\s*=\s*")[0-9a-f]{40}(")', worker)
+          if not release or not pin:
+              raise SystemExit("Worker release activation patterns do not match the actual multiline constants")
+          print("Worker release URL and static commit activation patterns verified.")
+          PY
 
       - name: Check graphics transport and QEMU ABI starter
         run: |
