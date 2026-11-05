@@ -737,6 +737,8 @@ button:active {
 #webpcBootTrack {width:min(260px,68vw);height:4px;border-radius:20px;background:#26384e;overflow:hidden}
 #webpcBootProgress {height:100%;width:0%;border-radius:inherit;background:#f4f7fb;transition:width .16s linear}
 #webpcBootBytes {font-size:12px;line-height:1.5;color:rgba(255,255,255,.76);text-align:center;max-width:min(340px,88vw);font-variant-numeric:tabular-nums;overflow-wrap:anywhere;min-height:18px}
+#webpcSerialLog {box-sizing:border-box;width:min(720px,94vw);max-height:min(34vh,220px);min-height:88px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;padding:10px 12px;border:1px solid rgba(151,177,207,.25);border-radius:8px;background:rgba(0,0,0,.38);color:#d8e2ee;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;tab-size:4; -webkit-overflow-scrolling:touch;}
+#webpcSerialLog:empty::before {content:"Waiting for Linux serial output…";color:rgba(255,255,255,.48)}
 #webpcLoginScreen {position:fixed;inset:0;z-index:10001;display:none;align-items:center;justify-content:center;padding:24px;background:linear-gradient(145deg,#123b69 0%,#172d50 42%,#0a1830 100%);color:#fff;font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,sans-serif}
 #webpcLoginScreen.visible {display:flex}
 #webpcLoginCard {width:min(360px,100%);display:flex;flex-direction:column;align-items:center;text-align:center}
@@ -766,6 +768,7 @@ button:active {
       <div id="webpcBootBrand">WebpcOS</div>
       <div id="webpcBootTrack"><div id="webpcBootProgress"></div></div>
       <div id="webpcBootBytes" aria-live="polite">Preparing downloads…</div>
+      <pre id="webpcSerialLog" aria-label="Recent Linux serial console output">Waiting for Linux serial output…</pre>
     </div>
     <div id="webpcLoginScreen" aria-label="WebpcOS sign in">
       <div id="webpcLoginCard">
@@ -1533,6 +1536,27 @@ let bootSignalBytes =
 
 let bootSignalLastText =
     "";
+
+/* Keep a readable rolling tail of the guest serial console on the boot splash. */
+let webpcSerialLogBuffer = "";
+function updateWebpcSerialLog(chunk) {
+    const output = $("webpcSerialLog");
+    if (!output) return;
+    let value = String(chunk == null ? "" : chunk);
+    /* Strip terminal control sequences while retaining line breaks and printable text. */
+    value = value
+        .replace(/\\x1B\\][^\\x07]*(?:\\x07|\\x1B\\\\)/g, "")
+        .replace(/\\x1B\\[[0-?]*[ -/]*[@-~]/g, "")
+        .replace(/\\x1B[@-_]/g, "")
+        .replace(/\\r\\n/g, "\\n")
+        .replace(/\\r/g, "\\n")
+        .replace(/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]/g, "");
+    if (!value) return;
+    webpcSerialLogBuffer = (webpcSerialLogBuffer + value).slice(-12000);
+    const lines = webpcSerialLogBuffer.split("\\n");
+    output.textContent = lines.slice(-12).join("\\n").slice(-2600) || "Waiting for Linux serial output…";
+    output.scrollTop = output.scrollHeight;
+}
 
 const linuxBootSignal =
     $("linuxBootSignal");
@@ -2993,6 +3017,8 @@ function noteBootSignal(data) {
     if (length <= 0)
         return;
 
+    updateWebpcSerialLog(text);
+
     bootSignalReceived = true;
     bootSignalBytes += length;
 
@@ -3950,6 +3976,10 @@ async function bootQEMU() {
 
     bootSignalBytes =
         0;
+
+    webpcSerialLogBuffer = "";
+    const serialLogElement = $("webpcSerialLog");
+    if (serialLogElement) serialLogElement.textContent = "Waiting for Linux serial output…";
 
     bootSignalLastText =
         "";
