@@ -30,10 +30,16 @@ onData("\x03");
 assert.deepEqual(slave.read(), [3]);
 assert.deepEqual(signals, ["SIGINT"]);
 
+// The desktop app broker writes through the same line discipline directly.
+// This must work even when xterm's visible stdin is disabled during a task.
+assert.equal(typeof master.write, "undefined");
+master.ldisc.writeFromLower("printf 'APP_TASK_OK\\r");
+assert.deepEqual(slave.read(), Array.from(new TextEncoder().encode("printf 'APP_TASK_OK\\n")));
+
 // Restore normal terminal input settings.
 master.ldisc.termios = originalTermios;
 assert.equal(master.ldisc.termios.ISIG_P, true);
 assert.equal(master.ldisc.termios.ICANON_P, true);
 assert.deepEqual(slave.read(), []);
 
-console.log("PASS: raw Ctrl+C reaches the guest PTY and normal input is restored.");
+console.log("PASS: raw Ctrl+C recovery and direct app-task PTY input both work.");
