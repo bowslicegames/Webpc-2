@@ -129,16 +129,17 @@ jobs:
           const brokerStart = html.indexOf("function pumpGuestQueue()");
           const brokerEnd = html.indexOf("window.webpcDesktopConsumeOutput", brokerStart);
           const broker = html.slice(brokerStart, brokerEnd);
-          for (const marker of ["armGuestCommandTimeout", "terminal.paste(", "pausedForBackground"]) {
+          for (const marker of ["armGuestCommandTimeout", "sendGuestInput(", "pausedForBackground"]) {
             if (!broker.includes(marker) && !html.includes(marker)) {
               throw new Error("Resume-safe desktop app broker marker missing: " + marker);
             }
           }
-          if (!broker.includes("terminal.paste(")) {
-            throw new Error("Desktop app commands must use the supported xterm-pty Terminal input API");
+          if (!broker.includes("sendGuestInput(") ||
+              !html.includes("lineDiscipline.writeFromLower(value)")) {
+            throw new Error("Desktop app commands must use the xterm-pty line-discipline input path");
           }
-          if (broker.includes("masterPTY.write(")) {
-            throw new Error("xterm-pty master addon must not be called as an input-writable PTY");
+          if (broker.includes("terminal.paste(") || html.includes("masterPTY.write(")) {
+            throw new Error("App transactions must not use disabled xterm paste input or a nonexistent master.write method");
           }
           if (!html.includes("The VM still has one underlying guest serial transport")) {
             throw new Error("Desktop task UI must accurately disclose the shared guest serial transport");
