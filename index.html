@@ -3321,36 +3321,87 @@ async function bootQEMU() {
         const root = await navigator.storage.getDirectory();
         const diskName = opfsDiskName;
         const markerName = diskName + ".ready";
-        const diskHandle = await root.getFileHandle(diskName, { create: true });
+        let stage = "opening the new disk entry";
+        const stageError = error => new Error(
+            "OPFS " + stage + ": " +
+            (error && error.message ? error.message : String(error)) +
+            " (The existing legacy disk was not modified.)"
+        );
+        const getDiskHandle = async create => {
+            try { return await root.getFileHandle(diskName, create ? {create:true} : undefined); }
+            catch (error) { throw stageError(error); }
+        };
         let initialized = false;
+        stage = "checking the disk initialization marker";
         try {
             const markerHandle = await root.getFileHandle(markerName);
             const markerFile = await markerHandle.getFile();
             initialized = (await markerFile.text()) === diskName + ":" + blob.size;
-        } catch (_) {}
+        } catch (error) {
+            // A missing marker is normal on first launch. Other OPFS errors are
+            // surfaced by the subsequent disk-entry checks with a precise stage.
+            if (error && error.name !== "NotFoundError") {
+                noteBootSignal("OPFS marker check: " + (error.message || String(error)));
+            }
+        }
         if (!initialized) {
-            const existing = await diskHandle.getFile();
+            stage = "opening the new disk file";
+            let diskHandle = await getDiskHandle(true);
+            stage = "checking whether the new disk already contains data";
+            let existing;
+            try { existing = await diskHandle.getFile(); }
+            catch (error) {
+                // Safari/WebKit can invalidate a FileSystemFileHandle after a
+                // directory mutation. Reacquire it once from the root handle.
+                diskHandle = await getDiskHandle(false);
+                try { existing = await diskHandle.getFile(); }
+                catch (retryError) { throw stageError(retryError); }
+            }
             if (existing.size > 0 && existing.size >= blob.size) {
                 throw new Error("An existing OPFS disk has data but its initialization marker is missing; refusing to overwrite it. The previous disk is preserved.");
             }
-            const writable = await diskHandle.createWritable({ keepExistingData: false });
+            stage = "opening the new disk writer";
+            let writable;
+            try { writable = await diskHandle.createWritable({keepExistingData:false}); }
+            catch (error) {
+                diskHandle = await getDiskHandle(false);
+                try { writable = await diskHandle.createWritable({keepExistingData:false}); }
+                catch (retryError) { throw stageError(retryError); }
+            }
             try {
+                stage = "writing the new disk image";
                 const chunkBytes = 8 * 1024 * 1024;
                 for (let offset = 0; offset < blob.size; offset += chunkBytes) {
                     const chunk = await blob.slice(offset, Math.min(blob.size, offset + chunkBytes)).arrayBuffer();
                     await writable.write(chunk);
                 }
+                stage = "committing the new disk image";
                 await writable.close();
             } catch (error) {
                 try { await writable.abort(); } catch (_) {}
-                throw error;
+                throw stageError(error);
             }
-            const markerHandle = await root.getFileHandle(markerName, { create: true });
-            const markerWriter = await markerHandle.createWritable({ keepExistingData: false });
-            await markerWriter.write(diskName + ":" + blob.size);
-            await markerWriter.close();
+            // Do not reuse the pre-write handle: WebKit may invalidate it when
+            // createWritable() commits its replacement file.
+            stage = "reopening the committed disk image";
+            diskHandle = await getDiskHandle(false);
+            stage = "writing the disk initialization marker";
+            const markerHandle = await root.getFileHandle(markerName, {create:true});
+            const markerWriter = await markerHandle.createWritable({keepExistingData:false});
+            try {
+                await markerWriter.write(diskName + ":" + blob.size);
+                await markerWriter.close();
+            } catch (error) {
+                try { await markerWriter.abort(); } catch (_) {}
+                throw stageError(error);
+            }
         }
-        const diskFile = await diskHandle.getFile();
+        stage = "verifying the initialized disk image";
+        let diskFile;
+        try {
+            const finalHandle = await getDiskHandle(false);
+            diskFile = await finalHandle.getFile();
+        } catch (error) { throw stageError(error); }
         if (diskFile.size < blob.size) {
             throw new Error("OPFS disk initialization is incomplete: stored file is shorter than the signed release asset.");
         }
