@@ -2905,11 +2905,7 @@ async function createTerminal() {
                     updateCtrlModifierButton();
 
                     const controlByte = String.fromCharCode(code & 31);
-                    if (masterPTY && typeof masterPTY.write === "function") {
-                        masterPTY.write(controlByte);
-                    } else if (terminal && typeof terminal.paste === "function") {
-                        terminal.paste(controlByte);
-                    }
+                    sendGuestInput(controlByte);
                     return false;
                 }
             }
@@ -4305,11 +4301,24 @@ function updateNanoUiFromOutput(chunk, lastLine) {
     }
 }
 
+/* Send input through xterm-pty's actual line discipline. Unlike terminal.paste(),
+   this is independent of xterm's disableStdin flag used to isolate app tasks. */
+function sendGuestInput(value) {
+    const lineDiscipline = masterPTY && masterPTY.ldisc;
+    if (lineDiscipline && typeof lineDiscipline.writeFromLower === "function") {
+        lineDiscipline.writeFromLower(value);
+        return true;
+    }
+    if (terminal && terminal.options && !terminal.options.disableStdin &&
+        typeof terminal.paste === "function") {
+        terminal.paste(value);
+        return true;
+    }
+    return false;
+}
+
 function writeNanoInput(value) {
-    if (masterPTY && typeof masterPTY.write === "function") masterPTY.write(value);
-    else if (terminal && typeof terminal.paste === "function") terminal.paste(value);
-    else return false;
-    return true;
+    return sendGuestInput(value);
 }
 
 function setupNanoButtons() {
@@ -4389,11 +4398,7 @@ function setupControls() {
     $("escKey").addEventListener("click", () => {
         webpcCtrlModifierArmed = false;
         updateCtrlModifierButton();
-        if (masterPTY && typeof masterPTY.write === "function") {
-            masterPTY.write("\x1b");
-        } else if (terminal && typeof terminal.paste === "function") {
-            terminal.paste("\x1b");
-        }
+        sendGuestInput("\x1b");
         if (terminal) terminal.focus();
     });
 
@@ -4922,8 +4927,9 @@ main();
    */
   function sendRawGuestControlByte(value) {
     const lineDiscipline = masterPTY && masterPTY.ldisc;
-    if (!lineDiscipline || !lineDiscipline.termios || typeof terminal.paste !== "function") {
-      throw new Error("The PTY does not expose the input path needed for safe recovery.");
+    if (!lineDiscipline || !lineDiscipline.termios ||
+        typeof lineDiscipline.writeFromLower !== "function") {
+      throw new Error("The PTY line-discipline input path is unavailable for recovery.");
     }
     const originalTermios = lineDiscipline.termios;
     const rawTermios = originalTermios.clone();
@@ -4931,7 +4937,7 @@ main();
     rawTermios.ISIG_P = false;
     rawTermios.ICANON_P = false;
     lineDiscipline.termios = rawTermios;
-    try { terminal.paste(value); }
+    try { lineDiscipline.writeFromLower(value); }
     finally { lineDiscipline.termios = originalTermios; }
   }
   function failAppChannelRecovery(attempt, error) {
@@ -4945,7 +4951,8 @@ main();
   }
   function recoverAppChannel() {
     if (!commandChannelStalled || recoveryAttempt) return;
-    if (!shellReadyNow() || !terminal || typeof terminal.paste !== "function") {
+    if (!shellReadyNow() || !masterPTY || !masterPTY.ldisc ||
+        typeof masterPTY.ldisc.writeFromLower !== "function") {
       if (status) status.textContent = "Recovery unavailable: the guest PTY is not ready.";
       return;
     }
@@ -4963,7 +4970,7 @@ main();
           const splitAt = Math.floor(attempt.token.length / 2);
           const markerLeft = attempt.token.slice(0, splitAt);
           const markerRight = attempt.token.slice(splitAt);
-          terminal.paste("stty echo 2>/dev/null || true; printf '\\n%s%s\\n' '" +
+          sendGuestInput("stty echo 2>/dev/null || true; printf '\\n%s%s\\n' '" +
             markerLeft + "' '" + markerRight + "'\r");
         } catch (error) { failAppChannelRecovery(attempt, error); }
       }, 500);
@@ -5025,9 +5032,13 @@ main();
     const wrapped = "printf '%s' '" + encodedPayload + "' | base64 -d | sh";
     try {
       if (wrapped.length <= 1400) {
-        terminal.paste("stty -echo 2>/dev/null\r");
+        if (!sendGuestInput("stty -echo 2>/dev/null\r")) {
+          throw new Error("Could not prepare the PTY for an app command.");
+        }
         setTimeout(() => {
-          if (pending === p) terminal.paste(wrapped + "\r");
+          if (pending === p && !sendGuestInput(wrapped + "\r")) {
+            finish(new Error("Could not send the app command payload to Linux."), "");
+          }
         }, 80);
       } else {
         /*
@@ -5046,11 +5057,15 @@ main();
         const sendNextTransportLine = () => {
           if (pending !== p || transportIndex >= commands.length) return;
           try {
-            terminal.paste(commands[transportIndex++] + "\r");
+            if (!sendGuestInput(commands[transportIndex++] + "\r")) {
+              throw new Error("Could not send a staged app-command chunk to Linux.");
+            }
             if (transportIndex < commands.length) setTimeout(sendNextTransportLine, 90);
           } catch (e) { finish(e, ""); }
         };
-        terminal.paste("stty -echo 2>/dev/null\r");
+        if (!sendGuestInput("stty -echo 2>/dev/null\r")) {
+          throw new Error("Could not prepare the PTY for a staged app command.");
+        }
         setTimeout(sendNextTransportLine, 80);
       }
     } catch (e) { finish(e, ""); }
