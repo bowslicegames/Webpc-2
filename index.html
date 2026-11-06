@@ -3318,7 +3318,7 @@ async function bootQEMU() {
         }
         let persistent = false;
         try { persistent = await navigator.storage.persist(); } catch (_) {}
-        const root = await navigator.storage.getDirectory();
+        let root = await navigator.storage.getDirectory();
         const diskName = opfsDiskName;
         const markerName = diskName + ".ready";
         let stage = "opening the new disk entry";
@@ -3328,8 +3328,18 @@ async function bootQEMU() {
             " (The existing legacy disk was not modified.)"
         );
         const getDiskHandle = async create => {
-            try { return await root.getFileHandle(diskName, create ? {create:true} : undefined); }
-            catch (error) { throw stageError(error); }
+            try {
+                return await root.getFileHandle(diskName, create ? {create:true} : undefined);
+            } catch (firstError) {
+                // WebKit may return a stale OPFS directory proxy after an earlier
+                // enumeration. Reacquire the root and retry once before failing.
+                try {
+                    root = await navigator.storage.getDirectory();
+                    return await root.getFileHandle(diskName, create ? {create:true} : undefined);
+                } catch (retryError) {
+                    throw stageError(retryError || firstError);
+                }
+            }
         };
         let initialized = false;
         stage = "checking the disk initialization marker";
@@ -3345,8 +3355,11 @@ async function bootQEMU() {
             }
         }
         if (!initialized) {
-            stage = "opening the new disk file";
+            stage = "creating a fresh disk file when this browser has no disk yet";
             let diskHandle = await getDiskHandle(true);
+            if (!legacyDiskName) {
+                noteBootSignal("No previous OPFS disk was found. A new persistent WebPC disk is being created for this browser.");
+            }
             stage = "checking whether the new disk already contains data";
             let existing;
             try { existing = await diskHandle.getFile(); }
