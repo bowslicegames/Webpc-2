@@ -38,7 +38,7 @@ assert.equal(master.ldisc.termios.ICANON_P, true);
 // The desktop app broker writes through the same line discipline directly.
 // This works independently of xterm's visible stdin lock during app tasks.
 assert.equal(typeof master.write, "undefined");
-master.ldisc.writeFromLower("printf 'APP_TASK_OK'\\r");
-assert.deepEqual(slave.read(), Array.from(new TextEncoder().encode("printf 'APP_TASK_OK'\\n")));
+master.ldisc.writeFromLower("printf 'APP_TASK_OK'\r");
+assert.deepEqual(slave.read(), Array.from(new TextEncoder().encode("printf 'APP_TASK_OK'\n")));
 
 console.log("PASS: raw Ctrl+C recovery and direct app-task PTY input both work.");
