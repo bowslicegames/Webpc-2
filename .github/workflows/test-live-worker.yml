@@ -78,6 +78,9 @@ jobs:
                 && grep -Fq 'Discarding invalid cached WebPC asset:' work/live-index.html \
                 && grep -Fq 'const BASE_HOME = "/root";' work/live-index.html \
                 && grep -Fq 'value="/root/Desktop"' work/live-index.html \
+                && grep -Fq 'function sendGuestInput(value)' work/live-index.html \
+                && grep -Fq 'lineDiscipline.writeFromLower(value)' work/live-index.html \
+                && ! grep -Fq 'masterPTY.write(' work/live-index.html \
                 && grep -Fq 'WEBPC_APKINDEX_OK' work/live-index.html \
                 && grep -Fq 'APKINDEX.tar.gz' work/live-index.html \
                 && grep -Fq 'apk add --no-cache unzip' work/live-index.html \
