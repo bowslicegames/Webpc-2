@@ -29,11 +29,29 @@
   let presentTimes = [];
   let connectedAt = 0;
   let reportedNoFrames = false;
+  let lastNoFrameHint = "";
   const pressedKeys = new Set();
   const MAX_PIXELS = 4096 * 4096;
   const POLL_INTERVAL_MS = 1000 / 30;
-  const NO_FRAME_HINT = "QEMU display ABI is connected but no guest frame arrived in 20 s. " +
-    "The running QEMU runtime may predate the WebPC frame pump; rebuild the runtime from this tree.";
+  function abiSnapshot() {
+    try {
+      if (!moduleRef) return "abi=detached";
+      const gen = moduleRef._webpc_get_framebuffer_generation() >>> 0;
+      const w = moduleRef._webpc_get_framebuffer_width() | 0;
+      const h = moduleRef._webpc_get_framebuffer_height() | 0;
+      const ptr = moduleRef._webpc_get_framebuffer_ptr() >>> 0;
+      return "gen=" + gen + " w=" + w + " h=" + h + " ptr=" + (ptr ? "set" : "null");
+    } catch (_) {
+      return "abi=unreadable";
+    }
+  }
+
+  function noFrameHint() {
+    return "QEMU display ABI is connected but no guest frame arrived in 20 s [" +
+      abiSnapshot() + "]. Frozen native values mean the running QEMU runtime " +
+      "is not publishing frames; changing values with a blank canvas mean the " +
+      "presenter is not uploading.";
+  }
   const DOCUMENT = typeof document !== "undefined" ? document : null;
 
   function report(message, force) {
@@ -81,6 +99,7 @@
     framesPresented = 0;
     connectedAt = performance.now();
     reportedNoFrames = false;
+    lastNoFrameHint = "";
     presentTimes = [];
     window.WebPCGraphicsBridge.setInputSink(sendInput);
     canvas.tabIndex = 0;
@@ -135,7 +154,8 @@
         /* The ABI is present but the running binary never produced a frame:
            this is what a QEMU build that predates the frame pump looks like. */
         reportedNoFrames = true;
-        reportError(NO_FRAME_HINT);
+        lastNoFrameHint = noFrameHint();
+        reportError(lastNoFrameHint);
       }
       if (generation === lastGeneration || (generation & 1)) return;
       const w = moduleRef._webpc_get_framebuffer_width() | 0;
@@ -164,9 +184,10 @@
       }
       lastGeneration = completedGeneration;
       framesPresented++;
-      if (lastError === NO_FRAME_HINT) {
+      if (lastNoFrameHint && lastError === lastNoFrameHint) {
         lastError = "";
         lastReported = "";
+        lastNoFrameHint = "";
       }
       const now = performance.now();
       lastPresentAt = now;
@@ -264,6 +285,7 @@
   function getStats() {
     return Object.freeze({
       connected: attached,
+      abi: attached ? abiSnapshot() : "detached",
       width: lastFrameSize ? Number(lastFrameSize.split("×")[0]) : 0,
       height: lastFrameSize ? Number(lastFrameSize.split("×")[1]) : 0,
       generation: lastGeneration,

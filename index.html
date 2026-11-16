@@ -6268,7 +6268,7 @@ main();
       " · guest resolution: " + (s.width || "—") + "×" + (s.height || "—") +
       " · QEMU ABI: " + (g && g.connected ? "connected" : "not connected") +
       (g && g.connected
-        ? " · guest frames copied: " + g.framesPresented + " · " + g.fps + " FPS"
+        ? " · [" + (g.abi || "?") + "] · guest frames copied: " + g.framesPresented + " · " + g.fps + " FPS"
         : "") +
       (g && g.lastError ? " · " + g.lastError : "");
   });
