@@ -150,6 +150,11 @@ try {
   console.log("Guest display status:", result.graphicsStatus);
   console.log("Guest display adapter:", JSON.stringify(result.graphicsAdapter));
   console.log("Guest display presenter:", JSON.stringify(result.graphicsPresenter));
+  const nativeGeneration = result.graphicsAdapter && result.graphicsAdapter.nativeGeneration;
+  if (!result.graphicsAdapter?.connected || !(nativeGeneration > 0)) {
+    throw new Error("The QEMU frame pump published no guest frame by login time: " +
+      JSON.stringify({ status: result.graphicsStatus, adapter: result.graphicsAdapter, presenter: result.graphicsPresenter }).slice(0, 1800));
+  }
   console.log("PASS: QEMU loaded the OPFS disk and booted Alpine to its login prompt.");
   await context.close();
 } catch (error) {

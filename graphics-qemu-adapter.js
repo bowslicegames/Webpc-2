@@ -282,10 +282,20 @@
     return moduleRef._webpc_send_input(type, code, x, y, buttons) === 0;
   }
 
+  function nativeGeneration() {
+    try {
+      if (!moduleRef) return -1;
+      return moduleRef._webpc_get_framebuffer_generation() >>> 0;
+    } catch (_) {
+      return -1;
+    }
+  }
+
   function getStats() {
     return Object.freeze({
       connected: attached,
       abi: attached ? abiSnapshot() : "detached",
+      nativeGeneration: attached ? nativeGeneration() : -1,
       width: lastFrameSize ? Number(lastFrameSize.split("×")[0]) : 0,
       height: lastFrameSize ? Number(lastFrameSize.split("×")[1]) : 0,
       generation: lastGeneration,
