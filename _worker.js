@@ -38,7 +38,10 @@ const STATIC_FILES = new Set([
    * silently loses its guest display and touch controls. */
   "webpc-gpu.js",
   "graphics-qemu-adapter.js",
-  "minecraft-touch.js"
+  "minecraft-touch.js",
+  /* Worker that stores the base disk in OPFS with a sync access handle.
+   * Safari cannot write an image this large through createWritable(). */
+  "webpc-opfs-writer.js"
 ]);
 
 const QEMU_RELEASE_BASE =
@@ -75,7 +78,8 @@ const STATIC_COMMIT = "cfeb4af6e71e15daa632eb163396c8a8e87fa486"
 const APP_SCRIPT_FILES = new Set([
   "webpc-gpu.js",
   "graphics-qemu-adapter.js",
-  "minecraft-touch.js"
+  "minecraft-touch.js",
+  "webpc-opfs-writer.js"
 ]);
 
 const RAW_BASE =

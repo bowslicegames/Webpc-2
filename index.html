@@ -3369,6 +3369,108 @@ async function bootQEMU() {
                 }
             }
         };
+
+        /*
+            WebKit cannot store a base image this large through
+            createWritable(): it writes to a temporary file and, once that file
+            is invalidated partway through, every later write fails with
+            NotFoundError ("The object can not be found here."). A
+            FileSystemSyncAccessHandle writes in place, but only inside a
+            dedicated worker, so the image is streamed into OPFS there.
+        */
+        function writeDiskImageInWorker(blob, diskName) {
+            return new Promise((resolve, reject) => {
+                let worker;
+                try {
+                    worker = new Worker("./webpc-opfs-writer.js");
+                } catch (error) {
+                    reject(error);
+                    return;
+                }
+                let settled = false;
+                let lastActivity = Date.now();
+                let reported = 0;
+                const finish = error => {
+                    if (settled) return;
+                    settled = true;
+                    clearInterval(watchdog);
+                    try { worker.terminate(); } catch (_) {}
+                    if (error) reject(error); else resolve();
+                };
+                const watchdog = setInterval(() => {
+                    if (Date.now() - lastActivity > 300000) {
+                        finish(new Error("the OPFS writer worker stopped responding"));
+                    }
+                }, 15000);
+                worker.onmessage = event => {
+                    const message = event.data || {};
+                    lastActivity = Date.now();
+                    if (message.type === "progress") {
+                        if (!reported || message.written - reported >= 256 * 1024 * 1024) {
+                            reported = message.written;
+                            noteBootSignal("Storing the base disk in OPFS: " +
+                                Math.round((message.written / message.size) * 100) + "% (" +
+                                (message.written / 1048576).toFixed(0) + " of " +
+                                (message.size / 1048576).toFixed(0) + " MiB).");
+                        }
+                    } else if (message.type === "retry") {
+                        noteBootSignal("OPFS disk write interrupted (" + message.message +
+                            "). Resuming at " + (message.written / 1048576).toFixed(0) + " MiB.");
+                    } else if (message.type === "done") {
+                        finish(null);
+                    } else if (message.type === "error") {
+                        finish(new Error((message.name ? message.name + ": " : "") +
+                            (message.message || "unknown OPFS writer error")));
+                    }
+                };
+                worker.onerror = event => finish(new Error(
+                    event && event.message ? event.message : "the OPFS writer worker failed to start"));
+                worker.postMessage({ type: "write", name: diskName, blob, chunkBytes: 16 * 1024 * 1024 });
+            });
+        }
+        async function writeDiskImageOnMainThread(blob) {
+            // Fallback for engines without worker OPFS writes. Safari needs the
+            // worker path above; this keeps every other browser working.
+            let diskHandle = await getDiskHandle(true);
+            let writable;
+            try { writable = await diskHandle.createWritable({keepExistingData:false}); }
+            catch (error) {
+                diskHandle = await getDiskHandle(false);
+                try { writable = await diskHandle.createWritable({keepExistingData:false}); }
+                catch (retryError) { throw stageError(retryError); }
+            }
+            try {
+                const chunkBytes = 8 * 1024 * 1024;
+                for (let offset = 0; offset < blob.size; offset += chunkBytes) {
+                    const chunk = await blob.slice(offset, Math.min(blob.size, offset + chunkBytes)).arrayBuffer();
+                    await writable.write(chunk);
+                }
+                await writable.close();
+            } catch (error) {
+                try { await writable.abort(); } catch (_) {}
+                throw stageError(error);
+            }
+        }
+        async function writeMarkerFile(name, text) {
+            let lastError;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                let writer = null;
+                try {
+                    const targetRoot = attempt === 0 ? root : await navigator.storage.getDirectory();
+                    if (attempt !== 0) root = targetRoot;
+                    const handle = await targetRoot.getFileHandle(name, {create:true});
+                    writer = await handle.createWritable({keepExistingData:false});
+                    await writer.write(text);
+                    await writer.close();
+                    return;
+                } catch (error) {
+                    lastError = error;
+                    if (writer) { try { await writer.abort(); } catch (_) {} }
+                    await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+                }
+            }
+            throw stageError(lastError);
+        }
         let initialized = false;
         stage = "checking the disk initialization marker";
         try {
@@ -3398,43 +3500,46 @@ async function bootQEMU() {
                 try { existing = await diskHandle.getFile(); }
                 catch (retryError) { throw stageError(retryError); }
             }
+            let imageComplete = false;
             if (existing.size > 0 && existing.size >= blob.size) {
-                throw new Error("An existing OPFS disk has data but its initialization marker is missing; refusing to overwrite it. The previous disk is preserved.");
-            }
-            stage = "opening the new disk writer";
-            let writable;
-            try { writable = await diskHandle.createWritable({keepExistingData:false}); }
-            catch (error) {
-                diskHandle = await getDiskHandle(false);
-                try { writable = await diskHandle.createWritable({keepExistingData:false}); }
-                catch (retryError) { throw stageError(retryError); }
-            }
-            try {
-                stage = "writing the new disk image";
-                const chunkBytes = 8 * 1024 * 1024;
-                for (let offset = 0; offset < blob.size; offset += chunkBytes) {
-                    const chunk = await blob.slice(offset, Math.min(blob.size, offset + chunkBytes)).arrayBuffer();
-                    await writable.write(chunk);
+                if (existing.size > blob.size) {
+                    throw new Error("An existing OPFS disk is larger than the signed release asset; refusing to overwrite it. The previous disk is preserved.");
                 }
-                stage = "committing the new disk image";
-                await writable.close();
-            } catch (error) {
-                try { await writable.abort(); } catch (_) {}
-                throw stageError(error);
+                // A previous launch can store every byte and fail before the
+                // initialization marker is written. Accept that complete image
+                // instead of locking this browser out of its own disk forever.
+                let header = new Uint8Array(0);
+                try { header = new Uint8Array(await existing.slice(0, 4).arrayBuffer()); } catch (_) {}
+                if (!(header[0] === 0x51 && header[1] === 0x46 && header[2] === 0x49 && header[3] === 0xfb)) {
+                    throw new Error("An existing OPFS disk has data but its initialization marker is missing and it is not a qcow2 image; refusing to overwrite it. The previous disk is preserved.");
+                }
+                imageComplete = true;
+                noteBootSignal("The existing OPFS disk image is already complete. Restoring its initialization marker.");
             }
-            // Do not reuse the pre-write handle: WebKit may invalidate it when
-            // createWritable() commits its replacement file.
-            stage = "reopening the committed disk image";
-            diskHandle = await getDiskHandle(false);
+            if (!imageComplete) {
+                stage = "writing the new disk image";
+                let stored = false;
+                if (typeof Worker === "function") {
+                    try {
+                        await writeDiskImageInWorker(blob, diskName);
+                        stored = true;
+                    } catch (error) {
+                        noteBootSignal("Worker OPFS disk write failed: " +
+                            (error && error.message ? error.message : String(error)) +
+                            ". Retrying with the main-thread writer.");
+                        try { await root.removeEntry(diskName); } catch (_) {}
+                    }
+                }
+                if (!stored) await writeDiskImageOnMainThread(blob);
+            }
             stage = "writing the disk initialization marker";
-            const markerHandle = await root.getFileHandle(markerName, {create:true});
-            const markerWriter = await markerHandle.createWritable({keepExistingData:false});
             try {
-                await markerWriter.write(diskName + ":" + blob.size);
-                await markerWriter.close();
+                await writeMarkerFile(markerName, diskName + ":" + blob.size);
             } catch (error) {
-                try { await markerWriter.abort(); } catch (_) {}
-                throw stageError(error);
+                // The image is verified below; a missing marker only costs one
+                // redundant completeness check on the next launch.
+                noteBootSignal("Could not write the OPFS disk initialization marker: " +
+                    (error && error.message ? error.message : String(error)));
             }
         }
         stage = "verifying the initialized disk image";

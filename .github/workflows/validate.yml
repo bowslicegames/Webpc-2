@@ -93,6 +93,10 @@ jobs:
           node tools/test-webpc-gpu.cjs
           node tools/test-graphics-adapter.cjs
           node --check minecraft-touch.js
+          node --check webpc-opfs-writer.js
+          node tools/test-opfs-writer.cjs
+          grep -Fq 'new Worker("./webpc-opfs-writer.js")' index.html
+          grep -Fq 'createSyncAccessHandle' webpc-opfs-writer.js
           node tools/test-graphics-bridge.cjs
           grep -Fq 'timer_new_ms(QEMU_CLOCK_REALTIME, webpc_frame_pump_cb' qemu-webpc-display/webpc-qemu-hook.c
           grep -Fq 'graphic_hw_update(con)' qemu-webpc-display/webpc-qemu-hook.c
