@@ -93,9 +93,21 @@ jobs:
             sleep 5
           done
           test "$ready" -eq 1
+          # Assets and the Worker script deploy separately on Cloudflare, so a
+          # fresh index.html can be live while the new script routes are not.
+          # Poll each module instead of failing on that transition window.
           for app_script in webpc-gpu.js graphics-qemu-adapter.js minecraft-touch.js; do
-            curl --fail --silent --show-error --location --max-time 30 \
-              "https://webpc.bowslicegames.workers.dev/$app_script" -o "work/$app_script"
+            app_ready=0
+            for attempt in $(seq 1 24); do
+              if curl --fail --silent --show-error --location --max-time 20 \
+                "https://webpc.bowslicegames.workers.dev/$app_script" -o "work/$app_script"; then
+                app_ready=1
+                break
+              fi
+              echo "Waiting for Worker script route $app_script (attempt $attempt/24)…"
+              sleep 5
+            done
+            test "$app_ready" -eq 1
           done
           grep -Fq 'window.WebPCGPU' work/webpc-gpu.js
           grep -Fq 'window.WebPCQemuGraphics' work/graphics-qemu-adapter.js
