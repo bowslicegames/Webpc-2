@@ -127,6 +127,9 @@ try {
     detail: document.querySelector("#stageDetail")?.innerText || "",
     error: document.querySelector("#errorBox")?.innerText || "",
     diskStatus: document.body.innerText.match(/Persistent OPFS disk ready:[^\n]*/)?.[0] || "",
+    graphicsStatus: document.querySelector("#guestDisplayStatus")?.innerText || "",
+    graphicsAdapter: (() => { try { return window.WebPCQemuGraphics ? window.WebPCQemuGraphics.getStats() : null; } catch (e) { return { evalError: String(e && e.message || e) }; } })(),
+    graphicsPresenter: (() => { try { return window.WebPCGraphicsBridge ? window.WebPCGraphicsBridge.getStats() : null; } catch (e) { return { evalError: String(e && e.message || e) }; } })(),
     bodyTail: document.body.innerText.slice(-5000)
   }));
 
@@ -144,6 +147,9 @@ try {
     throw new Error("Linux login UI appeared without a confirmed guest serial boot signal.");
   }
 
+  console.log("Guest display status:", result.graphicsStatus);
+  console.log("Guest display adapter:", JSON.stringify(result.graphicsAdapter));
+  console.log("Guest display presenter:", JSON.stringify(result.graphicsPresenter));
   console.log("PASS: QEMU loaded the OPFS disk and booted Alpine to its login prompt.");
   await context.close();
 } catch (error) {
