@@ -8,8 +8,8 @@ MTTCG is deliberately not enabled. The current WebKit/iPad runtime is built arou
 
 ## What is still missing before Minecraft can render
 
-- The checked-in QEMU runtime does not export the WebPC framebuffer ABI. The browser canvas is only a receiver and cannot display guest frames yet.
-- The C ABI starter is not wired into QEMU's display callbacks.
+- The deployed QEMU runtime predates the WebPC frame pump. The source tree now exports the framebuffer ABI, captures the VGA scanout and drives a 30 Hz QEMU main-loop refresh, but that requires a runtime rebuild and release pin update before frames appear.
+- The frame pump drives guest scanout and input; it is not a guest GPU.
 - The VM still has no working guest OpenGL/GLES implementation translated to WebGL 2.
 - LWJGL's window/context, input and audio interfaces are not implemented.
 - There is not yet an end-to-end Minecraft launcher/profile in the guest.

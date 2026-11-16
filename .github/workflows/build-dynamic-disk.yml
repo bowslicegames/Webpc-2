@@ -14,8 +14,9 @@ permissions:
 
 # Rebuilds are guarded, repeatable, and followed by a Worker pin refresh and live check.
 concurrency:
-  group: webpc-dynamic-disk-release-v2
-  cancel-in-progress: true
+  # Serialized with the QEMU runtime build; both activate by pushing to main.
+  group: webpc-main-binary-activation
+  cancel-in-progress: false
 
 jobs:
   build-dynamic-disk:

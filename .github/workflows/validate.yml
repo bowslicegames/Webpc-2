@@ -26,6 +26,11 @@ jobs:
           grep -Fq 'openjdk21-jre' tools/install-minecraft-prereqs.sh
           grep -Fq 'prismlauncher' tools/install-minecraft-prereqs.sh
           grep -Fq 'webpc-minecraft-display' tools/install-minecraft-prereqs.sh
+          grep -Fq 'try_start_xorg' tools/install-minecraft-prereqs.sh
+          grep -Fq 'xf86-video-vesa' tools/install-minecraft-prereqs.sh
+          grep -Fq 'xf86-video-fbdev' tools/install-minecraft-prereqs.sh
+          grep -Fq 'try_start_xorg' index.html
+          grep -Fq 'xf86-video-vesa' index.html
           grep -Fq 'Baking and verifying Minecraft Java 21 prerequisites' .github/workflows/build-dynamic-disk.yml || grep -Fq 'Bake and verify Minecraft Java 21 prerequisites' .github/workflows/build-dynamic-disk.yml
           grep -Fq -- '--repository=https://dl-cdn.alpinelinux.org/alpine/v3.22/community prismlauncher' index.html
           ! grep -Fq 'apk add --no-cache --update-cache openjdk21-jre prismlauncher' index.html
@@ -68,12 +73,33 @@ jobs:
 
       - name: Check graphics transport and QEMU ABI starter
         run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const html = fs.readFileSync("index.html", "utf8");
+          const worker = fs.readFileSync("_worker.js", "utf8");
+          const block = worker.match(/const STATIC_FILES = new Set\(\[([\s\S]*?)\]\)/);
+          if (!block) throw new Error("Worker STATIC_FILES set was not found");
+          const routed = new Set([...block[1].matchAll(/"([^"]+)"/g)].map(match => match[1]));
+          for (const match of html.matchAll(/<script[^>]+src="\.\/([^"]+)"/g)) {
+            if (!routed.has(match[1])) {
+              throw new Error("index.html loads a script the Worker does not route: " + match[1]);
+            }
+          }
+          console.log("Every script loaded by index.html has a Worker route.");
+          NODE
           node --check graphics-bridge.js
           node --check graphics-qemu-adapter.js
           node --check webpc-gpu.js
           node tools/test-webpc-gpu.cjs
+          node tools/test-graphics-adapter.cjs
           node --check minecraft-touch.js
           node tools/test-graphics-bridge.cjs
+          grep -Fq 'timer_new_ms(QEMU_CLOCK_REALTIME, webpc_frame_pump_cb' qemu-webpc-display/webpc-qemu-hook.c
+          grep -Fq 'graphic_hw_update(con)' qemu-webpc-display/webpc-qemu-hook.c
+          grep -Fq 'qemu_register_reset(webpc_frame_pump_reset' qemu-webpc-display/webpc-qemu-hook.c
+          grep -Fq 'webpc_get_framebuffer_generation() == generation' qemu-webpc-display/webpc-qemu-hook.c
+          grep -Fq 'no guest frame arrived' graphics-qemu-adapter.js
+          grep -Fq 'APP_SCRIPT_FILES' _worker.js
           gcc -std=c11 -Wall -Wextra -Werror -fsyntax-only -Iqemu-webpc-display qemu-webpc-display/webpc-display-abi.c
           python3 tools/test-qemu-webpc-patcher.py
           cc -DWEBPC_NATIVE_TEST -std=c11 -Wall -Wextra -Werror -Iqemu-webpc-display tools/test-webpc-display-abi.c qemu-webpc-display/webpc-display-abi.c -o /tmp/test-webpc-display-abi

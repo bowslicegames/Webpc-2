@@ -1062,7 +1062,7 @@ button:active {
             <div class="window-titlebar"><span>🖥️</span><span class="window-title">Virtual Computer</span><button class="window-action" data-minimize>—</button><button class="window-action" data-maximize>□</button><button class="window-action close" data-close>×</button></div>
             <div class="window-body"><div class="info-content">
               <div class="info-card"><h3>Hardware and storage</h3><p><b>Virtual disk:</b> 8 GiB qcow2, dynamically growing. The backing file starts small and grows as Linux writes data; it does not pre-allocate 8 GiB of browser memory. Actual used blocks still consume browser memory, so avoid filling multiple GiB in an iPad tab. Guest-side downloads avoid a second full-file JavaScript buffer, and the guest disk resets on a fresh launch.</p><p style="margin-top:8px"><b>Guest RAM:</b> 512 MiB. QEMU uses CPU emulation, with browser-side memory kept deliberately conservative.</p><p style="margin-top:8px"><b>Disk swapfile:</b> disabled. No disk-backed swap is created.</p></div>
-              <div class="info-card"><h3>Graphics capabilities</h3><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div><p>Host WebGL capability is not a guest GPU. This first-stage test checks the iPad browser renderer only; it does not yet display Linux or Minecraft. The experimental guest display backend is still being developed separately.</p><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="graphicsSelfTest">Run WebGL graphics test</button></div><div class="info-status" id="graphicsTestStatus">Graphics test: not run</div><canvas id="graphicsTestCanvas" width="320" height="180" aria-label="WebGL graphics test output" style="display:block;width:100%;max-width:480px;height:auto;aspect-ratio:16/9;margin-top:8px;background:#07111d;border:1px solid #ffffff22;border-radius:8px"></canvas></div><div class="info-card"><h3>Minecraft browser readiness</h3><p><b>Stage 1 — browser graphics:</b> test WebGL 2, shader compilation and framebuffer readback on this device.</p><p><b>Stage 2 — virtual display:</b> rebuild QEMU-Wasm with a browser frame output path and add a guest VirtIO-GPU 2D device plus a kernel with the matching driver.</p><p><b>Stage 3 — 3D translation:</b> add a Mesa/OpenGL ES compatibility layer and translate supported calls to WebGL 2. VirGL cannot be enabled just by adding a QEMU device; its host renderer must also be ported.</p><p><b>Stage 4 — game runtime:</b> Java 21, LWJGL input/audio/window compatibility, persistent game storage, network access, touch controls and performance tuning.</p><div class="info-status">Current state: Java can be installed, but the guest has no graphical display. Minecraft Java is not playable yet.</div></div>
+              <div class="info-card"><h3>Graphics capabilities</h3><div class="info-status" id="graphicsStatus">Browser graphics: checking WebGL support…</div><p>Host WebGL capability is not a guest GPU. This first-stage test checks the iPad browser renderer only; it does not yet display Linux or Minecraft. The experimental guest display backend is still being developed separately.</p><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="graphicsSelfTest">Run WebGL graphics test</button></div><div class="info-status" id="graphicsTestStatus">Graphics test: not run</div><canvas id="graphicsTestCanvas" width="320" height="180" aria-label="WebGL graphics test output" style="display:block;width:100%;max-width:480px;height:auto;aspect-ratio:16/9;margin-top:8px;background:#07111d;border:1px solid #ffffff22;border-radius:8px"></canvas></div><div class="info-card"><h3>Minecraft browser readiness</h3><p><b>Stage 1 — browser graphics:</b> test WebGL 2, shader compilation and framebuffer readback on this device.</p><p><b>Stage 2 — virtual display:</b> rebuild QEMU-Wasm with a browser frame output path and add a guest VirtIO-GPU 2D device plus a kernel with the matching driver.</p><p><b>Stage 3 — 3D translation:</b> add a Mesa/OpenGL ES compatibility layer and translate supported calls to WebGL 2. VirGL cannot be enabled just by adding a QEMU device; its host renderer must also be ported.</p><p><b>Stage 4 — game runtime:</b> Java 21, LWJGL input/audio/window compatibility, persistent game storage, network access, touch controls and performance tuning.</p><div class="info-status">Current state: the browser presenter, the QEMU frame pump and the guest input queue are implemented in this repository. The deployed QEMU runtime must be rebuilt from this tree before guest frames and touch input reach the canvas; Java can be installed, but Minecraft Java is not yet playable until that rebuild is published.</div></div>
               <div class="info-card"><h3>Memory management</h3><p>Check guest memory usage or optionally enable a small compressed ZRAM swap device if the Alpine kernel supports it. ZRAM uses CPU and guest RAM; it does not add physical memory or use GPU VRAM.</p><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button class="ui-button" id="memoryCheck">Check memory</button><button class="ui-button" id="enableZram">Enable compressed RAM (ZRAM)</button></div><div class="info-status" id="memoryStatus">Guest memory: not checked · Disk swapfile: disabled</div></div>
               <div class="info-card"><h3>Network diagnostics</h3><p>Test guest internet access and the Alpine package download path.</p><button class="ui-button" id="networkTest">Test guest internet</button><div class="info-status" id="networkStatus">Guest internet: not checked</div></div>
             </div><div class="window-resize" aria-hidden="true"></div></div>
@@ -1822,6 +1822,71 @@ async function prebootCheck() {
     assetNumbers.textContent =
         "0 / " + total + " assets checked";
 
+    /*
+     * GitHub release storage intermittently answers HEAD requests with
+     * 403/429/5xx through the Worker. A single transient failure must not
+     * abort the whole VM startup, so retry those statuses with backoff before
+     * reporting a real missing asset.
+     */
+    const headAssetWithRetry = async filename => {
+        let lastError = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const controller =
+                typeof AbortController === "function"
+                    ? new AbortController()
+                    : null;
+            const timeout =
+                setTimeout(() => {
+                    if (controller)
+                        controller.abort();
+                }, 10000);
+            try {
+                const response =
+                    await fetch(
+                        assetURL(filename),
+                        {
+                            method: "HEAD",
+                            cache: "no-store",
+                            redirect: "follow",
+                            /* Same-origin credentials keep a deployment behind
+                               an access proxy (or a private preview) working;
+                               nothing is sent to another origin. */
+                            credentials: "same-origin",
+                            signal:
+                                controller
+                                    ? controller.signal
+                                    : undefined
+                        }
+                    );
+                if (response.ok) return response;
+                lastError = new Error(
+                    filename +
+                    " returned HTTP " +
+                    response.status +
+                    " " +
+                    response.statusText
+                );
+                if (![403, 408, 425, 429, 500, 502, 503, 504].includes(response.status)) {
+                    throw lastError;
+                }
+            } catch (error) {
+                if (error && error.name === "AbortError") {
+                    lastError = new Error(
+                        "Pre-boot check timed out after 10 seconds for " + filename + "."
+                    );
+                } else {
+                    lastError = error;
+                }
+            } finally {
+                clearTimeout(timeout);
+            }
+            if (attempt < 2) {
+                await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+            }
+        }
+        throw lastError || new Error("Pre-boot check failed for " + filename + ".");
+    };
+
     const checkOne = async filename => {
 
         /*
@@ -1845,43 +1910,12 @@ async function prebootCheck() {
             return filename;
         }
 
-        const controller =
-            typeof AbortController === "function"
-                ? new AbortController()
-                : null;
-
-        const timeout =
-            setTimeout(() => {
-                if (controller)
-                    controller.abort();
-            }, 10000);
-
         try {
 
             const response =
-                await fetch(
-                    assetURL(filename),
-                    {
-                        method: "HEAD",
-                        cache: "no-store",
-                        redirect: "follow",
-                        credentials: "omit",
-                        signal:
-                            controller
-                                ? controller.signal
-                                : undefined
-                    }
+                await headAssetWithRetry(
+                    filename
                 );
-
-            if (!response.ok) {
-                throw new Error(
-                    filename +
-                    " returned HTTP " +
-                    response.status +
-                    " " +
-                    response.statusText
-                );
-            }
 
             /*
              * Reject obvious HTML/error pages before the large
@@ -1932,8 +1966,6 @@ async function prebootCheck() {
             );
 
         } finally {
-
-            clearTimeout(timeout);
 
             completed++;
 
@@ -2245,7 +2277,7 @@ async function downloadWithProgress(filename) {
                     method: "GET",
                     cache: "no-store",
                     redirect: "follow",
-                    credentials: "omit",
+                    credentials: "same-origin",
                     headers: {
                         "Accept":
                             "application/octet-stream"
@@ -5689,7 +5721,7 @@ main();
       "    echo '[4/7] Installing Java 21, Prism Launcher, Xorg and Mesa (up to 3 attempts)'",
       "    install_rc=1; attempt=1",
       "    while [ \"$attempt\" -le 3 ]; do",
-      "      apk add --no-cache --update-cache openjdk21-jre xorg-server xf86-input-libinput mesa-dri-gallium mesa-gl mesa-egl mesa-gbm libx11 libxrandr libxcursor libxi libxinerama libxxf86vm libxrender libxfixes libxext libxcb libxkbcommon libdrm libpciaccess xinit xauth font-dejavu; install_rc=$?",
+      "      apk add --no-cache --update-cache openjdk21-jre xorg-server xf86-video-vesa xf86-video-fbdev xf86-input-libinput mesa-dri-gallium mesa-gl mesa-egl mesa-gbm libx11 libxrandr libxcursor libxi libxinerama libxxf86vm libxrender libxfixes libxext libxcb libxkbcommon libdrm libpciaccess xinit xauth font-dejavu; install_rc=$?",
       "      if [ \"$install_rc\" -eq 0 ]; then break; fi",
       "      echo \"Minecraft runtime package attempt $attempt failed (exit $install_rc). Will refresh and retry.\"",
       "      if [ \"$attempt\" -lt 3 ]; then echo 'Refreshing indexes before retry…'; apk update; fi",
@@ -5730,23 +5762,75 @@ main();
       "export GALLIUM_DRIVER=llvmpipe",
       "export QT_QPA_PLATFORM=xcb",
       "export QT_X11_NO_MITSHM=1",
-      "mkdir -p /var/log /tmp/.X11-unix",
-      "if [ ! -e /dev/dri/card0 ]; then modprobe bochs_drm >/dev/null 2>&1 || true; fi",
-      "if ! pidof Xorg >/dev/null 2>&1; then",
+      "mkdir -p /var/log /tmp/.X11-unix /etc/X11/xorg.conf.d",
+      "modprobe bochs_drm >/dev/null 2>&1 || true",
+      "{",
+      "  echo \"--- WebPC guest display probe ---\"",
+      "  ls /dev/dri 2>/dev/null || echo \"no /dev/dri\"",
+      "  ls /dev/fb* 2>/dev/null || echo \"no /dev/fb*\"",
+      "} >> /var/log/webpc-xorg.log 2>/dev/null || true",
+      "write_xorg_conf() {",
+      "  driver=\"$1\"",
+      "  cat > /etc/X11/xorg.conf.d/20-webpc.conf <<WEBPC_XORG_GEN_EOF",
+      "Section \"Device\"",
+      "  Identifier \"WebPC VGA\"",
+      "  Driver \"$driver\"",
+      "  Option \"AccelMethod\" \"none\"",
+      "EndSection",
+      "Section \"Screen\"",
+      "  Identifier \"WebPC Screen\"",
+      "  Device \"WebPC VGA\"",
+      "  DefaultDepth 24",
+      "  SubSection \"Display\"",
+      "    Depth 24",
+      "    Modes \"1024x768\" \"800x600\" \"640x480\"",
+      "  EndSubSection",
+      "EndSection",
+      "WEBPC_XORG_GEN_EOF",
+      "}",
+      "try_start_xorg() {",
+      "  driver=\"$1\"",
+      "  write_xorg_conf \"$driver\"",
       "  Xorg :0 -config /etc/X11/xorg.conf.d/20-webpc.conf -noreset -nolisten tcp -keeptty -logfile /var/log/webpc-xorg.log vt1 &",
       "  xpid=$!",
       "  n=0",
-      "  while [ \"$n\" -lt 20 ] && [ ! -S /tmp/.X11-unix/X0 ]; do",
+      "  while [ \"$n\" -lt 15 ] && [ ! -S /tmp/.X11-unix/X0 ]; do",
       "    kill -0 \"$xpid\" 2>/dev/null || break",
       "    sleep 1",
       "    n=$((n + 1))",
       "  done",
+      "  if [ -S /tmp/.X11-unix/X0 ]; then",
+      "    echo \"Xorg started with the $driver driver\"",
+      "    return 0",
+      "  fi",
+      "  kill \"$xpid\" 2>/dev/null || true",
+      "  return 1",
+      "}",
+      "if ! pidof Xorg >/dev/null 2>&1; then",
+      "  primary=vesa",
+      "  if [ -e /dev/dri/card0 ]; then",
+      "    primary=modesetting",
+      "  elif [ -e /dev/fb0 ]; then",
+      "    primary=fbdev",
+      "  fi",
+      "  echo \"Using Xorg driver: $primary\"",
+      "  for candidate in \"$primary\" fbdev vesa modesetting; do",
+      "    [ -n \"$candidate\" ] || continue",
+      "    if try_start_xorg \"$candidate\"; then",
+      "      break",
+      "    fi",
+      "    echo \"Xorg could not start with $candidate; trying the next driver.\"",
+      "  done",
       "fi",
-      "if [ ! -S /tmp/.X11-unix/X0 ]; then echo 'Xorg did not create display :0'; tail -n 80 /var/log/webpc-xorg.log 2>/dev/null || true; exit 20; fi",
+      "if [ ! -S /tmp/.X11-unix/X0 ]; then",
+      "  echo \"Xorg did not create display :0\" >&2",
+      "  tail -n 80 /var/log/webpc-xorg.log 2>/dev/null || true",
+      "  exit 20",
+      "fi",
       "exec prismlauncher",
       "WEBPC_MC_EOF",
       "chmod 755 /usr/local/bin/webpc-minecraft-display",
-      "echo 'Configured Xorg modesetting and Mesa llvmpipe. Guest VGA/DRM availability will be checked when the display starts.'",
+      "echo 'Configured Xorg (modesetting/fbdev/vesa probe at launch) and Mesa llvmpipe. Guest VGA/DRM availability will be checked when the display starts.'",
       "if command -v java >/dev/null 2>&1; then java -version 2>&1; java_rc=$?; else echo 'ERROR: java executable is not on PATH'; java_rc=127; fi",
       "if command -v prismlauncher >/dev/null 2>&1; then prismlauncher --version 2>&1 || true; else echo 'ERROR: Prism Launcher executable is missing'; java_rc=127; fi",
       "if [ \"$java_rc\" -eq 0 ] && java -version 2>&1 | grep -Eq 'version .?21|openjdk 21' && command -v prismlauncher >/dev/null 2>&1 && command -v Xorg >/dev/null 2>&1; then rc=0; echo 'SUCCESS: Java 21, Prism Launcher, Xorg and Mesa runtime packages are installed.'; else",
@@ -6007,13 +6091,23 @@ main();
   if (!canvas || !status || !window.WebPCGraphicsBridge) return;
   try {
     window.WebPCGraphicsBridge.attach(canvas);
-    status.textContent = "Guest display: bridge ready · no QEMU frame source is connected yet";
+    status.textContent = "Guest display: WebGL presenter ready · waiting for the guest framebuffer";
   } catch (error) {
-    status.textContent = "Guest display bridge error: " + error.message;
+    status.textContent = "Guest display presenter error: " + error.message;
   }
   if (button) button.addEventListener("click", () => {
     const s = window.WebPCGraphicsBridge.getStats();
-    status.textContent = "Bridge attached: " + s.attached + " · frames received: " + s.frames + " · resolution: " + (s.width || "—") + "×" + (s.height || "—") + " · input sink: " + s.inputConnected;
+    const g = window.WebPCQemuGraphics && window.WebPCQemuGraphics.getStats
+      ? window.WebPCQemuGraphics.getStats()
+      : null;
+    status.textContent =
+      "Presenter: " + s.gpu + " · GPU frames: " + s.frames +
+      " · guest resolution: " + (s.width || "—") + "×" + (s.height || "—") +
+      " · QEMU ABI: " + (g && g.connected ? "connected" : "not connected") +
+      (g && g.connected
+        ? " · guest frames copied: " + g.framesPresented + " · " + g.fps + " FPS"
+        : "") +
+      (g && g.lastError ? " · " + g.lastError : "");
   });
 })();
 </script>

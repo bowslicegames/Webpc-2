@@ -32,7 +32,13 @@ const STATIC_FILES = new Set([
   "index.html",
   "xterm/xterm.css",
   "xterm/xterm.js",
-  "xterm-pty/index.mjs"
+  "xterm-pty/index.mjs",
+  /* Browser display and touch modules loaded directly by index.html.
+   * These must be routed here; an unmatched path returns 404 and the page
+   * silently loses its guest display and touch controls. */
+  "webpc-gpu.js",
+  "graphics-qemu-adapter.js",
+  "minecraft-touch.js"
 ]);
 
 const QEMU_RELEASE_BASE =
@@ -64,6 +70,13 @@ const BASE_ASSETS_RELEASE_TAG = BASE_ASSETS_RELEASE_BASE.split("/").filter(Boole
  * Worker itself is already new.
  */
 const STATIC_COMMIT = "cf4c518d105614e64d49ddb9be4415bc28c1fa9f"
+
+/* Scripts loaded by index.html that must never come from a stale CDN copy. */
+const APP_SCRIPT_FILES = new Set([
+  "webpc-gpu.js",
+  "graphics-qemu-adapter.js",
+  "minecraft-touch.js"
+]);
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bowslicegames/Webpc-2/" +
@@ -579,8 +592,40 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
       const releaseBase = QEMU_RELEASE_ASSETS.has(filename)
         ? QEMU_RELEASE_BASE
         : BASE_ASSETS_RELEASE_BASE;
+      const releaseTag = QEMU_RELEASE_ASSETS.has(filename)
+        ? QEMU_RELEASE_TAG
+        : BASE_ASSETS_RELEASE_TAG;
       const upstreamURL =
         releaseBase + encodeURIComponent(filename);
+
+      /*
+       * Worker subrequests to GitHub's release storage are not cached at the
+       * edge automatically, and GitHub intermittently answers large release
+       * downloads with 502/503. Cache each verified runtime binary in the
+       * Workers Cache API so a reload or a second browser does not depend on
+       * GitHub at all. The cache key includes the release tag, so a new
+       * runtime release can never be served from an older entry.
+       */
+      const assetCache =
+        typeof caches !== "undefined" && caches.default ? caches.default : null;
+      const cacheKey = new Request(
+        url.origin + "/webpc-asset-cache/" +
+          encodeURIComponent(filename) +
+          "?release=" + encodeURIComponent(releaseTag),
+        { method: "GET" }
+      );
+      if (assetCache && request.method === "GET") {
+        try {
+          const cached = await assetCache.match(cacheKey);
+          if (cached) {
+            const cachedHeaders = new Headers(cached.headers);
+            cachedHeaders.set("X-WebPC-Asset-Cache", "hit");
+            return new Response(cached.body, { status: 200, headers: cachedHeaders });
+          }
+        } catch (_) {
+          /* An unavailable cache must never break asset delivery. */
+        }
+      }
 
       try {
         /*
@@ -593,17 +638,27 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
         let upstream = null;
         let lastUpstreamError = null;
         let assetAttempts = 0;
-        for (let attempt = 0; attempt < 4; attempt++) {
+        for (let attempt = 0; attempt < 5; attempt++) {
           assetAttempts = attempt + 1;
           try {
-            upstream = await fetch(upstreamURL, {
+            /*
+             * A retry uses a distinct query string so a poisoned edge or
+             * cache entry for the first URL cannot replay the same failure.
+             */
+            const attemptURL = attempt === 0
+              ? upstreamURL
+              : upstreamURL + (upstreamURL.includes("?") ? "&" : "?") +
+                "webpc-retry=" + attempt;
+            upstream = await fetch(attemptURL, {
               method: request.method === "HEAD" ? "HEAD" : "GET",
               redirect: "follow",
               headers: {
                 "Accept": "application/octet-stream"
-              }
+              },
+              cf: { cacheTtl: 0 }
             });
-            if (upstream.ok || (upstream.status < 500 && upstream.status !== 429)) {
+            if (upstream.ok ||
+                (upstream.status < 500 && upstream.status !== 429 && upstream.status !== 403)) {
               break;
             }
             lastUpstreamError = new Error("GitHub returned " + upstream.status + " " + upstream.statusText);
@@ -612,8 +667,8 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
             lastUpstreamError = fetchError;
             upstream = null;
           }
-          if (attempt < 3) {
-            await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1)));
+          if (attempt < 4) {
+            await new Promise(resolve => setTimeout(resolve, 250 * Math.pow(2, attempt)));
           }
         }
         if (!upstream) {
@@ -685,10 +740,32 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
           contentType(filename)
         );
 
-        return new Response(upstream.body, {
+        headers.set(
+          "X-WebPC-Asset-Cache",
+          assetCache && request.method === "GET" ? "miss" : "disabled"
+        );
+
+        const assetResponse = new Response(upstream.body, {
           status: upstream.status,
           headers
         });
+
+        /*
+         * Store only complete 200 responses. A partial, error or HEAD
+         * response must never become the cached runtime binary.
+         */
+        if (assetCache && request.method === "GET" && upstream.status === 200) {
+          const declaredLength = Number(headers.get("content-length") || 0);
+          if (!declaredLength || declaredLength <= 96 * 1024 * 1024) {
+            try {
+              ctx.waitUntil(assetCache.put(cacheKey, assetResponse.clone()));
+            } catch (_) {
+              /* Cache fill is best-effort; the response is still valid. */
+            }
+          }
+        }
+
+        return assetResponse;
       } catch (error) {
         return new Response(
           "WebPC 2 Worker ACTIVE\n" +
@@ -801,7 +878,8 @@ code{background:#1b2330;padding:3px 6px;border-radius:5px}
 
         headers.set(
           "Cache-Control",
-          path === "index.html"
+          /* index.html and its app scripts must always deploy together. */
+          path === "index.html" || APP_SCRIPT_FILES.has(path)
             ? "no-store"
             : "public, max-age=3600"
         );

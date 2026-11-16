@@ -18,7 +18,10 @@ permissions:
   contents: write
 
 concurrency:
-  group: webpc-qemu-framebuffer-build
+  # The QEMU and disk workflows both rewrite index.html/_worker.js on main and
+  # push the result. Sharing one group serializes them so their activation
+  # pushes can never race each other into a non-fast-forward failure.
+  group: webpc-main-binary-activation
   cancel-in-progress: false
 
 jobs:

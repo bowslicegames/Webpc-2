@@ -1,18 +1,26 @@
 #include "qemu/osdep.h"
 #include "ui/surface.h"
+#include "ui/console.h"
+#include "sysemu/reset.h"
 #include "webpc-display-abi.h"
 #include "ui/input.h"
 #include "qapi/qapi-types-ui.h"
 #include "qemu/timer.h"
+
 #define WEBPC_CAPTURE_MAX_PIXELS (2048u * 2048u)
+/* ~30 Hz presentation matches the browser's default frame cap. */
+#define WEBPC_FRAME_INTERVAL_MS 33
+/* Absolute pointer range used until the guest mode is known. */
+#define WEBPC_DEFAULT_WIDTH 640
+#define WEBPC_DEFAULT_HEIGHT 360
 
 static uint32_t webpc_old_buttons;
 static int webpc_last_x, webpc_last_y;
 static bool webpc_have_pointer;
-static QEMUTimer *webpc_input_timer;
 static uint32_t webpc_input_width, webpc_input_height;
 static uint8_t *webpc_rgba_buffer;
 static size_t webpc_rgba_capacity;
+static QEMUTimer *webpc_frame_timer;
 
 static void webpc_process_input(uint32_t width, uint32_t height)
 {
@@ -74,13 +82,6 @@ static void webpc_process_input(uint32_t width, uint32_t height)
     if (changed) qemu_input_event_sync();
 }
 
-static void webpc_input_timer_cb(void *opaque)
-{
-    (void)opaque;
-    webpc_process_input(webpc_input_width, webpc_input_height);
-    timer_mod(webpc_input_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + 8);
-}
-
 void webpc_qemu_capture_surface(DisplaySurface *surface)
 {
     int width, height, stride;
@@ -98,11 +99,6 @@ void webpc_qemu_capture_surface(DisplaySurface *surface)
 
     webpc_input_width = (uint32_t)width;
     webpc_input_height = (uint32_t)height;
-    if (!webpc_input_timer) {
-        webpc_input_timer = timer_new_ms(QEMU_CLOCK_REALTIME, webpc_input_timer_cb, NULL);
-        timer_mod(webpc_input_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + 8);
-    }
-    webpc_process_input(webpc_input_width, webpc_input_height);
 
     format = surface_format(surface);
     switch (format) {
@@ -146,4 +142,68 @@ void webpc_qemu_capture_surface(DisplaySurface *surface)
         }
     }
     webpc_publish_frame(dst, (uint32_t)width, (uint32_t)height);
+}
+
+/*
+ * The browser build has no host display backend. Without one QEMU never runs
+ * a display refresh, so a VGA scanout is never redrawn and the WebPC capture
+ * hook above is never called. This pump drives the guest scanout and drains
+ * the browser input queue on the QEMU main loop, independent of whether any
+ * display backend exists.
+ */
+static QemuConsole *webpc_graphic_console(void)
+{
+    /* The first graphic console is normally the VGA scanout, but the index
+       depends on which consoles the machine created first. Scan a bounded
+       number of console slots instead of assuming index 0. */
+    for (unsigned int index = 0; index < 8; index++) {
+        QemuConsole *con = qemu_console_lookup_by_index(index);
+        if (!con) return NULL;
+        if (QEMU_IS_GRAPHIC_CONSOLE(con)) return con;
+    }
+    return NULL;
+}
+
+static void webpc_frame_pump_cb(void *opaque)
+{
+    QemuConsole *con;
+
+    (void)opaque;
+    webpc_process_input(webpc_input_width ? webpc_input_width : WEBPC_DEFAULT_WIDTH,
+                        webpc_input_height ? webpc_input_height : WEBPC_DEFAULT_HEIGHT);
+
+    con = webpc_graphic_console();
+    if (con) {
+        /* The refresh runs the device's gfx_update, which reaches the capture
+           hook in ui/console.c. Publish the current scanout only when the
+           device decided there was nothing new, so one frame is never copied
+           twice in the same tick. */
+        uint32_t generation = webpc_get_framebuffer_generation();
+        graphic_hw_update(con);
+        if (webpc_get_framebuffer_generation() == generation) {
+            webpc_qemu_capture_surface(qemu_console_surface(con));
+        }
+    }
+
+    if (webpc_frame_timer) {
+        timer_mod(webpc_frame_timer,
+                  qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + WEBPC_FRAME_INTERVAL_MS);
+    }
+}
+
+static void webpc_frame_pump_reset(void *opaque)
+{
+    (void)opaque;
+    if (!webpc_frame_timer) {
+        webpc_frame_timer = timer_new_ms(QEMU_CLOCK_REALTIME, webpc_frame_pump_cb, NULL);
+    }
+    timer_mod(webpc_frame_timer,
+              qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + WEBPC_FRAME_INTERVAL_MS);
+}
+
+/* The machine reset during startup runs after the VGA console exists, so this
+   is a safe point to start the main-loop timer. */
+static void __attribute__((constructor)) webpc_frame_pump_register(void)
+{
+    qemu_register_reset(webpc_frame_pump_reset, NULL);
 }

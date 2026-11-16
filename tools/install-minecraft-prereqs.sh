@@ -37,6 +37,8 @@ echo "=== Installing Minecraft Java 21, Prism, Xorg and Mesa ==="
 apk add --no-cache \
   openjdk21-jre \
   xorg-server \
+  xf86-video-vesa \
+  xf86-video-fbdev \
   xf86-input-libinput \
   xinit \
   xauth \
@@ -105,20 +107,75 @@ export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
 export QT_QPA_PLATFORM=xcb
 export QT_X11_NO_MITSHM=1
-mkdir -p /var/log /tmp/.X11-unix
-if [ ! -e /dev/dri/card0 ]; then
-  modprobe bochs_drm >/dev/null 2>&1 || true
-fi
-if ! pidof Xorg >/dev/null 2>&1; then
+mkdir -p /var/log /tmp/.X11-unix /etc/X11/xorg.conf.d
+modprobe bochs_drm >/dev/null 2>&1 || true
+
+# Record which guest display devices exist so the browser diagnostics can
+# explain what the guest is actually driving.
+{
+  echo "--- WebPC guest display probe ---"
+  ls /dev/dri 2>/dev/null || echo "no /dev/dri"
+  ls /dev/fb* 2>/dev/null || echo "no /dev/fb*"
+} >> /var/log/webpc-xorg.log 2>/dev/null || true
+
+write_xorg_conf() {
+  driver="$1"
+  cat > /etc/X11/xorg.conf.d/20-webpc.conf <<WEBPC_XORG_GEN_EOF
+Section "Device"
+  Identifier "WebPC VGA"
+  Driver "$driver"
+  Option "AccelMethod" "none"
+EndSection
+Section "Screen"
+  Identifier "WebPC Screen"
+  Device "WebPC VGA"
+  DefaultDepth 24
+  SubSection "Display"
+    Depth 24
+    Modes "1024x768" "800x600" "640x480"
+  EndSubSection
+EndSection
+WEBPC_XORG_GEN_EOF
+}
+
+try_start_xorg() {
+  driver="$1"
+  write_xorg_conf "$driver"
   Xorg :0 -config /etc/X11/xorg.conf.d/20-webpc.conf -noreset -nolisten tcp -keeptty -logfile /var/log/webpc-xorg.log vt1 &
   xpid=$!
   n=0
-  while [ "$n" -lt 20 ] && [ ! -S /tmp/.X11-unix/X0 ]; do
+  while [ "$n" -lt 15 ] && [ ! -S /tmp/.X11-unix/X0 ]; do
     kill -0 "$xpid" 2>/dev/null || break
     sleep 1
     n=$((n + 1))
   done
+  if [ -S /tmp/.X11-unix/X0 ]; then
+    echo "Xorg started with the $driver driver"
+    return 0
+  fi
+  kill "$xpid" 2>/dev/null || true
+  return 1
+}
+
+if ! pidof Xorg >/dev/null 2>&1; then
+  # Prefer a DRM node, then the kernel framebuffer, then plain VESA. The
+  # browser build has no GPU, so a software Xorg mode is the working target.
+  primary=vesa
+  if [ -e /dev/dri/card0 ]; then
+    primary=modesetting
+  elif [ -e /dev/fb0 ]; then
+    primary=fbdev
+  fi
+  echo "Using Xorg driver: $primary"
+  for candidate in "$primary" fbdev vesa modesetting; do
+    [ -n "$candidate" ] || continue
+    if try_start_xorg "$candidate"; then
+      break
+    fi
+    echo "Xorg could not start with $candidate; trying the next driver."
+  done
 fi
+
 if [ ! -S /tmp/.X11-unix/X0 ]; then
   echo "Xorg did not create display :0" >&2
   tail -n 80 /var/log/webpc-xorg.log 2>/dev/null || true
@@ -217,7 +274,7 @@ fi
   echo "WebPC Minecraft prerequisites"
   echo "Alpine: $ALPINE_VERSION"
   java -version 2>&1
-  apk info -e openjdk21-jre prismlauncher xorg-server xf86-input-libinput mesa-dri-gallium mesa-gl mesa-egl
+  apk info -e openjdk21-jre prismlauncher xorg-server xf86-input-libinput xf86-video-vesa xf86-video-fbdev mesa-dri-gallium mesa-gl mesa-egl
 } > /etc/webpc-minecraft-prereqs
 
 echo "PASS: Java 21, Prism Launcher, Xorg, Mesa, fonts and audio runtime are installed in the guest disk."
