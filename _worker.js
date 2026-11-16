@@ -69,7 +69,7 @@ const BASE_ASSETS_RELEASE_TAG = BASE_ASSETS_RELEASE_BASE.split("/").filter(Boole
  * because the browser can then show an old startup screen while the
  * Worker itself is already new.
  */
-const STATIC_COMMIT = "c192f5f52c81f26c79efb4dfb622507327323975"
+const STATIC_COMMIT = "cfeb4af6e71e15daa632eb163396c8a8e87fa486"
 
 /* Scripts loaded by index.html that must never come from a stale CDN copy. */
 const APP_SCRIPT_FILES = new Set([
