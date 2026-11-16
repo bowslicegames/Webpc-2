@@ -159,7 +159,7 @@ jobs:
           const brokerStart = html.indexOf("function pumpGuestQueue()");
           const brokerEnd = html.indexOf("window.webpcDesktopConsumeOutput", brokerStart);
           const broker = html.slice(brokerStart, brokerEnd);
-          for (const marker of ["armGuestCommandTimeout", "sendGuestInput(", "pausedForBackground"]) {
+          for (const marker of ["armGuestCommandTimeout", "sendGuestInput(", "pausedForBackground", "handleCommandDeadline", "retryOnce", "sawOutput"]) {
             if (!broker.includes(marker) && !html.includes(marker)) {
               throw new Error("Resume-safe desktop app broker marker missing: " + marker);
             }

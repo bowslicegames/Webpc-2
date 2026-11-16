@@ -4951,11 +4951,52 @@ main();
         job.pausedForBackground = true;
         return;
       }
-      commandChannelStalled = true;
-      const stopped = new Error("The guest command channel stopped responding. Use Interrupt & recover apps to test the shell before restarting the VM.");
-      drainServiceQueues("The guest command channel is temporarily unresponsive. Check task logs and retry after WebPC resumes.");
-      job.finish(stopped, job.text);
+      handleCommandDeadline(job);
     }, delay);
+  }
+  /*
+   * A missed deadline is not proof that the guest shell is dead. Installing
+   * Java or starting Xorg and Prism keeps the guest CPU busy for minutes, and
+   * a foreground process can hold the shell so an app command is only queued
+   * behind it. Interrupt whatever is running, then either retry an explicitly
+   * repeatable check or report that the guest is busy, instead of poisoning
+   * every later app task until the VM is reloaded.
+   */
+  function handleCommandDeadline(job) {
+    const answered = !!job.sawOutput;
+    /*
+     * Only retry commands that are explicitly repeatable, so an interrupted
+     * package transaction can never be left half applied. The interrupt runs
+     * before the retry because a foreground process holding the shell would
+     * otherwise swallow the command again.
+     */
+    if (job.retryOnce && !job.retried) {
+      job.retried = true;
+      job.found = false;
+      job.text = "";
+      job.sawOutput = false;
+      outputBuffer = "";
+      try { sendRawGuestControlByte("\x03"); } catch (_) {}
+      if (typeof job.dispatch === "function") {
+        armGuestCommandTimeout(job, job.timeoutMs);
+        job.dispatch();
+        return;
+      }
+    }
+    if (answered) {
+      // The guest replied while the command ran, so the transport is alive.
+      // Report the busy guest and keep the channel usable for a retry.
+      drainServiceQueues("The guest shell was busy. Wait for the running task to finish, then retry.");
+      job.finish(new Error(
+        "The guest shell was still busy with another task, so this command did not finish in time. " +
+        "The VM answered during the wait, so it is alive: let Xorg, Prism or the package installation settle, then retry."
+      ), job.text);
+      return;
+    }
+    commandChannelStalled = true;
+    const stopped = new Error("The guest command channel stopped responding. Use Interrupt & recover apps to test the shell before restarting the VM.");
+    drainServiceQueues("The guest command channel is temporarily unresponsive. Check task logs and retry after WebPC resumes.");
+    job.finish(stopped, job.text);
   }
   const BASE_HOME = "/root";
   const enc = new TextEncoder();
@@ -5005,7 +5046,7 @@ main();
       status.textContent = "Linux shell ready · app queues idle";
     }
   }
-  function enqueueForService(service, command, callback) {
+  function enqueueForService(service, command, callback, options) {
     if (commandChannelStalled) {
       if (callback) callback(new Error("The shell stopped responding during an app task. Reload the VM before retrying."), "");
       return false;
@@ -5019,7 +5060,7 @@ main();
       if (callback) callback(new Error("The desktop service queues are full. Wait for a task to finish and try again."), "");
       return false;
     }
-    queue.push({command, callback, service});
+    queue.push({command, callback, service, retryOnce: !!(options && options.retryOnce)});
     updateRuntimeStatus();
     pumpGuestQueue();
     return true;
@@ -5027,8 +5068,8 @@ main();
   function runGuest(command, callback) {
     return enqueueForService("files", command, callback);
   }
-  function runGuestForService(service, command, callback) {
-    return enqueueForService(SERVICE_NAMES.includes(service) ? service : "system", command, callback);
+  function runGuestForService(service, command, callback, options) {
+    return enqueueForService(SERVICE_NAMES.includes(service) ? service : "system", command, callback, options);
   }
   // Expose only the small guest-command bridge needed by the earlier desktop settings UI.
   window.webpcShellReadyNow = shellReadyNow;
@@ -5125,7 +5166,8 @@ main();
     outputBuffer = "";
     updateRuntimeStatus();
     const id = unique(), begin = "__" + id + "_BEGIN__", end = "__" + id + "_END_OK__", fail = "__" + id + "_END_FAIL__";
-    const p = {begin, end, fail, callback:job.callback, text:"", found:false, timeout:null, service:job.service};
+    const p = {begin, end, fail, callback:job.callback, text:"", found:false, timeout:null, service:job.service,
+      sawOutput:false, retried:false, retryOnce:!!job.retryOnce, dispatch:null};
     pending = p;
     function finish(err, result) {
       if (p.timeout) clearTimeout(p.timeout);
@@ -5142,9 +5184,9 @@ main();
       pumpGuestQueue();
     }
     p.finish = finish;
-    const commandTimeoutMs = job.command.includes("WEBPC_DECOMPRESS_OK") ? 180000 :
-      (job.command.includes("WEBPC_TASK_STARTED") ? 60000 :
-        (job.command.includes("WEBPC_APKINDEX_OK") ? 45000 : 20000));
+    const commandTimeoutMs = job.command.includes("WEBPC_DECOMPRESS_OK") ? 240000 :
+      (job.command.includes("WEBPC_TASK_STARTED") ? 120000 :
+        (job.command.includes("WEBPC_APKINDEX_OK") ? 90000 : 45000));
     p.timeoutMs = commandTimeoutMs;
     p.previousDisableStdin = terminal && terminal.options
       ? terminal.options.disableStdin
@@ -5165,47 +5207,54 @@ main();
     const payload = "printf '\\n" + begin + "\\n'; " + job.command +
       "; __webpc_exit_code=$?; stty echo 2>/dev/null || true; if [ \"$__webpc_exit_code\" -eq 0 ]; then printf '\\n" + end +
       "\\n'; else printf '\\n" + fail + "\\n'; fi";
-    const encodedPayload = b64(payload);
-    const wrapped = "printf '%s' '" + encodedPayload + "' | base64 -d | sh";
-    try {
-      if (wrapped.length <= 1400) {
-        if (!sendGuestInput("stty -echo 2>/dev/null\r")) {
-          throw new Error("Could not prepare the PTY for an app command.");
-        }
-        setTimeout(() => {
-          if (pending === p && !sendGuestInput(wrapped + "\r")) {
-            finish(new Error("Could not send the app command payload to Linux."), "");
+    /*
+     * Dispatch lives in a function so the deadline handler can send the
+     * same payload again after interrupting a busy foreground process.
+     */
+    p.dispatch = () => {
+      const encodedPayload = b64(payload);
+      const wrapped = "printf '%s' '" + encodedPayload + "' | base64 -d | sh";
+      try {
+        if (wrapped.length <= 1400) {
+          if (!sendGuestInput("stty -echo 2>/dev/null\r")) {
+            throw new Error("Could not prepare the PTY for an app command.");
           }
-        }, 80);
-      } else {
-        /*
-         * Large app commands are staged in short PTY writes. Terminal input
-         * is locked and TTY echo is disabled for the transport lines, so the
-         * app script itself is not dumped into the visible terminal window.
-         */
-        const commandFile = "/tmp/.webpc-command-" + id + ".sh";
-        const commands = [": > " + shellQuote(commandFile)];
-        for (let offset = 0; offset < encodedPayload.length; offset += 800) {
-          const chunk = encodedPayload.slice(offset, offset + 800);
-          commands.push("printf '%s' '" + chunk + "' | base64 -d >> " + shellQuote(commandFile));
-        }
-        commands.push("sh " + shellQuote(commandFile) + "; rm -f " + shellQuote(commandFile));
-        let transportIndex = 0;
-        const sendNextTransportLine = () => {
-          if (pending !== p || transportIndex >= commands.length) return;
-          try {
-            if (!sendGuestInput(commands[transportIndex++] + "\r")) {
-              throw new Error("Could not send a staged app-command chunk to Linux.");
+          setTimeout(() => {
+            if (pending === p && !sendGuestInput(wrapped + "\r")) {
+              finish(new Error("Could not send the app command payload to Linux."), "");
             }
-            if (transportIndex < commands.length) setTimeout(sendNextTransportLine, 90);
-          } catch (e) { finish(e, ""); }
-        };
-        if (!sendGuestInput("stty -echo 2>/dev/null\r")) {
-          throw new Error("Could not prepare the PTY for a staged app command.");
+          }, 80);
+        } else {
+          /*
+           * Large app commands are staged in short PTY writes. Terminal input
+           * is locked and TTY echo is disabled for the transport lines, so the
+           * app script itself is not dumped into the visible terminal window.
+           */
+          const commandFile = "/tmp/.webpc-command-" + id + ".sh";
+          const commands = [": > " + shellQuote(commandFile)];
+          for (let offset = 0; offset < encodedPayload.length; offset += 800) {
+            const chunk = encodedPayload.slice(offset, offset + 800);
+            commands.push("printf '%s' '" + chunk + "' | base64 -d >> " + shellQuote(commandFile));
+          }
+          commands.push("sh " + shellQuote(commandFile) + "; rm -f " + shellQuote(commandFile));
+          let transportIndex = 0;
+          const sendNextTransportLine = () => {
+            if (pending !== p || transportIndex >= commands.length) return;
+            try {
+              if (!sendGuestInput(commands[transportIndex++] + "\r")) {
+                throw new Error("Could not send a staged app-command chunk to Linux.");
+              }
+              if (transportIndex < commands.length) setTimeout(sendNextTransportLine, 90);
+            } catch (e) { finish(e, ""); }
+          };
+          if (!sendGuestInput("stty -echo 2>/dev/null\r")) {
+            throw new Error("Could not prepare the PTY for a staged app command.");
+          }
+          setTimeout(sendNextTransportLine, 80);
         }
-        setTimeout(sendNextTransportLine, 80);
-      }
-    } catch (e) { finish(e, ""); }
+      } catch (e) { finish(e, ""); }
+    };
+    p.dispatch();
   }
   window.webpcDesktopConsumeOutput = function (data) {
     let s = typeof data === "string" ? data : "";
@@ -5246,6 +5295,9 @@ main();
     }
     if (!pending) return;
     const p = pending;
+    // Any bytes from the guest prove the transport is alive; the deadline
+    // handler uses this to separate a busy guest from a dead channel.
+    p.sawOutput = true;
     let incoming = s;
     if (!p.found) {
       outputBuffer = (outputBuffer + incoming).slice(-500000);
@@ -5759,7 +5811,7 @@ main();
     runGuestForService("minecraft", "if command -v java >/dev/null 2>&1; then java -version 2>&1; else echo WEBPC_JAVA_MISSING; fi",(err,out)=>{
       if(err){box.textContent="Could not check Java: "+err.message;return;}
       box.textContent=out.includes("WEBPC_JAVA_MISSING")?"Java status: expected preinstalled runtime is missing. Use Repair Minecraft runtime and inspect its task log.":"Java status: preinstalled in the guest disk · "+out.slice(0,180);
-    });
+    },{retryOnce:true});
   }
 
   document.getElementById("checkJava").addEventListener("click",()=>checkJavaStatus(true));
