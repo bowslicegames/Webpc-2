@@ -26,10 +26,10 @@ jobs:
           grep -Fq 'openjdk21-jre' tools/install-minecraft-prereqs.sh
           grep -Fq 'prismlauncher' tools/install-minecraft-prereqs.sh
           grep -Fq 'webpc-minecraft-display' tools/install-minecraft-prereqs.sh
-          grep -Fq 'try_start_xorg' tools/install-minecraft-prereqs.sh
+          grep -Fq 'start_xorg' tools/install-minecraft-prereqs.sh
           grep -Fq 'xf86-video-vesa' tools/install-minecraft-prereqs.sh
           grep -Fq 'xf86-video-fbdev' tools/install-minecraft-prereqs.sh
-          grep -Fq 'try_start_xorg' index.html
+          grep -Fq 'GUEST_DISPLAY_LAUNCHER_B64' index.html
           grep -Fq 'Trying Xorg variant' tools/install-minecraft-prereqs.sh
           grep -Fq 'Xorg exited with status' tools/install-minecraft-prereqs.sh
           grep -Fq 'xf86-video-vesa' index.html

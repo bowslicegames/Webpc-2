@@ -205,29 +205,62 @@ start_xorg() {
   return 1
 }
 
+ensure_driver() {
+  # The VESA driver is the only way to program the QEMU stdvga scanout into
+  # graphics mode without kernel DRM, so it has to be installed before Xorg is
+  # tried if the disk predates it.
+  if [ ! -e /dev/dri/card0 ] && [ ! -f /usr/lib/xorg/modules/drivers/vesa_drv.so ]; then
+    apk add --no-cache xf86-video-vesa >/dev/null 2>&1 || true
+    audit "installed xf86-video-vesa: $(ls /usr/lib/xorg/modules/drivers/vesa_drv.so 2>&1)"
+  fi
+}
+
 start_variants() {
   # A stale socket from an earlier attempt must not make a dead server look
   # healthy, so every variant starts from a clean socket path.
   rm -f /tmp/.X11-unix/X0
-  write_xorg_conf modesetting
-  start_xorg "modesetting" -config "$CONFIG" && return 0
-  write_xorg_conf modesetting none
-  start_xorg "modesetting-noaccel" -config "$CONFIG" && return 0
+  # Order matters. A server that merely starts is not a working display: fbdev
+  # on the text-mode framebuffer starts happily and paints into a buffer QEMU
+  # never scans out, and that used to win before the VESA driver was tried.
+  if [ -e /dev/dri/card0 ]; then
+    write_xorg_conf modesetting
+    start_xorg "modesetting" -config "$CONFIG" && return 0
+    write_xorg_conf modesetting none
+    start_xorg "modesetting-noaccel" -config "$CONFIG" && return 0
+  else
+    audit "no /dev/dri/card0: no kernel DRM driver, so Xorg has to set the VGA mode through the BIOS (vesa)"
+  fi
+  write_xorg_conf vesa
+  start_xorg "vesa" -config "$CONFIG" && return 0
   write_xorg_conf modesetting
   start_xorg "modesetting-vt" -config "$CONFIG" vt1 && return 0
   write_xorg_conf fbdev
   start_xorg "fbdev" -config "$CONFIG" && return 0
-  write_xorg_conf vesa
-  start_xorg "vesa" -config "$CONFIG" && return 0
   start_xorg "autodetect" && return 0
   return 1
 }
 
+report_mode() {
+  audit "xorg mode: $(grep -E 'Setting mode|VBESetVBEMode|Virtual screen|Screen [0-9]+' "$LOG" 2>/dev/null | tail -n 4 | tr '\n' '|')"
+  audit "dri now: $(ls /dev/dri 2>/dev/null | tr '\n' ' ')"
+}
+
+paint_root() {
+  if ! command -v xsetroot >/dev/null 2>&1; then
+    apk add --no-cache xsetroot >/dev/null 2>&1 || true
+  fi
+  if command -v xsetroot >/dev/null 2>&1; then
+    xsetroot -solid '#203a5f' 2>/dev/null && audit "painted the X root window"
+  fi
+}
+
 load_drm
+ensure_driver
 
 if ! pidof Xorg >/dev/null 2>&1; then
   start_variants || true
 fi
+report_mode
 
 if [ ! -S /tmp/.X11-unix/X0 ]; then
   audit "Xorg did not create display :0"
@@ -239,6 +272,10 @@ fi
 if [ ! -e /dev/dri/card0 ]; then
   audit "WARNING: no DRM device; the VGA scanout may still be the text console"
 fi
+
+# A solid root window proves whether X itself owns the scanout, before Prism's
+# own window is involved in the question.
+paint_root
 
 exec prismlauncher "$@"
 WEBPC_MC_EOF
