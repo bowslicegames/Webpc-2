@@ -3301,8 +3301,33 @@ async function bootQEMU() {
     const opfsDiskName = "webpc-disk-rootfs-" + ASSET_CACHE_NAME + ".qcow2";
     const opfsMigrationMarkerName = opfsDiskName + ".migration-done";
     window.__webpcOpfsDiskName = opfsDiskName;
-    let legacyDiskBinary = null;
+    /*
+       A previous image is only attached read-only so the guest can copy user
+       files out of it. That copy has to live in the Wasm heap next to 1.5 GiB
+       of guest RAM, inside a heap that cannot grow past its fixed build limit,
+       so it is bounded and streamed. Copying a full 320 MiB disk here is what
+       pushed constrained tablets past their per-tab memory limit and killed
+       the page while the guest was still booting.
+    */
+    const LEGACY_DISK_MIGRATION_BYTES = 48 * 1024 * 1024;
+    let legacyDiskFile = null;
     let legacyDiskName = null;
+    /*
+       Booting must survive a failed migration: the legacy drive is described on
+       the QEMU command line before the image is staged, so drop those two
+       arguments if the image never made it into MEMFS.
+    */
+    function dropLegacyDiskArguments() {
+        const args = window.Module && Array.isArray(window.Module.arguments)
+            ? window.Module.arguments
+            : null;
+        if (!args) return;
+        for (let index = args.length - 1; index >= 0; index--) {
+            if (typeof args[index] === "string" && args[index].includes("legacy")) {
+                args.splice(Math.max(0, index - 1), 2);
+            }
+        }
+    }
     try {
         const opfsRoot = await navigator.storage.getDirectory();
         let migrationAlreadyDone = false;
@@ -3319,7 +3344,7 @@ async function bootQEMU() {
                     !handle || handle.kind !== "file") continue;
                 const file = await handle.getFile();
                 if (file.size < 4) continue;
-                if (file.size > 512 * 1024 * 1024) {
+                if (file.size > LEGACY_DISK_MIGRATION_BYTES) {
                     oversizedLegacyDisk = true;
                     continue;
                 }
@@ -3331,10 +3356,10 @@ async function bootQEMU() {
             candidates.sort((a, b) => b.file.lastModified - a.file.lastModified);
             if (candidates.length) {
                 legacyDiskName = candidates[0].name;
-                legacyDiskBinary = await candidates[0].file.arrayBuffer();
+                legacyDiskFile = candidates[0].file;
                 noteBootSignal("Found the previous persistent disk. Attaching it read-only so user files can be migrated safely.");
             } else if (oversizedLegacyDisk) {
-                noteBootSignal("A previous OPFS disk backup is larger than the automatic migration memory limit. It has been preserved, but automatic file migration is deferred.");
+                noteBootSignal("The previous OPFS disk is larger than the " + (LEGACY_DISK_MIGRATION_BYTES / 1048576) + " MiB migration budget. It stays untouched in OPFS and this session starts on the fresh guest disk, because staging it in guest memory would exhaust this browser tab while booting.");
             }
         }
     } catch (error) {
@@ -3713,11 +3738,35 @@ async function bootQEMU() {
                 });
             },
             mod => {
-                if (!legacyDiskBinary) return;
-                try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}
-                mod.FS.writeFile("/pack-rootfs/legacy-rootfs.qcow2", new Uint8Array(legacyDiskBinary));
-                legacyDiskBinary = null;
-                noteBootSignal("Previous OPFS disk attached read-only for one-time user-data migration.");
+                if (!legacyDiskFile) return;
+                const dependency = "webpc-legacy-disk-migration";
+                const legacyFile = legacyDiskFile;
+                legacyDiskFile = null;
+                mod.addRunDependency(dependency);
+                /*
+                   Stream the image into MEMFS in small chunks. Reading it in one
+                   call would hold the whole disk in the JavaScript heap and in
+                   the Wasm heap at the same time.
+                */
+                (async () => {
+                    const chunkBytes = 4 * 1024 * 1024;
+                    try { mod.FS.mkdir("/pack-rootfs"); } catch (_) {}
+                    const stream = mod.FS.open("/pack-rootfs/legacy-rootfs.qcow2", "w+");
+                    try {
+                        for (let offset = 0; offset < legacyFile.size; offset += chunkBytes) {
+                            const end = Math.min(legacyFile.size, offset + chunkBytes);
+                            const bytes = new Uint8Array(await legacyFile.slice(offset, end).arrayBuffer());
+                            mod.FS.write(stream, bytes, 0, bytes.length, offset);
+                            await new Promise(resolve => setTimeout(resolve, 0));
+                        }
+                    } finally {
+                        mod.FS.close(stream);
+                    }
+                    noteBootSignal("Previous OPFS disk attached read-only for one-time user-data migration.");
+                })().catch(error => {
+                    noteBootSignal("Could not stage the previous disk for migration (" + (error && error.message ? error.message : String(error)) + "); booting without it.");
+                    dropLegacyDiskArguments();
+                }).finally(() => mod.removeRunDependency(dependency));
             }]
     };
 
