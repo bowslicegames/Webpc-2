@@ -5545,7 +5545,7 @@ main();
           const showTaskLog = (logErr, logOut) => {
             setTaskStatus(task.target, task.label + " failed (exit " + (code || "unknown") + "). " + (logOut || "Open the task log: " + task.logPath).slice(-500), true);
           };
-          if (task.kind === "java") runGuestForService("minecraft", "tail -n 20 " + JSON.stringify(task.logPath) + " 2>/dev/null || true", showTaskLog);
+          if (task.kind === "java") runGuestForService("minecraft", "tail -n 40 " + JSON.stringify(task.logPath) + " 2>/dev/null || true", showTaskLog);
           else runGuest("tail -n 8 " + JSON.stringify(task.logPath) + " 2>/dev/null || true", showTaskLog);
         }
         return;
@@ -5844,6 +5844,12 @@ main();
       "  if kill -0 \"$pid\" 2>/dev/null; then echo \"SUCCESS: Prism Launcher startup process is running (PID $pid).\"; echo 'The first-run wizard will ask you to add your Microsoft account and install a Java Edition version.'; grep -iE 'driver|screens found|fatal|no devices|failed' /var/log/webpc-xorg.log 2>/dev/null | tail -n 8 || true; rc=0",
       "  else echo 'ERROR: the Xorg/Prism process exited during startup.'; tail -n 100 /var/log/webpc-xorg.log /var/log/webpc-minecraft-launcher.log 2>/dev/null || true; rc=12; fi",
       "  if [ ! -S /tmp/.X11-unix/X0 ]; then echo 'ERROR: the guest never created display :0. Xorg could not drive the VGA adapter with DRM, fbdev or vesa.'; tail -n 60 /var/log/webpc-xorg.log 2>/dev/null || true; rc=20; fi",
+      "  sleep 4",
+      "  echo '--- guest X clients ---'",
+      "  ps w 2>/dev/null | grep -Ei 'Xorg|prism|java' | grep -v grep | head -n 12 || true",
+      "  if pidof prismlauncher >/dev/null 2>&1; then echo 'PRISM_STATUS: running on display :0'; else echo 'PRISM_STATUS: not running'; rc=13; fi",
+      "  echo '--- launcher log tail ---'",
+      "  tail -n 25 /var/log/webpc-minecraft-launcher.log 2>/dev/null || true",
       "fi",
       "printf '%s\\n' \"$rc\" > " + JSON.stringify(taskStatus),
       "exit \"$rc\""
