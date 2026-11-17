@@ -155,9 +155,25 @@ paint_root() {
 load_drm
 ensure_driver
 
-if ! pidof Xorg >/dev/null 2>&1; then
-  start_variants || true
+# A previous Xorg may be running on a framebuffer that never reached the
+# scanout. Reusing it would keep the wrong driver, so Launch starts the display
+# variants over from scratch instead of trusting the server already there.
+if pidof Xorg >/dev/null 2>&1; then
+  audit "stopping the previous Xorg so every display variant is retried"
+  kill $(pidof Xorg) 2>/dev/null || true
+  n=0
+  while [ "$n" -lt 5 ] && pidof Xorg >/dev/null 2>&1; do
+    sleep 1
+    n=$((n + 1))
+  done
+  if pidof Xorg >/dev/null 2>&1; then
+    kill -9 $(pidof Xorg) 2>/dev/null || true
+    sleep 1
+  fi
+  rm -f /tmp/.X11-unix/X0
 fi
+
+start_variants || true
 report_mode
 
 if [ ! -S /tmp/.X11-unix/X0 ]; then
