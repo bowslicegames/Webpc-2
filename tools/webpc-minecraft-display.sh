@@ -225,8 +225,25 @@ start_variants() {
   return 1
 }
 
+hold_scanout() {
+  # X owns the CRTC now, but the kernel console can still be bound to the same
+  # framebuffer and repaint its old text over X's output, and the virtual
+  # terminal showing on the adapter has to be X's as well. Re-assert both after
+  # the server is up, then record who owns the scanout.
+  for vtcon in /sys/class/vtconsole/vtcon*; do
+    [ -e "$vtcon/bind" ] || continue
+    echo 0 > "$vtcon/bind" 2>/dev/null || true
+  done
+  if command -v chvt >/dev/null 2>&1; then
+    chvt 1 >/dev/null 2>&1 || true
+  fi
+  audit "scanout owner: fbcon=$(cat /sys/class/vtconsole/vtcon0/bind 2>/dev/null || echo none) vt=$(cat /sys/class/tty/tty0/active 2>/dev/null || echo unknown)"
+}
+
 report_mode() {
   audit "xorg variant: $(cat "$VARIANT" 2>/dev/null || echo none)"
+  audit "fbcon bind: $(cat /sys/class/vtconsole/vtcon0/bind 2>/dev/null || echo none)"
+  audit "active vt: $(cat /sys/class/tty/tty0/active 2>/dev/null || echo unknown)"
   audit "xorg mode: $(grep -E 'Setting mode|VBESetVBEMode|Virtual screen|Screen [0-9]+' "$LOG" 2>/dev/null | tail -n 4 | tr '\n' '|')"
   audit "dri now: $(ls /dev/dri 2>/dev/null | tr '\n' ' ')"
   audit "fb now: $(for f in /sys/class/graphics/fb*; do [ -e "$f/name" ] && echo "$(basename "$f"):$(cat "$f/name" 2>/dev/null):$(cat "$f/virtual_size" 2>/dev/null)"; done | tr '\n' ' ')"
@@ -267,6 +284,7 @@ fi
 
 display_ok=1
 start_variants && display_ok=0
+if [ "$display_ok" -eq 0 ]; then hold_scanout; fi
 report_mode
 
 if [ "$display_ok" -ne 0 ]; then
