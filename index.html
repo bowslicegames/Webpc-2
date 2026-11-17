@@ -6288,8 +6288,8 @@ main();
     "echo \"xorg variant: $(cat /var/log/webpc-xorg-variant 2>/dev/null || echo none) alive: $(pidof Xorg >/dev/null 2>&1 && echo yes || echo no)\";",
     "echo \"xorg screen: $(DISPLAY=:0 xdpyinfo 2>/dev/null | grep -m 1 dimensions || echo 'xdpyinfo unavailable')\";",
     "echo \"x clients: $(ps w 2>/dev/null | grep -Ei 'Xorg|prism' | grep -v grep | awk '{print $NF}' | tr '\\n' ' ')\";",
-    "echo '--- launcher log ---'; tail -n 30 /var/log/webpc-minecraft-launcher.log 2>/dev/null || echo 'no launcher log yet';",
-    "echo '--- xorg log ---'; grep -iE 'Setting mode|Virtual screen|No devices|EE|fatal' /var/log/webpc-xorg.log 2>/dev/null | tail -n 20 || echo 'no Xorg log yet'; } 2>&1"
+    "echo '--- launcher decisions ---'; grep -m 8 -E 'xorg variant|Xorg started|rejecting|kept|failure|no display variant' /var/log/webpc-minecraft-launcher.log 2>/dev/null || echo 'no launcher log yet';",
+    "echo '--- xorg log ---'; grep -m 6 -iE 'Setting mode|Virtual screen|No devices|EE|Fatal' /var/log/webpc-xorg.log 2>/dev/null || echo 'no Xorg log yet'; } 2>&1"
   ].join(" ");
   /* The presenter is a 2D canvas filled with putImageData, so the page can read
      back exactly the pixels on screen. Comparing them around a guest paint of
