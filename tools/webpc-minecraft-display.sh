@@ -11,8 +11,9 @@
 # text screen, and Xorg paints into a framebuffer nobody displays. The kernel
 # driver for the QEMU stdvga adapter is the in-tree DRM module "bochs"; there is
 # no module called "bochs_drm", and loading the wrong name leaves the guest with
-# no DRM at all. Loading "bochs" makes fbcon take the adapter into graphics mode
-# before Xorg ever starts.
+# no DRM at all. Loading "bochs" makes fbcon take the adapter into graphics mode,
+# and because fbcon then keeps repainting that adapter with text, the launcher
+# also unbinds it and hands virtual terminal 1 to Xorg so X owns the scanout.
 set -u
 export DISPLAY=:0
 export LIBGL_ALWAYS_SOFTWARE=1
@@ -73,11 +74,13 @@ write_xorg_conf() {
 
 start_xorg() {
   # $1 is the variant label; the remaining arguments are passed to Xorg.
+  # Every variant takes virtual terminal 1 explicitly: Xorg must own a VT to
+  # become the DRM master and to stop the kernel console from drawing over it.
   label="$1"
   shift
   audit "Trying Xorg variant: $label"
   : > "$LOG"
-  Xorg :0 "$@" -noreset -nolisten tcp >>"$LOG" 2>&1 &
+  Xorg :0 vt1 "$@" -noreset -nolisten tcp >>"$LOG" 2>&1 &
   xpid=$!
   n=0
   while [ "$n" -lt 20 ]; do
@@ -113,10 +116,30 @@ ensure_driver() {
   fi
 }
 
+claim_console() {
+  # The kernel framebuffer console owns the active virtual terminal and keeps
+  # repainting it with text. While it stays bound, Xorg can start and paint its
+  # own framebuffer without ever reaching the scanout QEMU shows, which is what
+  # made a running Prism Launcher invisible. Unbinding fbcon hands the adapter
+  # to Xorg; the serial console still carries every kernel message.
+  audit "--- handing the VGA adapter to Xorg ---"
+  for vtcon in /sys/class/vtconsole/vtcon*; do
+    [ -e "$vtcon/bind" ] || continue
+    vtname=$(cat "$vtcon/name" 2>/dev/null)
+    before=$(cat "$vtcon/bind" 2>/dev/null)
+    echo 0 > "$vtcon/bind" 2>/dev/null || true
+    after=$(cat "$vtcon/bind" 2>/dev/null)
+    audit "vtconsole $(basename "$vtcon") (${vtname:-unknown}): $before -> $after"
+  done
+  echo 0 > /sys/class/graphics/fbcon/cursor_blink 2>/dev/null || true
+  audit "fbcon cursor blink: $(cat /sys/class/graphics/fbcon/cursor_blink 2>/dev/null || echo unavailable)"
+}
+
 start_variants() {
   # A stale socket from an earlier attempt must not make a dead server look
   # healthy, so every variant starts from a clean socket path.
   rm -f /tmp/.X11-unix/X0
+  claim_console
   # Order matters. A server that merely starts is not a working display: fbdev
   # on the text-mode framebuffer starts happily and paints into a buffer QEMU
   # never scans out, and that used to win before the VESA driver was tried.
@@ -131,7 +154,7 @@ start_variants() {
   write_xorg_conf vesa
   start_xorg "vesa" -config "$CONFIG" && return 0
   write_xorg_conf modesetting
-  start_xorg "modesetting-vt" -config "$CONFIG" vt1 && return 0
+  start_xorg "modesetting-retry" -config "$CONFIG" && return 0
   write_xorg_conf fbdev
   start_xorg "fbdev" -config "$CONFIG" && return 0
   start_xorg "autodetect" && return 0
@@ -141,6 +164,9 @@ start_variants() {
 report_mode() {
   audit "xorg mode: $(grep -E 'Setting mode|VBESetVBEMode|Virtual screen|Screen [0-9]+' "$LOG" 2>/dev/null | tail -n 4 | tr '\n' '|')"
   audit "dri now: $(ls /dev/dri 2>/dev/null | tr '\n' ' ')"
+  audit "fb now: $(for f in /sys/class/graphics/fb*; do [ -e "$f/name" ] && echo "$(basename "$f"):$(cat "$f/name" 2>/dev/null):$(cat "$f/virtual_size" 2>/dev/null)"; done | tr '\n' ' ')"
+  audit "vtconsole now: $(for f in /sys/class/vtconsole/vtcon*/bind; do [ -e "$f" ] && echo "$(basename "$(dirname "$f")")=$(cat "$f" 2>/dev/null)"; done | tr '\n' ' ')"
+  audit "x screen: $(DISPLAY=:0 xdpyinfo 2>/dev/null | grep -m 1 dimensions || echo 'xdpyinfo unavailable')"
 }
 
 paint_root() {
