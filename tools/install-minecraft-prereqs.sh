@@ -101,87 +101,116 @@ WEBPC_XORG_EOF
 
 cat > /usr/local/bin/webpc-minecraft-display <<'WEBPC_MC_EOF'
 #!/bin/sh
-set -eu
+# WebPC guest display starter.
+#
+# Starts Xorg on the QEMU VGA adapter and then Prism Launcher. Every attempt
+# leaves evidence: Xorg's own stdout/stderr and its exit status are copied into
+# the launcher log, because a server that dies before opening its -logfile used
+# to fail completely silently.
+set -u
 export DISPLAY=:0
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
 export QT_QPA_PLATFORM=xcb
 export QT_X11_NO_MITSHM=1
-mkdir -p /var/log /tmp/.X11-unix /etc/X11/xorg.conf.d
-modprobe bochs_drm >/dev/null 2>&1 || true
 
-# Record which guest display devices exist so the browser diagnostics can
-# explain what the guest is actually driving.
-{
-  echo "--- WebPC guest display probe ---"
-  ls /dev/dri 2>/dev/null || echo "no /dev/dri"
-  ls /dev/fb* 2>/dev/null || echo "no /dev/fb*"
-} >> /var/log/webpc-xorg.log 2>/dev/null || true
+LOG=/var/log/webpc-xorg.log
+AUDIT=/var/log/webpc-minecraft-launcher.log
+CONFIG=/etc/X11/xorg.conf.d/20-webpc.conf
+mkdir -p /var/log /tmp/.X11-unix /etc/X11/xorg.conf.d
+: > "$LOG"
+
+audit() { echo "$*" >> "$AUDIT"; }
+
+modprobe bochs_drm >/dev/null 2>&1 || true
+audit "--- WebPC guest display probe ---"
+audit "kernel: $(uname -r)"
+audit "dri: $(ls /dev/dri 2>/dev/null | tr '\n' ' ')"
+audit "fb: $(ls /dev/fb* 2>/dev/null | tr '\n' ' ')"
+audit "vt: $(ls /dev/tty0 /dev/tty1 2>&1 | tr '\n' ' ')"
+audit "xorg binary: $(command -v Xorg || echo missing)"
 
 write_xorg_conf() {
-  driver="$1"
-  cat > /etc/X11/xorg.conf.d/20-webpc.conf <<WEBPC_XORG_GEN_EOF
-Section "Device"
-  Identifier "WebPC VGA"
-  Driver "$driver"
-  Option "AccelMethod" "none"
-EndSection
-Section "Screen"
-  Identifier "WebPC Screen"
-  Device "WebPC VGA"
-  DefaultDepth 24
-  SubSection "Display"
-    Depth 24
-    Modes "1024x768" "800x600" "640x480"
-  EndSubSection
-EndSection
-WEBPC_XORG_GEN_EOF
+  driver=$1
+  accel=${2:-}
+  {
+    echo 'Section "Device"'
+    echo '  Identifier "WebPC VGA"'
+    echo "  Driver \"$driver\""
+    if [ -n "$accel" ]; then echo "  Option \"AccelMethod\" \"$accel\""; fi
+    echo 'EndSection'
+    echo 'Section "Screen"'
+    echo '  Identifier "WebPC Screen"'
+    echo '  Device "WebPC VGA"'
+    echo '  DefaultDepth 24'
+    echo '  SubSection "Display"'
+    echo '    Depth 24'
+    echo '  EndSubSection'
+    echo 'EndSection'
+  } > "$CONFIG"
 }
 
-try_start_xorg() {
-  driver="$1"
-  write_xorg_conf "$driver"
-  Xorg :0 -config /etc/X11/xorg.conf.d/20-webpc.conf -noreset -nolisten tcp -keeptty -logfile /var/log/webpc-xorg.log vt1 &
+start_xorg() {
+  # $1 is the variant label; the remaining arguments are passed to Xorg.
+  label="$1"
+  shift
+  audit "Trying Xorg variant: $label"
+  : > "$LOG"
+  Xorg :0 "$@" -noreset -nolisten tcp >>"$LOG" 2>&1 &
   xpid=$!
   n=0
-  while [ "$n" -lt 15 ] && [ ! -S /tmp/.X11-unix/X0 ]; do
-    kill -0 "$xpid" 2>/dev/null || break
+  while [ "$n" -lt 12 ]; do
+    if [ -S /tmp/.X11-unix/X0 ]; then
+      audit "Xorg started with $label"
+      return 0
+    fi
+    if ! kill -0 "$xpid" 2>/dev/null; then
+      wait "$xpid"
+      status=$?
+      audit "Xorg exited with status $status during $label"
+      tail -n 12 "$LOG" >> "$AUDIT" 2>/dev/null || true
+      dmesg 2>/dev/null | tail -n 6 >> "$AUDIT" || true
+      return 1
+    fi
     sleep 1
     n=$((n + 1))
   done
-  if [ -S /tmp/.X11-unix/X0 ]; then
-    echo "Xorg started with the $driver driver"
-    return 0
-  fi
   kill "$xpid" 2>/dev/null || true
+  wait "$xpid" 2>/dev/null || true
+  audit "Xorg did not create display :0 within 12 s for $label"
+  tail -n 12 "$LOG" >> "$AUDIT" 2>/dev/null || true
+  return 1
+}
+
+start_variants() {
+  write_xorg_conf modesetting
+  start_xorg "modesetting" -config "$CONFIG" && return 0
+  write_xorg_conf modesetting none
+  start_xorg "modesetting-noaccel" -config "$CONFIG" && return 0
+  write_xorg_conf modesetting
+  start_xorg "modesetting-vt" -config "$CONFIG" vt1 && return 0
+  write_xorg_conf fbdev
+  start_xorg "fbdev" -config "$CONFIG" && return 0
+  write_xorg_conf vesa
+  start_xorg "vesa" -config "$CONFIG" && return 0
+  start_xorg "autodetect" && return 0
   return 1
 }
 
 if ! pidof Xorg >/dev/null 2>&1; then
-  # Prefer a DRM node, then the kernel framebuffer, then plain VESA. The
-  # browser build has no GPU, so a software Xorg mode is the working target.
-  primary=vesa
-  if [ -e /dev/dri/card0 ]; then
-    primary=modesetting
-  elif [ -e /dev/fb0 ]; then
-    primary=fbdev
-  fi
-  echo "Using Xorg driver: $primary"
-  for candidate in "$primary" fbdev vesa modesetting; do
-    [ -n "$candidate" ] || continue
-    if try_start_xorg "$candidate"; then
-      break
-    fi
-    echo "Xorg could not start with $candidate; trying the next driver."
-  done
+  start_variants || true
 fi
 
 if [ ! -S /tmp/.X11-unix/X0 ]; then
+  audit "Xorg did not create display :0"
   echo "Xorg did not create display :0" >&2
-  tail -n 80 /var/log/webpc-xorg.log 2>/dev/null || true
+  tail -n 80 "$LOG" 2>/dev/null || true
   exit 20
 fi
+
 exec prismlauncher "$@"
+WEBPC_MC_EOF
+WEBPC_MC_EOF
 WEBPC_MC_EOF
 chmod 755 /usr/local/bin/webpc-minecraft-display
 

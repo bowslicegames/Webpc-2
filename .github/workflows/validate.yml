@@ -30,6 +30,8 @@ jobs:
           grep -Fq 'xf86-video-vesa' tools/install-minecraft-prereqs.sh
           grep -Fq 'xf86-video-fbdev' tools/install-minecraft-prereqs.sh
           grep -Fq 'try_start_xorg' index.html
+          grep -Fq 'Trying Xorg variant' tools/install-minecraft-prereqs.sh
+          grep -Fq 'Xorg exited with status' tools/install-minecraft-prereqs.sh
           grep -Fq 'xf86-video-vesa' index.html
           grep -Fq 'Baking and verifying Minecraft Java 21 prerequisites' .github/workflows/build-dynamic-disk.yml || grep -Fq 'Bake and verify Minecraft Java 21 prerequisites' .github/workflows/build-dynamic-disk.yml
           grep -Fq -- '--repository=https://dl-cdn.alpinelinux.org/alpine/v3.22/community prismlauncher' index.html
