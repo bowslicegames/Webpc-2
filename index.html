@@ -3987,7 +3987,7 @@ async function bootQEMU() {
         "/pack-initramfs/initramfs-virt",
 
         "-append",
-        "earlyprintk=ttyS0 console=ttyS0 console=tty0 root=/dev/vda loglevel=7 hostname=webpc2 ip=dhcp",
+        "earlyprintk=ttyS0 console=ttyS0 root=/dev/vda loglevel=7 hostname=webpc2 ip=dhcp",
 
         "-drive",
         "id=test,file=webpc-opfs:" + opfsDiskName + ",format=qcow2,if=none",
@@ -5599,7 +5599,7 @@ main();
         }
         return;
       }
-      const detail = out.replace("WEBPC_TASK_RUNNING", "").trim().slice(-180);
+      const detail = out.replace("WEBPC_TASK_RUNNING", "").trim().slice(-400);
       setTaskStatus(task.target, task.label + " running… " + Math.round((Date.now()-task.started)/1000) + "s elapsed" + (detail ? " · " + detail : "") + ". Other desktop tasks remain available.");
       setTimeout(() => pollBackgroundTask(statusPath), 5000);
     });
@@ -5899,8 +5899,8 @@ main();
       "  pid=$!",
       "  echo '[3/3] Verifying the display and launcher'",
       "  n=0; while [ \"$n\" -lt 150 ] && [ ! -S /tmp/.X11-unix/X0 ]; do kill -0 \"$pid\" 2>/dev/null || break; sleep 1; n=$((n + 1)); done",
-      "  grep -E 'Trying Xorg variant|Xorg started with|Xorg exited with status|did not create display' /var/log/webpc-minecraft-launcher.log 2>/dev/null | tail -n 12 || true",
-      "  if kill -0 \"$pid\" 2>/dev/null; then echo \"SUCCESS: Prism Launcher startup process is running (PID $pid).\"; echo 'The first-run wizard will ask you to add your Microsoft account and install a Java Edition version.'; grep -iE 'driver|screens found|fatal|no devices|failed' /var/log/webpc-xorg.log 2>/dev/null | tail -n 8 || true; rc=0",
+      "  timeout 5 grep -m 12 -E 'Trying Xorg variant|Xorg started with|Xorg exited with status|did not create display' /var/log/webpc-minecraft-launcher.log 2>/dev/null | tail -n 12 || true",
+      "  if kill -0 \"$pid\" 2>/dev/null; then echo \"SUCCESS: Prism Launcher startup process is running (PID $pid).\"; echo 'The first-run wizard will ask you to add your Microsoft account and install a Java Edition version.'; timeout 5 grep -m 8 -iE 'driver|screens found|fatal|no devices|failed' /var/log/webpc-xorg.log 2>/dev/null | tail -n 8 || true; rc=0",
       "  else echo 'ERROR: the Xorg/Prism process exited during startup.'; tail -n 100 /var/log/webpc-xorg.log /var/log/webpc-minecraft-launcher.log 2>/dev/null || true; rc=12; fi",
       "  if [ ! -S /tmp/.X11-unix/X0 ]; then echo 'ERROR: the guest never created display :0. Xorg could not drive the VGA adapter with DRM, fbdev or vesa.'; tail -n 60 /var/log/webpc-xorg.log 2>/dev/null || true; rc=20; fi",
       "  n=0",
@@ -5928,6 +5928,13 @@ main();
       "  fi",
       "  echo '--- launcher log tail ---'",
       "  tail -n 25 /var/log/webpc-minecraft-launcher.log 2>/dev/null || true",
+      "  fb=$(for f in /sys/class/graphics/fb*; do [ -e \"$f/name\" ] && printf '%s:%s ' \"$(basename \"$f\")\" \"$(cat \"$f/virtual_size\" 2>/dev/null)\"; done)",
+      "  vt=$(for f in /sys/class/vtconsole/vtcon*/bind; do [ -e \"$f\" ] && printf '%s=%s ' \"$(basename \"$(dirname \"$f\")\")\" \"$(cat \"$f\" 2>/dev/null)\"; done)",
+      "  xd=$(DISPLAY=:0 timeout 8 xdpyinfo 2>/dev/null | awk '/dimensions:/ {print $2; exit}')",
+      "  drv=$(grep -m1 -o 'Xorg started with [a-z-]*' /var/log/webpc-minecraft-launcher.log 2>/dev/null | sed 's/.* //')",
+      "  scan=nofb0",
+      "  if [ -c /dev/fb0 ] && command -v xsetroot >/dev/null 2>&1 && command -v md5sum >/dev/null 2>&1; then a=$(dd if=/dev/fb0 bs=1M count=8 2>/dev/null | md5sum); xsetroot -solid '#ff0000' 2>/dev/null || true; sleep 1; b=$(dd if=/dev/fb0 bs=1M count=8 2>/dev/null | md5sum); if [ \"$a\" = \"$b\" ]; then scan=same; else scan=changed; fi; fi",
+      "  echo \"DISPLAY_REPORT: drv=${drv:-none} scan=$scan dri=$(ls /dev/dri 2>/dev/null | tr '\\n' ',') fb=${fb:-none} vtcon=${vt:-none} xdim=${xd:-unavailable}\"",
       "fi",
       "printf '%s\\n' \"$rc\" > " + JSON.stringify(taskStatus),
       "exit \"$rc\""
