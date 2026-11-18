@@ -139,39 +139,41 @@ ensure_support() {
 ensure_graphics_packages() {
   # From Qt 6.5 the xcb platform plugin refuses to load without libxcb-cursor, a
   # Qt 6 window needs a window manager, input needs udev, and the canvas needs a
-  # client that can draw text. All of it is fetched in ONE APK transaction:
-  # every separate `apk add` refreshes the package index first, and nine of them
-  # on the emulated CPU held the screen on the probe's pink for over three
-  # minutes without saying anything about it. The one-by-one loop stays as the
-  # failure path only, so a single unavailable name cannot cancel the rest.
-  missing=
-  for pkg in $GRAPHICS_PACKAGES; do
-    apk info -e "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
-  done
+  # client that can draw text. All of that is one APK transaction backed by ONE
+  # index download per attempt: the old per-package loop re-fetched the index for
+  # every name, so a single slow download turned into twenty silent minutes. The
+  # retry stays in the transaction path for the same reason.
+  missing=$(missing_graphics_packages)
   if [ -n "$missing" ]; then
     announce "installing guest graphics support:$missing at $(elapsed); this is the slow part"
-    if timeout 300 apk add --no-cache --repository="$COMMUNITY_REPO" $missing >"$APK_LOG" 2>&1; then
-      audit "graphics support: installed in one transaction at $(elapsed)"
-      announce "graphics support installed at $(elapsed)"
-    else
-      audit "graphics support: one transaction failed ($(tail -n 2 "$APK_LOG" 2>/dev/null | tr '\n' '|')), installing name by name"
-      for pkg in $missing; do
-        apk info -e "$pkg" >/dev/null 2>&1 && continue
-        timeout 120 apk add --no-cache --repository="$COMMUNITY_REPO" "$pkg" >/dev/null 2>&1 || true
-      done
-    fi
+    attempt=1
+    while [ "$attempt" -le 2 ]; do
+      timeout 180 apk update >"$APK_LOG" 2>&1 || true
+      if timeout 480 apk add --repository="$COMMUNITY_REPO" $missing >>"$APK_LOG" 2>&1; then
+        audit "graphics support: installed on attempt $attempt at $(elapsed)"
+        announce "graphics support installed at $(elapsed)"
+        break
+      fi
+      audit "graphics support: attempt $attempt failed ($(tail -n 2 "$APK_LOG" 2>/dev/null | tr '\n' '|')), retrying"
+      attempt=$((attempt + 1))
+      sleep 2
+    done
   fi
-  still=
-  for pkg in $GRAPHICS_PACKAGES; do
-    apk info -e "$pkg" >/dev/null 2>&1 || still="$still $pkg"
-  done
-  if [ -n "$still" ]; then
-    announce "graphics support still missing$still at $(elapsed)"
+  GRAPHICS_MISSING=$(missing_graphics_packages)
+  if [ -n "$GRAPHICS_MISSING" ]; then
+    announce "graphics support still missing$GRAPHICS_MISSING at $(elapsed)"
   else
     audit "graphics support at $(elapsed): all present"
   fi
 }
 
+missing_graphics_packages() {
+  still=
+  for pkg in $GRAPHICS_PACKAGES; do
+    apk info -e "$pkg" >/dev/null 2>&1 || still="$still $pkg"
+  done
+  echo "$still"
+}
 ensure_input() {
   # X's libinput driver accepts a device only once the udev database has tagged
   # it as an input device. This guest boots a bare init, so udevd never ran: the
@@ -202,6 +204,83 @@ ensure_input() {
   fi
   audit "udev at $(elapsed): $udev_state"
   audit "input devices: $(grep -E '^(N|H):' /proc/bus/input/devices 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+  write_input_conf
+}
+
+write_input_conf() {
+  # libinput only accepts a device that the udev database has tagged ID_INPUT.
+  # Starting udevd is the normal path; this is the fallback for the guest that
+  # boots without it: evdev reads /dev/input/eventN directly, so X gets a
+  # pointer even when nothing tags the device. Without this the root cursor sits
+  # at the centre of the screen and never moves, because X has no pointer at all.
+  conf=/etc/X11/xorg.conf.d/30-webpc-input.conf
+  INPUT_NODES=0
+  if ! have_driver evdev; then
+    timeout 120 apk add --no-cache xf86-input-evdev >/dev/null 2>&1 || true
+  fi
+  if ! have_driver evdev; then
+    rm -f "$conf"
+    audit "input config: no evdev driver and no udev tag, so X has no pointer driver"
+    return 0
+  fi
+  tagged=
+  if command -v udevadm >/dev/null 2>&1; then
+    for dev in /sys/class/input/event*; do
+      [ -e "$dev" ] || continue
+      if udevadm info --query=property --path="$dev" 2>/dev/null | grep -q '^ID_INPUT=1'; then
+        tagged=1
+        break
+      fi
+    done
+  fi
+  if [ -n "$tagged" ]; then
+    rm -f "$conf"
+    audit "input config: udev tags the input devices, libinput keeps them"
+    return 0
+  fi
+  [ -r /proc/bus/input/devices ] || return 0
+  : > "$conf"
+  n=0
+  current=
+  while IFS= read -r line; do
+    case "$line" in
+      'N: Name='*) current=$(printf '%s' "$line" | sed 's/^N: Name="//; s/"$//') ;;
+      'H: Handlers='*)
+        handlers=$(printf '%s' "$line" | sed 's/^H: Handlers=//')
+        node=
+        for h in $handlers; do
+          case "$h" in event*) node="/dev/input/$h" ;; esac
+        done
+        [ -n "$node" ] || continue
+        [ -e "$node" ] || continue
+        n=$((n + 1))
+        {
+          echo 'Section "InputDevice"'
+          echo "  Identifier \"WebPC input $n\""
+                    echo '  Driver "evdev"'
+          # AutoServerLayout is what makes X actually use the device: with no
+          # ServerLayout section X only picks the core pointer implicitly, and
+          # then only for a "mouse" driver. This option adds each section to the
+          # implied layout, so a static device works without a layout at all.
+          echo '  Option "AutoServerLayout" "true"'
+
+          echo "  Option \"Device\" \"$node\""
+          echo "  Option \"Name\" \"$current\""
+          case "$handlers" in
+            *kbd*) echo '  Option "XkbRules" "evdev"' ;;
+          esac
+          echo 'EndSection'
+        } >> "$conf"
+        ;;
+    esac
+  done < /proc/bus/input/devices
+  INPUT_NODES=$n
+  if [ "$n" -gt 0 ]; then
+    audit "input config: $n event devices handed to evdev because udev does not tag them"
+  else
+    audit "input config: no /dev/input/event* nodes exist at all, so no pointer can be attached"
+    rm -f "$conf"
+  fi
 }
 
 run_window_manager() {
@@ -392,11 +471,23 @@ report_mode() {
 }
 
 paint_root() {
+  # The root colour is a state code the user can read off the canvas when no
+  # window can be drawn: blue means the stack is ready, orange means graphics
+  # packages never installed, purple means the guest has no input device at all.
+  # That is the difference between another blind round trip and one word back.
+  color='#203a5f'
+  reason='graphics and input ready'
+  if [ -n "${GRAPHICS_MISSING:-}" ]; then
+    color='#b35c00'
+    reason="graphics support missing$GRAPHICS_MISSING"
+  elif [ "${INPUT_NODES:-0}" -eq 0 ]; then
+    color='#6b1f6b'
+    reason='no input event device was found in the guest'
+  fi
   if command -v xsetroot >/dev/null 2>&1; then
-    xsetroot -solid '#203a5f' 2>/dev/null && audit "painted the X root window"
+    xsetroot -solid "$color" 2>/dev/null && audit "painted the X root window $color: $reason"
   fi
 }
-
 prism_alive() {
   # A child that has exited but has not been reaped yet still answers kill -0,
   # so the process state has to be read too: otherwise a crashed Prism is
@@ -493,6 +584,7 @@ message updates every 30 seconds."
     windows=$(prism_window_count)
     case "$windows" in
       ''|*[!0-9]*) windows=unknown ;;
+      2) windows=unknown; break ;;
       0)
         if [ "$n" -gt 0 ] && [ $((n % 30)) -eq 0 ]; then
           status_window "WebPC guest display" "Prism Launcher is still starting (${n} s).
@@ -512,7 +604,8 @@ itself has not opened its window yet."
   audit "prism launcher: pid $prism_pid alive=$alive windows=$windows after ${n}s at $(elapsed)"
   audit "prism launcher output: $(grep -m 3 -iE 'error|cannot|could not|failed|abort|no qt platform' "$PRISM_LOG" 2>/dev/null | tr '\n' '|')"
   case "$windows" in
-    none|unknown|0) show_report ;;
+    none|0) show_report ;;
+    unknown) audit "prism launcher: no window list tool, so a mapped window cannot be confirmed" ;;
     *) close_status_window; audit "prism launcher: window mapped after ${n}s at $(elapsed)" ;;
   esac
   wait "$prism_pid"
