@@ -59,6 +59,33 @@ GRAPHICS_PACKAGES="eudev xf86-input-libinput xf86-input-evdev xcb-util-cursor xc
 
 audit() { echo "$*" >> "$AUDIT"; }
 elapsed() { echo "$(( $(date +%s) - START_AT ))s"; }
+announce() {
+  # Before Xorg owns the screen the guest framebuffer console IS the canvas,
+  # and this launcher's own output goes to a file nobody can read from a
+  # tablet. Writing to the virtual terminal is the only progress report the
+  # user can see during the minutes a package install takes.
+  audit "$*"
+  for out in /dev/tty1 /dev/console; do
+    { [ -c "$out" ] && [ -w "$out" ]; } || continue
+    printf '\r\nWebPC: %s\r\n' "$*" > "$out" 2>/dev/null && return 0
+  done
+  return 0
+}
+console_report() {
+  # A failure has to survive a dead X server. release_console() unbinds the
+  # framebuffer console to keep the kernel from repainting over X, so binding
+  # it again is what turns the blank canvas back into readable text.
+  for vtcon in /sys/class/vtconsole/vtcon*; do
+    [ -e "$vtcon/bind" ] || continue
+    echo 1 > "$vtcon/bind" 2>/dev/null || true
+  done
+  command -v chvt >/dev/null 2>&1 && chvt 1 >/dev/null 2>&1 || true
+  for out in /dev/tty1 /dev/console; do
+    { [ -c "$out" ] && [ -w "$out" ]; } || continue
+    { echo; echo "=== WebPC guest display ==="; cat "$1"; } > "$out" 2>/dev/null && return 0
+  done
+  return 0
+}
 
 ensure_mounts() {
   # A kernel does not mount sysfs; the guest init only mounted /proc. Every
@@ -103,7 +130,7 @@ ensure_support() {
   have_driver fbdev || missing="$missing xf86-video-fbdev"
   command -v xsetroot >/dev/null 2>&1 || missing="$missing xsetroot"
   if [ -n "$missing" ]; then
-    audit "installing missing display support:$missing"
+    announce "installing Xorg display support:$missing"
     timeout 90 apk add --no-cache $missing >/dev/null 2>&1 || true
   fi
   audit "support: drivers $(for d in modesetting vesa fbdev; do have_driver "$d" && printf '%s ' "$d"; done)xsetroot=$(command -v xsetroot >/dev/null 2>&1 && echo yes || echo no)"
@@ -122,10 +149,10 @@ ensure_graphics_packages() {
     apk info -e "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
   done
   if [ -n "$missing" ]; then
-    audit "graphics support: downloading$missing at $(elapsed)"
-    echo "Installing graphics support:$missing"
+    announce "installing guest graphics support:$missing at $(elapsed); this is the slow part"
     if timeout 300 apk add --no-cache --repository="$COMMUNITY_REPO" $missing >"$APK_LOG" 2>&1; then
       audit "graphics support: installed in one transaction at $(elapsed)"
+      announce "graphics support installed at $(elapsed)"
     else
       audit "graphics support: one transaction failed ($(tail -n 2 "$APK_LOG" 2>/dev/null | tr '\n' '|')), installing name by name"
       for pkg in $missing; do
@@ -138,7 +165,11 @@ ensure_graphics_packages() {
   for pkg in $GRAPHICS_PACKAGES; do
     apk info -e "$pkg" >/dev/null 2>&1 || still="$still $pkg"
   done
-  audit "graphics support at $(elapsed):$([ -n "$still" ] && echo "missing$still" || echo 'all present')"
+  if [ -n "$still" ]; then
+    announce "graphics support still missing$still at $(elapsed)"
+  else
+    audit "graphics support at $(elapsed): all present"
+  fi
 }
 
 ensure_input() {
@@ -150,6 +181,7 @@ ensure_input() {
   for module in uhci_hcd usbhid psmouse; do
     modprobe "$module" >/dev/null 2>&1 && audit "loaded input module: $module"
   done
+  announce "starting the udev daemon so Xorg accepts the mouse and keyboard"
   mkdir -p /run/udev
   if command -v udevd >/dev/null 2>&1; then
     udev_pid=$(pidof udevd 2>/dev/null || true)
@@ -267,11 +299,12 @@ start_xorg() {
   xpid=$!
   n=0
   held=0
-  while [ "$n" -lt 20 ]; do
+  while [ "$n" -lt 45 ]; do
     if ! kill -0 "$xpid" 2>/dev/null; then
       wait "$xpid"
       status=$?
       audit "Xorg exited with status $status during $label"
+      cp "$LOG" "/var/log/webpc-xorg-$label.log" 2>/dev/null || true
       audit "failure [$label]: $(grep -m 3 -E '\(EE\)|No devices|no screens' "$LOG" 2>/dev/null | tr '\n' '|')"
       rm -f /tmp/.X11-unix/X0 /tmp/.X0-lock
       return 1
@@ -283,6 +316,7 @@ start_xorg() {
         proof=$?
         if [ "$proof" -eq 1 ] && [ "$PROOF_REQUIRED" -eq 1 ]; then
           audit "rejecting $label: alive, but painting the root window never changed $FBDEV"
+          cp "$LOG" "/var/log/webpc-xorg-$label.log" 2>/dev/null || true
           kill "$xpid" 2>/dev/null
           wait "$xpid" 2>/dev/null
           rm -f /tmp/.X11-unix/X0 /tmp/.X0-lock
@@ -299,6 +333,7 @@ start_xorg() {
   kill "$xpid" 2>/dev/null || true
   wait "$xpid" 2>/dev/null || true
   audit "Xorg did not become usable within ${n}s for $label"
+  cp "$LOG" "/var/log/webpc-xorg-$label.log" 2>/dev/null || true
   audit "failure [$label]: $(grep -m 3 -E '\(EE\)|No devices|no screens' "$LOG" 2>/dev/null | tr '\n' '|')"
   rm -f /tmp/.X11-unix/X0 /tmp/.X0-lock
   return 1
@@ -519,9 +554,25 @@ fi
 report_mode
 
 if [ "$display_ok" -ne 0 ]; then
-  audit "no display variant produced a server that stays up"
-  echo "No Xorg variant stayed up on display :0; the guest text console stays on screen." >&2
-  grep -m 12 -E 'Trying Xorg variant|failure \[|rejecting' "$AUDIT" 2>/dev/null | tail -n 12 >&2 || true
+  # Nobody can read a log file from the tablet and, with Xorg dead, the canvas
+  # stays black. So the reasons are printed on the guest console, where a
+  # screenshot of the canvas is the report that actually reaches the user.
+  {
+    echo "Xorg could not start on this guest's VGA adapter."
+    echo "variants tried: $(grep -h 'Trying Xorg variant' "$AUDIT" 2>/dev/null | sed 's/.*Trying Xorg variant: //' | tr '\n' ' ')"
+    echo ""
+    echo "--- guest ---"
+    grep -E 'kernel:|dri:|fb0:|drm drivers:|drm connectors:|xorg binary:|mounts:|support:|graphics support' "$AUDIT" 2>/dev/null | tail -n 8
+    echo "--- Xorg errors ---"
+    for f in /var/log/webpc-xorg-*.log "$LOG"; do
+      [ -s "$f" ] || continue
+      printf '%s: %s\n' "$(basename "$f")" "$(grep -hE '\(EE\)|No devices|no screens|Fatal server' "$f" 2>/dev/null | head -n 3 | tr '\n' '|')"
+    done
+  } > "$REPORT_FILE"
+  cat "$REPORT_FILE" >> "$AUDIT"
+  console_report "$REPORT_FILE"
+  audit "no display variant produced a server that stays up; reasons printed on the guest console"
+  echo "No Xorg variant stayed up on display :0; the reasons are printed on the guest console." >&2
   exit 20
 fi
 
