@@ -35,6 +35,9 @@ FALLBACK_LABEL=/tmp/webpc-xorg-fallback.label
 FALLBACK_CONF=/tmp/webpc-xorg-fallback.conf
 DRIVERS=/usr/lib/xorg/modules/drivers
 FBDEV=/dev/fb0
+PRISM_LOG=/var/log/webpc-prism.log
+WM_LOG=/var/log/webpc-wm.log
+COMMUNITY_REPO=https://dl-cdn.alpinelinux.org/alpine/v3.22/community
 mkdir -p /var/log /tmp/.X11-unix /etc/X11/xorg.conf.d
 : > "$LOG"
 rm -f "$VARIANT"
@@ -89,6 +92,49 @@ ensure_support() {
     timeout 90 apk add --no-cache $missing >/dev/null 2>&1 || true
   fi
   audit "support: drivers $(for d in modesetting vesa fbdev; do have_driver "$d" && printf '%s ' "$d"; done)xsetroot=$(command -v xsetroot >/dev/null 2>&1 && echo yes || echo no)"
+}
+
+ensure_qt_support() {
+  # From Qt 6.5 the xcb platform plugin refuses to load without libxcb-cursor,
+  # and a Prism Launcher whose platform plugin cannot load aborts before it ever
+  # maps a window: the screen keeps the root paint and nothing else records why.
+  # Each name is installed on its own so one unavailable package cannot cancel
+  # the rest, and everything that is still missing is named in the log.
+  qt_missing=
+  for pkg in xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-renderutil xcb-util-image xkeyboard-config libxkbcommon-x11 xwininfo; do
+    apk info -e "$pkg" >/dev/null 2>&1 && continue
+    apk add --no-cache "$pkg" >/dev/null 2>&1 || qt_missing="$qt_missing $pkg"
+  done
+  audit "qt xcb support:$([ -n "$qt_missing" ] && echo " missing$qt_missing" || echo ' complete')"
+}
+
+run_window_manager() {
+  # $1 is the window manager binary to start on display :0.
+  "$1" >"$WM_LOG" 2>&1 &
+  sleep 2
+  pidof "$1" >/dev/null 2>&1
+}
+
+ensure_window_manager() {
+  # Qt 6's xcb platform plugin expects a window manager and this guest ships
+  # none. Without one a window Qt hides during its own startup can be mapped
+  # again and never painted, which leaves on screen exactly what Prism showed:
+  # nothing but the root paint. The same missing manager is also why nothing
+  # gives Prism's sign-in wizard keyboard focus, so start the first manager that
+  # is present and install one only when none is at all.
+  for wm in openbox jwm twm fluxbox matchbox-window-manager; do
+    command -v "$wm" >/dev/null 2>&1 || continue
+    run_window_manager "$wm" && { audit "window manager: $wm"; return 0; }
+    audit "window manager: $wm did not start"
+  done
+  for wm in openbox jwm twm; do
+    timeout 120 apk add --no-cache "$wm" >/dev/null 2>&1 ||
+      timeout 120 apk add --no-cache --repository="$COMMUNITY_REPO" "$wm" >/dev/null 2>&1 || continue
+    command -v "$wm" >/dev/null 2>&1 || continue
+    run_window_manager "$wm" && { audit "window manager: $wm (installed)"; return 0; }
+  done
+  audit "window manager: none available, Prism runs without one"
+  return 1
 }
 
 write_xorg_conf() {
@@ -256,9 +302,68 @@ paint_root() {
   fi
 }
 
+prism_alive() {
+  # A child that has exited but has not been reaped yet still answers kill -0,
+  # so the process state has to be read too: otherwise a crashed Prism is
+  # reported as a live launcher that merely has no window.
+  kill -0 "$prism_pid" 2>/dev/null || return 1
+  state=$(awk '{print $3}' "/proc/$prism_pid/stat" 2>/dev/null)
+  [ "$state" = "Z" ] && return 1
+  return 0
+}
+
+prism_window_count() {
+  # A mapped window is the only local proof that Prism reached its user
+  # interface: the guest framebuffer shows the root paint whether Prism drew
+  # nothing or never started. Echoes 2 when the guest has no window list tool.
+  command -v xwininfo >/dev/null 2>&1 || { echo 2; return 0; }
+  DISPLAY=:0 timeout 8 xwininfo -root -children 2>/dev/null | grep -ciE 'prism|minecraft|java'
+}
+
+start_prism() {
+  # Prism used to be exec'd, so a launcher that never drew anything left one
+  # trace only: the screen stayed on the root paint. Run it in the background,
+  # keep its own output in a log, and record whether a window appeared, whether
+  # the scanout changed after it started, and what it printed when it did not.
+  : > "$PRISM_LOG"
+  before=$(framebuffer_hash)
+  audit "prism launcher: starting on $DISPLAY"
+  prismlauncher "$@" >>"$PRISM_LOG" 2>&1 &
+  prism_pid=$!
+  n=0
+  windows=2
+  while [ "$n" -lt 25 ]; do
+    if ! prism_alive; then
+      windows=none
+      audit "prism launcher: exited during startup"
+      break
+    fi
+    windows=$(prism_window_count)
+    case "$windows" in
+      ''|*[!0-9]*) windows=unknown ;;
+      0) ;;
+      *) break ;;
+    esac
+    sleep 1
+    n=$((n + 1))
+  done
+  after=$(framebuffer_hash)
+  alive=no
+  prism_alive && alive=yes
+  audit "prism launcher: pid $prism_pid alive=$alive windows=$windows after ${n}s"
+  if [ -n "$before" ] && [ "$before" != "$after" ]; then
+    audit "prism launcher: the scanout changed after it started"
+  elif [ -n "$before" ]; then
+    audit "prism launcher: the scanout did not change after it started"
+  fi
+  audit "prism launcher output: $(grep -m 3 -iE 'error|cannot|could not|failed|abort|no qt platform' "$PRISM_LOG" 2>/dev/null | tr '\n' '|')"
+  wait "$prism_pid"
+}
+
 ensure_mounts
 load_drm
 ensure_support
+ensure_qt_support
 
 # A previous Xorg may be running on a framebuffer that never reached the
 # scanout. Reusing it would keep the wrong driver, so Launch starts the display
@@ -282,6 +387,7 @@ display_ok=1
 start_variants && display_ok=0
 if [ "$display_ok" -eq 0 ]; then
   release_console
+  ensure_window_manager
   paint_root
 fi
 report_mode
@@ -293,4 +399,4 @@ if [ "$display_ok" -ne 0 ]; then
   exit 20
 fi
 
-exec prismlauncher "$@"
+start_prism "$@"
