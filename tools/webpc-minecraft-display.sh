@@ -283,6 +283,46 @@ write_input_conf() {
   fi
 }
 
+ensure_swap() {
+  # Every guest page lives in the browser tab, so a guest that fills its RAM
+  # takes the whole page down with it: that is what a reload during Prism's
+  # startup was. Guest swap parks the least recently used pages on the guest's
+  # own disk, which keeps Xorg and Prism alive on a tight RAM budget instead of
+  # the kernel or the browser killing them. It is only created when the root
+  # filesystem really has room for it.
+  grep -q '^/swapfile ' /proc/swaps 2>/dev/null && { audit "swap: /swapfile already active"; return 0; }
+  want=${WEBPC_SWAP_MB:-512}
+  if [ ! -f /swapfile ]; then
+    free_kb=$(df -k / 2>/dev/null | awk 'NR==2 {print $4}')
+    case "${free_kb:-}" in ''|*[!0-9]*) free_kb=0 ;; esac
+    if [ "$free_kb" -lt 700000 ]; then
+      audit "swap: skipped, only ${free_kb} kB free on /"
+      return 1
+    fi
+    announce "creating ${want} MiB of guest swap so Prism does not exhaust RAM"
+    if ! dd if=/dev/zero of=/swapfile bs=1M count="$want" 2>/dev/null; then
+      rm -f /swapfile
+      audit "swap: could not write /swapfile"
+      return 1
+    fi
+  fi
+  chmod 600 /swapfile 2>/dev/null || true
+  mkswap /swapfile >/dev/null 2>&1 || { audit "swap: mkswap unavailable, no swap"; rm -f /swapfile; return 1; }
+  if swapon /swapfile >/dev/null 2>&1; then
+    audit "swap: ${want} MiB active at $(elapsed)"
+    return 0
+  fi
+  audit "swap: swapon failed, the kernel has no swap support"
+  return 1
+}
+
+report_memory() {
+  # Memory is the limit this guest keeps hitting from inside the browser, so
+  # every report carries its own numbers instead of a guess about them.
+  audit "memory at $(elapsed): $(free -m 2>/dev/null | sed -n '2p' | tr -s ' ')"
+  audit "swap at $(elapsed): $(free -m 2>/dev/null | sed -n '3p' | tr -s ' ')"
+}
+
 run_window_manager() {
   # $1 is the window manager binary to start on display :0.
   "$1" >"$WM_LOG" 2>&1 &
@@ -558,7 +598,7 @@ show_report() {
     echo "waited ${n}s  windows=$windows  alive=$alive"
     echo ""
     echo "--- launcher ---"
-    grep -E 'graphics support|udev at|input config|input devices|window manager|painted the X root|prism launcher' "$AUDIT" 2>/dev/null | tail -n 8
+    grep -E 'graphics support|udev at|input config|input devices|window manager|painted the X root|memory at|swap at|prism launcher' "$AUDIT" 2>/dev/null | tail -n 10
     echo "--- prism output ---"
     tail -n 8 "$PRISM_LOG" 2>/dev/null || echo '(empty)'
     echo "--- Xorg input ---"
@@ -585,6 +625,7 @@ start_prism() {
   : > "$PRISM_LOG"
   for stale in $(pidof xmessage 2>/dev/null); do kill "$stale" 2>/dev/null || true; done
   audit "prism launcher: starting on $DISPLAY at $(elapsed)"
+  report_memory
   status_window "WebPC guest display" "Prism Launcher is starting.
 
 This window is drawn by the guest's own X server. Seeing it means the
@@ -640,6 +681,10 @@ ensure_graphics_packages
 # udev has to be up before Xorg starts: X only accepts the devices the udev
 # database already tags, and Xorg starts further down in this script.
 ensure_input
+# Swap has to exist before Xorg and Prism allocate: they are what pushes the
+# guest over its RAM, and the whole browser tab goes with it when that happens.
+ensure_swap
+report_memory
 
 # A previous Xorg may be running on a framebuffer that never reached the
 # scanout. Reusing it would keep the wrong driver, so Launch starts the display
