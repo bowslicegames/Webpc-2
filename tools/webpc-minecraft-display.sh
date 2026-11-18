@@ -529,6 +529,27 @@ close_status_window() {
   STATUS_PID=
 }
 
+report_on_console() {
+  # A failed graphics install is exactly the case where no X client exists to
+  # draw a report: xmessage is one of the packages that may be missing. X then
+  # owns the scanout, so the canvas shows one flat root colour and nothing about
+  # why Prism is absent. Stop the server, hand the framebuffer console back and
+  # print the reasons: the canvas then carries the diagnosis as readable text.
+  if pidof Xorg >/dev/null 2>&1; then
+    audit "prism launcher: stopping Xorg so the report can use the console"
+    kill $(pidof Xorg) 2>/dev/null || true
+    v=0
+    while [ "$v" -lt 5 ] && pidof Xorg >/dev/null 2>&1; do
+      sleep 1
+      v=$((v + 1))
+    done
+    pidof Xorg >/dev/null 2>&1 && kill -9 $(pidof Xorg) 2>/dev/null || true
+    sleep 1
+  fi
+  console_report "$REPORT_FILE"
+  audit "prism launcher: reasons printed on the guest console because no X client could show them"
+}
+
 show_report() {
   # What the serial log knows, on the canvas: a tablet cannot paste a
   # transcript, and a screenshot of the guest screen is the report that works.
@@ -537,15 +558,16 @@ show_report() {
     echo "waited ${n}s  windows=$windows  alive=$alive"
     echo ""
     echo "--- launcher ---"
-    grep -E 'window manager|graphics support|udev|input devices|prism launcher' "$AUDIT" 2>/dev/null | tail -n 5
+    grep -E 'graphics support|udev at|input config|input devices|window manager|painted the X root|prism launcher' "$AUDIT" 2>/dev/null | tail -n 8
     echo "--- prism output ---"
     tail -n 8 "$PRISM_LOG" 2>/dev/null || echo '(empty)'
+    echo "--- Xorg input ---"
+    grep -iE 'input device|pointer|tablet|mouse|evdev' "$LOG" 2>/dev/null | tail -n 6 || echo '(no Xorg input lines)'
     echo "--- X windows ---"
     DISPLAY=:0 timeout 8 xwininfo -root -tree 2>/dev/null | head -n 5 || echo '(xwininfo unavailable)'
   } > "$REPORT_FILE"
   cat "$REPORT_FILE" >> "$AUDIT"
-  status_window "WebPC guest display" "$(cat "$REPORT_FILE")" ||
-    audit "prism launcher: no report window available, report is in $REPORT_FILE"
+  status_window "WebPC guest display" "$(cat "$REPORT_FILE")" || report_on_console
 }
 
 start_prism() {
