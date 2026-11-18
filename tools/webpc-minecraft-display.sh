@@ -20,6 +20,12 @@
 #     the modesetting driver can render into buffers QEMU's emulated CRT never
 #     shows, so every variant is kept only after painting the root window and
 #     watching the guest framebuffer change.
+#   * A frozen pointer is a missing udev database, not a missing mouse: X's
+#     libinput driver only accepts a device that udevd has tagged as an input
+#     device, and this guest boots a bare init that never starts udevd.
+#   * Progress used to live only in a serial log. The canvas is the channel the
+#     user reports from, so the launcher now draws what it is doing as an X
+#     window and leaves a report on screen when Prism never opens.
 set -u
 export DISPLAY=:0
 export LIBGL_ALWAYS_SOFTWARE=1
@@ -42,8 +48,17 @@ mkdir -p /var/log /tmp/.X11-unix /etc/X11/xorg.conf.d
 : > "$LOG"
 rm -f "$VARIANT"
 PROOF_REQUIRED=1
+START_AT=$(date +%s)
+STATUS_FILE=/tmp/webpc-status.txt
+REPORT_FILE=/tmp/webpc-prism-report.txt
+APK_LOG=/tmp/webpc-apk.log
+STATUS_PID=
+PRISM_WINDOW_WAIT=${PRISM_WINDOW_WAIT:-300}
+# xmessage and openbox are only published in the community repository.
+GRAPHICS_PACKAGES="eudev xf86-input-libinput xf86-input-evdev xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-renderutil xcb-util-image xkeyboard-config libxkbcommon-x11 xwininfo xmessage openbox"
 
 audit() { echo "$*" >> "$AUDIT"; }
+elapsed() { echo "$(( $(date +%s) - START_AT ))s"; }
 
 ensure_mounts() {
   # A kernel does not mount sysfs; the guest init only mounted /proc. Every
@@ -94,18 +109,67 @@ ensure_support() {
   audit "support: drivers $(for d in modesetting vesa fbdev; do have_driver "$d" && printf '%s ' "$d"; done)xsetroot=$(command -v xsetroot >/dev/null 2>&1 && echo yes || echo no)"
 }
 
-ensure_qt_support() {
-  # From Qt 6.5 the xcb platform plugin refuses to load without libxcb-cursor,
-  # and a Prism Launcher whose platform plugin cannot load aborts before it ever
-  # maps a window: the screen keeps the root paint and nothing else records why.
-  # Each name is installed on its own so one unavailable package cannot cancel
-  # the rest, and everything that is still missing is named in the log.
-  qt_missing=
-  for pkg in xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-renderutil xcb-util-image xkeyboard-config libxkbcommon-x11 xwininfo; do
-    apk info -e "$pkg" >/dev/null 2>&1 && continue
-    apk add --no-cache "$pkg" >/dev/null 2>&1 || qt_missing="$qt_missing $pkg"
+ensure_graphics_packages() {
+  # From Qt 6.5 the xcb platform plugin refuses to load without libxcb-cursor, a
+  # Qt 6 window needs a window manager, input needs udev, and the canvas needs a
+  # client that can draw text. All of it is fetched in ONE APK transaction:
+  # every separate `apk add` refreshes the package index first, and nine of them
+  # on the emulated CPU held the screen on the probe's pink for over three
+  # minutes without saying anything about it. The one-by-one loop stays as the
+  # failure path only, so a single unavailable name cannot cancel the rest.
+  missing=
+  for pkg in $GRAPHICS_PACKAGES; do
+    apk info -e "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
   done
-  audit "qt xcb support:$([ -n "$qt_missing" ] && echo " missing$qt_missing" || echo ' complete')"
+  if [ -n "$missing" ]; then
+    audit "graphics support: downloading$missing at $(elapsed)"
+    echo "Installing graphics support:$missing"
+    if timeout 300 apk add --no-cache --repository="$COMMUNITY_REPO" $missing >"$APK_LOG" 2>&1; then
+      audit "graphics support: installed in one transaction at $(elapsed)"
+    else
+      audit "graphics support: one transaction failed ($(tail -n 2 "$APK_LOG" 2>/dev/null | tr '\n' '|')), installing name by name"
+      for pkg in $missing; do
+        apk info -e "$pkg" >/dev/null 2>&1 && continue
+        timeout 120 apk add --no-cache --repository="$COMMUNITY_REPO" "$pkg" >/dev/null 2>&1 || true
+      done
+    fi
+  fi
+  still=
+  for pkg in $GRAPHICS_PACKAGES; do
+    apk info -e "$pkg" >/dev/null 2>&1 || still="$still $pkg"
+  done
+  audit "graphics support at $(elapsed):$([ -n "$still" ] && echo "missing$still" || echo 'all present')"
+}
+
+ensure_input() {
+  # X's libinput driver accepts a device only once the udev database has tagged
+  # it as an input device. This guest boots a bare init, so udevd never ran: the
+  # kernel had QEMU's USB tablet and X ignored it, which is exactly the pointer
+  # that cannot be moved at all. `setup-xorg-base` does this on a normal Alpine
+  # install; the same work has to happen here before Xorg looks for a pointer.
+  for module in uhci_hcd usbhid psmouse; do
+    modprobe "$module" >/dev/null 2>&1 && audit "loaded input module: $module"
+  done
+  mkdir -p /run/udev
+  if command -v udevd >/dev/null 2>&1; then
+    udev_pid=$(pidof udevd 2>/dev/null || true)
+    if [ -z "$udev_pid" ]; then
+      udevd --daemon >/dev/null 2>&1 || udevd -d >/dev/null 2>&1 ||
+        /lib/udev/udevd -d >/dev/null 2>&1 || true
+      sleep 1
+    fi
+    if command -v udevadm >/dev/null 2>&1; then
+      udevadm trigger --action=change >/dev/null 2>&1 || true
+      udevadm settle --timeout=10 >/dev/null 2>&1 || true
+    fi
+  fi
+  if pidof udevd >/dev/null 2>&1; then
+    udev_state="running $(pidof udevd)"
+  else
+    udev_state="not running"
+  fi
+  audit "udev at $(elapsed): $udev_state"
+  audit "input devices: $(grep -E '^(N|H):' /proc/bus/input/devices 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
 }
 
 run_window_manager() {
@@ -121,17 +185,13 @@ ensure_window_manager() {
   # again and never painted, which leaves on screen exactly what Prism showed:
   # nothing but the root paint. The same missing manager is also why nothing
   # gives Prism's sign-in wizard keyboard focus, so start the first manager that
-  # is present and install one only when none is at all.
+  # is present. Nothing is downloaded here: ensure_graphics_packages() already
+  # fetched openbox in the shared transaction, and probing for a manager used to
+  # cost two more index downloads and up to four minutes of root paint.
   for wm in openbox jwm twm fluxbox matchbox-window-manager; do
     command -v "$wm" >/dev/null 2>&1 || continue
-    run_window_manager "$wm" && { audit "window manager: $wm"; return 0; }
+    run_window_manager "$wm" && { audit "window manager: $wm at $(elapsed)"; return 0; }
     audit "window manager: $wm did not start"
-  done
-  for wm in openbox jwm twm; do
-    timeout 120 apk add --no-cache "$wm" >/dev/null 2>&1 ||
-      timeout 120 apk add --no-cache --repository="$COMMUNITY_REPO" "$wm" >/dev/null 2>&1 || continue
-    command -v "$wm" >/dev/null 2>&1 || continue
-    run_window_manager "$wm" && { audit "window manager: $wm (installed)"; return 0; }
   done
   audit "window manager: none available, Prism runs without one"
   return 1
@@ -316,54 +376,120 @@ prism_window_count() {
   # A mapped window is the only local proof that Prism reached its user
   # interface: the guest framebuffer shows the root paint whether Prism drew
   # nothing or never started. Echoes 2 when the guest has no window list tool.
+  # The launcher's own status window is named "webpcstatus" with the title
+  # "WebPC guest display" so it can never be mistaken for Prism's window here.
   command -v xwininfo >/dev/null 2>&1 || { echo 2; return 0; }
-  DISPLAY=:0 timeout 8 xwininfo -root -children 2>/dev/null | grep -ciE 'prism|minecraft|java'
+  DISPLAY=:0 timeout 8 xwininfo -root -tree 2>/dev/null | grep -ciE 'prism|minecraft|java'
+}
+
+status_window() {
+  # $1 window title, $2 body text. The canvas is the only channel this user can
+  # reliably report from, so progress and failures are drawn on it instead of
+  # being written to a serial log nobody can see while X owns the framebuffer.
+  # The title deliberately avoids the word Prism: prism_window_count() greps
+  # window names, and a status window must never count as Prism's own.
+  command -v xmessage >/dev/null 2>&1 || return 1
+  close_status_window
+  printf '%s\n' "$2" > "$STATUS_FILE" || return 1
+  xmessage -name webpcstatus -title "$1" -file "$STATUS_FILE" -geometry 96x22+10+10 >/dev/null 2>&1 &
+  STATUS_PID=$!
+  sleep 1
+  kill -0 "$STATUS_PID" 2>/dev/null
+}
+
+close_status_window() {
+  [ -n "${STATUS_PID:-}" ] || return 0
+  kill "$STATUS_PID" 2>/dev/null || true
+  STATUS_PID=
+}
+
+show_report() {
+  # What the serial log knows, on the canvas: a tablet cannot paste a
+  # transcript, and a screenshot of the guest screen is the report that works.
+  {
+    echo "Prism Launcher is not showing a window."
+    echo "waited ${n}s  windows=$windows  alive=$alive"
+    echo ""
+    echo "--- launcher ---"
+    grep -E 'window manager|graphics support|udev|input devices|prism launcher' "$AUDIT" 2>/dev/null | tail -n 5
+    echo "--- prism output ---"
+    tail -n 8 "$PRISM_LOG" 2>/dev/null || echo '(empty)'
+    echo "--- X windows ---"
+    DISPLAY=:0 timeout 8 xwininfo -root -tree 2>/dev/null | head -n 5 || echo '(xwininfo unavailable)'
+  } > "$REPORT_FILE"
+  cat "$REPORT_FILE" >> "$AUDIT"
+  status_window "WebPC guest display" "$(cat "$REPORT_FILE")" ||
+    audit "prism launcher: no report window available, report is in $REPORT_FILE"
 }
 
 start_prism() {
   # Prism used to be exec'd, so a launcher that never drew anything left one
   # trace only: the screen stayed on the root paint. Run it in the background,
-  # keep its own output in a log, and record whether a window appeared, whether
-  # the scanout changed after it started, and what it printed when it did not.
+  # keep its own output in a log, say on the canvas what is happening, and
+  # record whether a window appeared and what it printed when it did not.
+  #
+  # The wait is generous because the whole machine is software-emulated: Xorg
+  # takes minutes and a Qt 6 application started under single-threaded TCG can
+  # take several more. A 25 second window probe reported a healthy start as a
+  # failure, and the user only ever saw the root paint either way. The window
+  # list is polled every 5 s rather than every second, so this loop does not
+  # compete with Prism for the single emulated CPU it is starting on.
   : > "$PRISM_LOG"
-  before=$(framebuffer_hash)
-  audit "prism launcher: starting on $DISPLAY"
+  for stale in $(pidof xmessage 2>/dev/null); do kill "$stale" 2>/dev/null || true; done
+  audit "prism launcher: starting on $DISPLAY at $(elapsed)"
+  status_window "WebPC guest display" "Prism Launcher is starting.
+
+This window is drawn by the guest's own X server. Seeing it means the
+display, its window manager and this canvas all work, and that only
+Prism's own window would be missing.
+
+Prism can take minutes to open under software CPU emulation. This
+message updates every 30 seconds."
   prismlauncher "$@" >>"$PRISM_LOG" 2>&1 &
   prism_pid=$!
   n=0
   windows=2
-  while [ "$n" -lt 25 ]; do
+  while [ "$n" -lt "$PRISM_WINDOW_WAIT" ]; do
     if ! prism_alive; then
       windows=none
-      audit "prism launcher: exited during startup"
+      audit "prism launcher: exited after ${n}s at $(elapsed)"
       break
     fi
     windows=$(prism_window_count)
     case "$windows" in
       ''|*[!0-9]*) windows=unknown ;;
-      0) ;;
+      0)
+        if [ "$n" -gt 0 ] && [ $((n % 30)) -eq 0 ]; then
+          status_window "WebPC guest display" "Prism Launcher is still starting (${n} s).
+
+Seeing this window means the guest display and its window manager work:
+Xorg paints, the manager maps windows, and the canvas shows them. Prism
+itself has not opened its window yet."
+        fi
+        ;;
       *) break ;;
     esac
-    sleep 1
-    n=$((n + 1))
+    sleep 5
+    n=$((n + 5))
   done
-  after=$(framebuffer_hash)
   alive=no
   prism_alive && alive=yes
-  audit "prism launcher: pid $prism_pid alive=$alive windows=$windows after ${n}s"
-  if [ -n "$before" ] && [ "$before" != "$after" ]; then
-    audit "prism launcher: the scanout changed after it started"
-  elif [ -n "$before" ]; then
-    audit "prism launcher: the scanout did not change after it started"
-  fi
+  audit "prism launcher: pid $prism_pid alive=$alive windows=$windows after ${n}s at $(elapsed)"
   audit "prism launcher output: $(grep -m 3 -iE 'error|cannot|could not|failed|abort|no qt platform' "$PRISM_LOG" 2>/dev/null | tr '\n' '|')"
+  case "$windows" in
+    none|unknown|0) show_report ;;
+    *) close_status_window; audit "prism launcher: window mapped after ${n}s at $(elapsed)" ;;
+  esac
   wait "$prism_pid"
 }
 
 ensure_mounts
 load_drm
 ensure_support
-ensure_qt_support
+ensure_graphics_packages
+# udev has to be up before Xorg starts: X only accepts the devices the udev
+# database already tags, and Xorg starts further down in this script.
+ensure_input
 
 # A previous Xorg may be running on a framebuffer that never reached the
 # scanout. Reusing it would keep the wrong driver, so Launch starts the display
