@@ -54,6 +54,16 @@ REPORT_FILE=/tmp/webpc-prism-report.txt
 APK_LOG=/tmp/webpc-apk.log
 STATUS_PID=
 PRISM_WINDOW_WAIT=${PRISM_WINDOW_WAIT:-300}
+# The prepared guest is a stage the next launch resumes. Packages, the display
+# driver that proved it reaches the scanout and Prism's settings all live on the
+# persistent guest disk; what has to be repeated by hand on every launch is the
+# search for that driver, and every rejected variant costs up to 45 seconds.
+# The marker is written only once a display server has proved it paints the
+# scanout, so a launch that died before that never turns into a stage.
+STAGE_DIR=/var/lib/webpc-stage
+STAGE_READY=$STAGE_DIR/ready
+STAGE_CONF=$STAGE_DIR/xorg.conf
+STAGE_VERSION=1
 # xmessage and openbox are only published in the community repository.
 GRAPHICS_PACKAGES="eudev xf86-input-libinput xf86-input-evdev xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-renderutil xcb-util-image xkeyboard-config libxkbcommon-x11 xwininfo xmessage openbox"
 
@@ -321,6 +331,95 @@ report_memory() {
   # every report carries its own numbers instead of a guess about them.
   audit "memory at $(elapsed): $(free -m 2>/dev/null | sed -n '2p' | tr -s ' ')"
   audit "swap at $(elapsed): $(free -m 2>/dev/null | sed -n '3p' | tr -s ' ')"
+}
+
+stage_version() { sed -n 's/^version=//p' "$STAGE_READY" 2>/dev/null | tail -n 1; }
+stage_variant() { sed -n 's/^variant=//p' "$STAGE_READY" 2>/dev/null | tail -n 1; }
+
+stage_usable() {
+  # A stage is only worth resuming while it still describes this guest: the
+  # packages and the tools it names have to be present, and it has to have been
+  # written by this launcher version. Anything else falls back to the full
+  # preparation rather than trusting a stale record.
+  [ -f "$STAGE_READY" ] || return 1
+  [ "$(stage_version)" = "$STAGE_VERSION" ] || return 1
+  variant=$(stage_variant)
+  case "$variant" in ''|none) return 1 ;; esac
+  command -v Xorg >/dev/null 2>&1 || return 1
+  command -v xsetroot >/dev/null 2>&1 || return 1
+  command -v xmessage >/dev/null 2>&1 || return 1
+  command -v prismlauncher >/dev/null 2>&1 || return 1
+  driver=$variant
+  case "$driver" in modesetting-shadow) driver=modesetting ;; esac
+  if [ "$driver" != autodetect ]; then
+    have_driver "$driver" || return 1
+  fi
+  # The modesetting variant needs the DRM node it was saved against.
+  [ "$driver" != modesetting ] || [ -e /dev/dri/card0 ] || return 1
+  [ -z "$(missing_graphics_packages)" ] || return 1
+  return 0
+}
+
+resume_stage() {
+  # Start the display with the driver that already proved it reaches the
+  # scanout instead of walking every variant again. The proof is repeated: a
+  # resumed server that cannot paint is rejected exactly like a new one, and the
+  # caller then runs the full search.
+  variant=$(stage_variant)
+  if [ -s "$STAGE_CONF" ] && [ "$variant" != autodetect ]; then
+    cp "$STAGE_CONF" "$CONFIG" 2>/dev/null || return 1
+    start_xorg "$variant" -config "$CONFIG" || return 1
+  else
+    start_xorg "$variant" || return 1
+  fi
+  audit "stage: resumed the saved display ($variant) at $(elapsed)"
+  return 0
+}
+
+save_stage() {
+  # Called only once Prism's window is mapped: that is the one moment the whole
+  # preparation (packages, display driver, window manager, Prism with its heap
+  # ceiling) has been proven on this guest, so it is what a later launch
+  # resumes. The marker is written next to its config and renamed into place, so
+  # a tab that dies mid-write leaves the previous stage or none, never a
+  # half-written one.
+  variant=$(cat "$VARIANT" 2>/dev/null)
+  case "$variant" in ''|none)
+    audit "stage: no proven display variant, so nothing is saved"
+    return 1 ;;
+  esac
+  mkdir -p "$STAGE_DIR" 2>/dev/null || { audit "stage: could not create $STAGE_DIR"; return 1; }
+  conf_source=$CONFIG
+  if [ -s "$FALLBACK_LABEL" ] && [ "$(cat "$FALLBACK_LABEL" 2>/dev/null)" = "$variant" ]; then
+    conf_source=$FALLBACK_CONF
+  fi
+  if [ -s "$conf_source" ] && [ "$variant" != autodetect ]; then
+    cp "$conf_source" "$STAGE_CONF" 2>/dev/null || {
+      audit "stage: could not save the Xorg config"
+      return 1
+    }
+  else
+    rm -f "$STAGE_CONF"
+  fi
+  if [ "${STAGE_RESUME:-0}" -eq 1 ]; then
+    # Refreshing a resumed stage keeps the time the full preparation really
+    # took, so the record never claims a slow first run was a fast one.
+    prepared_in=$(sed -n 's/^prepared_in=//p' "$STAGE_READY" 2>/dev/null | tail -n 1)
+    [ -n "$prepared_in" ] || prepared_in=$(elapsed)
+    audit "stage: refreshed at $(elapsed); it was prepared in $prepared_in"
+  else
+    prepared_in=$(elapsed)
+    announce "saved the Minecraft stage; the next launch resumes it instead of reinstalling and searching for a display"
+    audit "stage: saved at $(elapsed) with display variant $variant"
+  fi
+  {
+    echo "version=$STAGE_VERSION"
+    echo "variant=$variant"
+    echo "prepared_in=$prepared_in"
+    echo "saved_at=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
+  } > "$STAGE_READY.tmp" 2>/dev/null || return 1
+  mv "$STAGE_READY.tmp" "$STAGE_READY" 2>/dev/null || { rm -f "$STAGE_READY.tmp"; return 1; }
+  return 0
 }
 
 run_window_manager() {
@@ -598,7 +697,7 @@ show_report() {
     echo "waited ${n}s  windows=$windows  alive=$alive"
     echo ""
     echo "--- launcher ---"
-    grep -E 'graphics support|udev at|input config|input devices|window manager|painted the X root|memory at|swap at|prism launcher' "$AUDIT" 2>/dev/null | tail -n 10
+    grep -E 'graphics support|stage:|udev at|input config|input devices|window manager|painted the X root|memory at|swap at|prism launcher' "$AUDIT" 2>/dev/null | tail -n 10
     echo "--- prism output ---"
     tail -n 8 "$PRISM_LOG" 2>/dev/null || echo '(empty)'
     echo "--- Xorg input ---"
@@ -712,15 +811,29 @@ itself has not opened its window yet."
   case "$windows" in
     none|0) show_report ;;
     unknown) audit "prism launcher: no window list tool, so a mapped window cannot be confirmed" ;;
-    *) close_status_window; audit "prism launcher: window mapped after ${n}s at $(elapsed)" ;;
+    *)
+      close_status_window
+      audit "prism launcher: window mapped after ${n}s at $(elapsed)"
+      ;;
   esac
   wait "$prism_pid"
 }
 
 ensure_mounts
 load_drm
-ensure_support
-ensure_graphics_packages
+# A saved stage means the slow part already happened on this guest and survived
+# on its persistent disk: skip the package transaction and the driver search,
+# then start Prism straight away. The stage is revalidated on every launch and
+# falls back to the full preparation the moment anything it names is missing.
+STAGE_RESUME=1
+stage_usable || STAGE_RESUME=0
+if [ "$STAGE_RESUME" -eq 1 ]; then
+  announce "resuming the saved Minecraft stage (display $(stage_variant)); no package install is needed"
+  audit "stage: resuming at $(elapsed), prepared in $(sed -n 's/^prepared_in=//p' "$STAGE_READY" 2>/dev/null) with display $(stage_variant)"
+else
+  ensure_support
+  ensure_graphics_packages
+fi
 # udev has to be up before Xorg starts: X only accepts the devices the udev
 # database already tags, and Xorg starts further down in this script.
 ensure_input
@@ -748,13 +861,30 @@ if pidof Xorg >/dev/null 2>&1; then
 fi
 
 display_ok=1
-start_variants && display_ok=0
+if [ "$STAGE_RESUME" -eq 1 ]; then
+  resume_stage && display_ok=0
+  if [ "$display_ok" -ne 0 ]; then
+    # The saved driver no longer produces a visible server, so this is a real
+    # change in the guest rather than a resumable stage: prepare it fully.
+    audit "stage: the saved display did not come back; running the full preparation"
+    ensure_support
+    ensure_graphics_packages
+    start_variants && display_ok=0
+  fi
+else
+  start_variants && display_ok=0
+fi
 if [ "$display_ok" -eq 0 ]; then
   release_console
   ensure_window_manager
   paint_root
 fi
 report_mode
+# The slow part is over at this point: packages are installed and a display
+# server has proved it reaches the scanout. Save that as the stage, before Prism
+# starts, so a tab that dies while Prism is opening still leaves a resumable
+# stage behind instead of costing the whole preparation again.
+[ "$display_ok" -eq 0 ] && save_stage
 
 if [ "$display_ok" -ne 0 ]; then
   # Nobody can read a log file from the tablet and, with Xorg dead, the canvas
