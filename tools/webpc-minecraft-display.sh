@@ -610,6 +610,46 @@ show_report() {
   status_window "WebPC guest display" "$(cat "$REPORT_FILE")" || report_on_console
 }
 
+limit_prism_memory() {
+  # Prism's own default asks for a heap larger than this guest has, so the first
+  # Minecraft launch either fails to reserve it or the kernel kills Java while
+  # the game loads. Record a ceiling that fits the reduced guest, and only lower
+  # it: a heap the user already made smaller is left alone, and every other line
+  # of the settings file is preserved.
+  conf="${XDG_CONFIG_HOME:-/root/.config}/PrismLauncher/prismlauncher.cfg"
+  max_mb=${WEBPC_PRISM_MAX_MB:-512}
+  min_mb=${WEBPC_PRISM_MIN_MB:-256}
+  mkdir -p "$(dirname "$conf")" 2>/dev/null || { audit "prism memory: could not create $(dirname "$conf")"; return 1; }
+  if [ ! -f "$conf" ]; then
+    printf '[General]\nMaxMemAlloc=%s\nMinMemAlloc=%s\n' "$max_mb" "$min_mb" > "$conf" 2>/dev/null || {
+      audit "prism memory: could not write $conf"
+      return 1
+    }
+    audit "prism memory: new settings file with a ${min_mb}-${max_mb} MiB heap"
+    return 0
+  fi
+  current=$(sed -n 's/^MaxMemAlloc=//p' "$conf" 2>/dev/null | tail -n 1)
+  case "$current" in ''|*[!0-9]*) current=0 ;; esac
+  if [ "$current" -gt 0 ] && [ "$current" -le "$max_mb" ]; then
+    audit "prism memory: keeping the configured ${current} MiB heap"
+  else
+    if grep -q '^MaxMemAlloc=' "$conf" 2>/dev/null; then
+      sed -i "s/^MaxMemAlloc=.*/MaxMemAlloc=${max_mb}/" "$conf" 2>/dev/null
+    elif grep -q '^\[General\]' "$conf" 2>/dev/null; then
+      sed -i "/^\[General\]/a MaxMemAlloc=${max_mb}" "$conf" 2>/dev/null
+    else
+      printf '\n[General]\nMaxMemAlloc=%s\n' "$max_mb" >> "$conf" 2>/dev/null
+    fi
+    audit "prism memory: heap capped at ${max_mb} MiB (was ${current:-unset})"
+  fi
+  current_min=$(sed -n 's/^MinMemAlloc=//p' "$conf" 2>/dev/null | tail -n 1)
+  case "$current_min" in ''|*[!0-9]*) current_min=0 ;; esac
+  if [ "$current_min" -gt "$min_mb" ]; then
+    sed -i "s/^MinMemAlloc=.*/MinMemAlloc=${min_mb}/" "$conf" 2>/dev/null
+  fi
+  return 0
+}
+
 start_prism() {
   # Prism used to be exec'd, so a launcher that never drew anything left one
   # trace only: the screen stayed on the root paint. Run it in the background,
@@ -626,6 +666,9 @@ start_prism() {
   for stale in $(pidof xmessage 2>/dev/null); do kill "$stale" 2>/dev/null || true; done
   audit "prism launcher: starting on $DISPLAY at $(elapsed)"
   report_memory
+  # Minecraft has to fit the reduced guest, so cap the heap before the wizard
+  # (and the first game launch) inherits Prism's larger default.
+  limit_prism_memory
   status_window "WebPC guest display" "Prism Launcher is starting.
 
 This window is drawn by the guest's own X server. Seeing it means the
