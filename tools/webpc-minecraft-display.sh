@@ -40,6 +40,7 @@ VARIANT=/var/log/webpc-xorg-variant
 FALLBACK_LABEL=/tmp/webpc-xorg-fallback.label
 FALLBACK_CONF=/tmp/webpc-xorg-fallback.conf
 DRIVERS=/usr/lib/xorg/modules/drivers
+INPUT_DRIVERS=/usr/lib/xorg/modules/input
 FBDEV=/dev/fb0
 PRISM_LOG=/var/log/webpc-prism.log
 WM_LOG=/var/log/webpc-wm.log
@@ -109,6 +110,14 @@ ensure_mounts() {
 }
 
 have_driver() { [ -f "$DRIVERS/$1_drv.so" ]; }
+
+have_input_driver() {
+  # Display drivers live in modules/drivers, input drivers in modules/input.
+  # Checking the display directory for evdev always failed, so the fallback
+  # below never produced a pointer config and paid a futile apk attempt first.
+  [ -f "$INPUT_DRIVERS/$1_drv.so" ] || [ -f "$DRIVERS/../input/$1_drv.so" ] ||
+    [ -f "$DRIVERS/$1_drv.so" ]
+}
 
 load_drm() {
   for module in bochs bochs_drm virtio_gpu; do
@@ -190,7 +199,10 @@ ensure_input() {
   # kernel had QEMU's USB tablet and X ignored it, which is exactly the pointer
   # that cannot be moved at all. `setup-xorg-base` does this on a normal Alpine
   # install; the same work has to happen here before Xorg looks for a pointer.
-  for module in uhci_hcd usbhid psmouse; do
+  # evdev is the kernel input handler that creates /dev/input/eventN: without
+  # it the PS/2 mouse and QEMU's USB tablet exist as devices that no X driver
+  # can open at all, whatever X is configured with.
+  for module in uhci_hcd usbhid psmouse evdev mousedev; do
     modprobe "$module" >/dev/null 2>&1 && audit "loaded input module: $module"
   done
   announce "starting the udev daemon so Xorg accepts the mouse and keyboard"
@@ -214,6 +226,8 @@ ensure_input() {
   fi
   audit "udev at $(elapsed): $udev_state"
   audit "input devices: $(grep -E '^(N|H):' /proc/bus/input/devices 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+  audit "input nodes: $(ls /dev/input 2>/dev/null | tr '\n' ' ')"
+  audit "usb: $(cat /sys/bus/usb/devices/*/product 2>/dev/null | tr '\n' '|')"
   write_input_conf
 }
 
@@ -225,12 +239,12 @@ write_input_conf() {
   # at the centre of the screen and never moves, because X has no pointer at all.
   conf=/etc/X11/xorg.conf.d/30-webpc-input.conf
   INPUT_NODES=0
-  if ! have_driver evdev; then
-    timeout 120 apk add --no-cache xf86-input-evdev >/dev/null 2>&1 || true
+  if ! have_input_driver evdev && ! apk info -e xf86-input-evdev >/dev/null 2>&1; then
+    timeout 120 apk add --no-cache --repository="$COMMUNITY_REPO" xf86-input-evdev >/dev/null 2>&1 || true
   fi
-  if ! have_driver evdev; then
+  if ! have_input_driver evdev; then
     rm -f "$conf"
-    audit "input config: no evdev driver and no udev tag, so X has no pointer driver"
+    audit "input config: the evdev X driver is not installed, so X has no pointer driver"
     return 0
   fi
   tagged=
@@ -288,7 +302,7 @@ write_input_conf() {
   if [ "$n" -gt 0 ]; then
     audit "input config: $n event devices handed to evdev because udev does not tag them"
   else
-    audit "input config: no /dev/input/event* nodes exist at all, so no pointer can be attached"
+    audit "input config: evdev is installed but the kernel has no /dev/input/event* node, so no pointer can be attached"
     rm -f "$conf"
   fi
 }
@@ -697,7 +711,7 @@ show_report() {
     echo "waited ${n}s  windows=$windows  alive=$alive"
     echo ""
     echo "--- launcher ---"
-    grep -E 'graphics support|stage:|udev at|input config|input devices|window manager|painted the X root|memory at|swap at|prism launcher' "$AUDIT" 2>/dev/null | tail -n 10
+    grep -E 'graphics support|stage:|udev at|input config|input devices|input nodes|usb:|window manager|painted the X root|memory at|swap at|prism launcher' "$AUDIT" 2>/dev/null | tail -n 11
     echo "--- prism output ---"
     tail -n 8 "$PRISM_LOG" 2>/dev/null || echo '(empty)'
     echo "--- Xorg input ---"
