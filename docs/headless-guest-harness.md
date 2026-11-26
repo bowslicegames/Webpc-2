@@ -81,10 +81,15 @@ keepalive lives in the harness shim, not in the guest or the page.
 
 ## Known limit in this sandbox
 
-Guest block I/O through the emulated qcow2 rounds trip to JavaScript, and on the
-2-core sandbox each 4 KiB request costs roughly 23 ms (`info blockstats`). The
-read-only root mount alone takes about five minutes, which makes a full
-OpenRC + Xorg + Prism boot hours rather than minutes here. That is a property of
-this environment, not of the iPad, where the same runtime reaches Xorg and Prism
-in minutes. Plan harness runs accordingly: watch `info blockstats`, and expect a
-first boot that must be left running rather than a two-minute smoke test.
+Guest block I/O through the emulated qcow2 rounds trips to JavaScript, and on the
+2-core sandbox a single 4 KiB request costs about 25 ms (`info blockstats`). One
+run reached the read-only root mount after roughly five minutes; later runs sat
+after the very first 4 KiB read with `rd_operations=1` and no further requests,
+which is a stall rather than slowness. Tightening the PTY keepalive to 4 ms did
+not change that, so the console wake is not the I/O bottleneck.
+
+Consequence: a full OpenRC + Xorg + Prism boot was not reached here. That is a
+property of this sandbox, not of the iPad, where the same runtime reaches Xorg
+and Prism in minutes. Plan harness runs accordingly: watch `info blockstats` to
+tell "slow" from "stalled", and expect a first boot that has to be left running
+rather than a two-minute smoke test.

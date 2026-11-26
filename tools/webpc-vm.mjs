@@ -149,7 +149,7 @@ if (typeof process === "object" && process.versions && process.versions.node) {
     const keepAlive = setInterval(() => {
       if (keepAlive.unref) keepAlive.unref();
       fire("readable");
-    }, 25);
+    }, Number(process.env.WEBPC_PTY_KEEPALIVE_MS || 25));
 
     function connect() {
       const port = Number(process.env.WEBPC_PTY_PORT || 0);
