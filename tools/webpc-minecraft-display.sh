@@ -32,6 +32,12 @@ export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
 export QT_QPA_PLATFORM=xcb
 export QT_X11_NO_MITSHM=1
+# Prism is a Qt 6 Widgets application painted by Mesa's llvmpipe on an emulated
+# CPU, so every device pixel costs a real instruction stream. HiDPI scaling
+# would double that cost for no benefit on a 1024x768 emulated screen.
+export QT_AUTO_SCREEN_SCALE_FACTOR=0
+export QT_ENABLE_HIGHDPI_SCALING=0
+export QT_SCALE_FACTOR=1
 
 LOG=/var/log/webpc-xorg.log
 AUDIT=/var/log/webpc-minecraft-launcher.log
@@ -54,7 +60,7 @@ STATUS_FILE=/tmp/webpc-status.txt
 REPORT_FILE=/tmp/webpc-prism-report.txt
 APK_LOG=/tmp/webpc-apk.log
 STATUS_PID=
-PRISM_WINDOW_WAIT=${PRISM_WINDOW_WAIT:-300}
+PRISM_WINDOW_WAIT=${PRISM_WINDOW_WAIT:-900}
 # The prepared guest is a stage the next launch resumes. Packages, the display
 # driver that proved it reaches the scanout and Prism's settings all live on the
 # persistent guest disk; what has to be repeated by hand on every launch is the
@@ -307,15 +313,76 @@ write_input_conf() {
   fi
 }
 
+zram_swap_active() { grep -q '^/dev/zram0 ' /proc/swaps 2>/dev/null; }
+
+enable_zram_swap() {
+  # Compressed RAM instead of a disk swapfile. Every swapped byte written to
+  # /swapfile is a qcow2 write through the browser's OPFS from an emulated
+  # virtio-blk device, which is the slowest path in this machine: a guest that
+  # pages there spends its whole startup thrashing instead of painting, which
+  # is exactly what Prism's window never appearing looked like. zram keeps the
+  # same pages in RAM, compressed, and costs only emulated CPU.
+  modprobe zram num_devices=1 >/dev/null 2>&1 || true
+  [ -e /sys/block/zram0/disksize ] || return 1
+  if [ -r /sys/block/zram0/comp_algorithm ] && grep -qw lz4 /sys/block/zram0/comp_algorithm 2>/dev/null; then
+    echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null || true
+  fi
+  size_mb=${WEBPC_ZRAM_MB:-512}
+  current=$(cat /sys/block/zram0/disksize 2>/dev/null)
+  case "$current" in
+    ''|0) echo $((size_mb * 1024 * 1024)) > /sys/block/zram0/disksize 2>/dev/null || return 1 ;;
+  esac
+  mkswap /dev/zram0 >/dev/null 2>&1 || { audit "swap: mkswap /dev/zram0 failed"; return 1; }
+  # A busybox swapon may not take a priority; zram still has to come up, it is
+  # only the ordering against the disk swapfile that the priority decides.
+  swapon -p 100 /dev/zram0 >/dev/null 2>&1 || swapon /dev/zram0 >/dev/null 2>&1 || {
+    audit "swap: swapon /dev/zram0 failed"
+    return 1
+  }
+  return 0
+}
+
+report_swap_io() {
+  # Page-in/page-out counters are the difference between a guest that pages a
+  # little and one that is thrashing through the emulated disk, and they are
+  # the only numbers that can be read back from a screenshot of the canvas.
+  audit "swap io at $(elapsed): $(awk '/^pswpin |^pswpout / {printf "%s=%s ", $1, $2}' /proc/vmstat 2>/dev/null)"
+}
+
 ensure_swap() {
   # Every guest page lives in the browser tab, so a guest that fills its RAM
   # takes the whole page down with it: that is what a reload during Prism's
-  # startup was. Guest swap parks the least recently used pages on the guest's
-  # own disk, which keeps Xorg and Prism alive on a tight RAM budget instead of
-  # the kernel or the browser killing them. It is only created when the root
-  # filesystem really has room for it.
-  grep -q '^/swapfile ' /proc/swaps 2>/dev/null && { audit "swap: /swapfile already active"; return 0; }
-  want=${WEBPC_SWAP_MB:-512}
+  # startup was. Guest swap keeps Xorg and Prism alive on a tight RAM budget
+  # instead of the kernel or the browser killing them, but it has to be swap
+  # the guest can afford to touch: compressed RAM first, emulated disk last.
+  if zram_swap_active; then
+    audit "swap: zram already active"
+  elif enable_zram_swap; then
+    announce "enabled ${WEBPC_ZRAM_MB:-512} MiB of compressed-RAM swap so Prism can page without touching the emulated disk"
+    audit "swap: zram ${WEBPC_ZRAM_MB:-512} MiB active at $(elapsed)"
+  fi
+  if zram_swap_active; then
+    # zram holds the anonymous pages; the same pages on /swapfile are the
+    # slowest possible path. Page aggressively into zram and take the disk
+    # swapfile an earlier launcher left behind out of the swap set, so no
+    # anonymous page is ever written through the emulated disk again.
+    sysctl -w vm.swappiness=100 >/dev/null 2>&1 || true
+    if grep -q '^/swapfile ' /proc/swaps 2>/dev/null; then
+      swapoff /swapfile >/dev/null 2>&1 && audit "swap: took the disk swapfile out of use"
+    fi
+    # The file an earlier launcher wrote is dead weight now: half a gigabyte of
+    # a guest disk whose image lives in the browser's storage quota.
+    [ -f /swapfile ] && rm -f /swapfile && audit "swap: removed the unused /swapfile"
+    report_swap_io
+    return 0
+  fi
+  # This kernel has no zram. Keep the disk swapfile as an out-of-memory
+  # backstop only: low priority, a low swappiness (so the kernel does not park
+  # clean anonymous pages there while RAM is free) and 256 MiB instead of
+  # 512 MiB, because filling it is itself minutes of qcow2 writes.
+  grep -q '^/swapfile ' /proc/swaps 2>/dev/null && { audit "swap: /swapfile already active"; report_swap_io; return 0; }
+  sysctl -w vm.swappiness=10 >/dev/null 2>&1 || true
+  want=${WEBPC_SWAP_MB:-256}
   if [ ! -f /swapfile ]; then
     free_kb=$(df -k / 2>/dev/null | awk 'NR==2 {print $4}')
     case "${free_kb:-}" in ''|*[!0-9]*) free_kb=0 ;; esac
@@ -332,8 +399,9 @@ ensure_swap() {
   fi
   chmod 600 /swapfile 2>/dev/null || true
   mkswap /swapfile >/dev/null 2>&1 || { audit "swap: mkswap unavailable, no swap"; rm -f /swapfile; return 1; }
-  if swapon /swapfile >/dev/null 2>&1; then
-    audit "swap: ${want} MiB active at $(elapsed)"
+  if swapon -p 10 /swapfile >/dev/null 2>&1 || swapon /swapfile >/dev/null 2>&1; then
+    audit "swap: ${want} MiB disk swapfile active at $(elapsed), only as an out-of-memory backstop"
+    report_swap_io
     return 0
   fi
   audit "swap: swapon failed, the kernel has no swap support"
@@ -345,6 +413,8 @@ report_memory() {
   # every report carries its own numbers instead of a guess about them.
   audit "memory at $(elapsed): $(free -m 2>/dev/null | sed -n '2p' | tr -s ' ')"
   audit "swap at $(elapsed): $(free -m 2>/dev/null | sed -n '3p' | tr -s ' ')"
+  audit "swap devices at $(elapsed): $(grep -v '^Filename' /proc/swaps 2>/dev/null | tr '\n' ' ' | tr -s ' ')"
+  report_swap_io
 }
 
 stage_version() { sed -n 's/^version=//p' "$STAGE_READY" 2>/dev/null | tail -n 1; }
@@ -626,7 +696,10 @@ report_mode() {
 paint_root() {
   # The root colour is a state code the user can read off the canvas when no
   # window can be drawn: blue means the stack is ready, orange means graphics
-  # packages never installed, purple means the guest has no input device at all.
+  # packages never installed, purple means the guest has no input device at
+  # all, and green (set by start_prism) means Prism is running but has not
+  # mapped its window yet. A colour needs no window manager, no font and no
+  # client, so it is the one progress report that survives every failure.
   # That is the difference between another blind round trip and one word back.
   color='#203a5f'
   reason='graphics and input ready'
@@ -763,6 +836,50 @@ limit_prism_memory() {
   return 0
 }
 
+swap_io_line() {
+  awk '/^pswpin |^pswpout / {printf "%s=%s ", $1, $2}' /proc/vmstat 2>/dev/null
+}
+
+prism_wait_message() {
+  # $1 is the elapsed seconds. The canvas is the only report channel this user
+  # has, so the message carries the memory and swap numbers that decide whether
+  # Prism is slow because it is still starting or slow because it is paging
+  # through the emulated disk.
+  {
+    echo "Prism Launcher is still starting (${1} s)."
+    echo ""
+    echo "This window is drawn by the guest's own X server: the display,"
+    echo "its window manager and the canvas all work. Prism has not opened"
+    echo "its own window yet."
+    echo ""
+    echo "memory:  $(free -m 2>/dev/null | sed -n '2p' | tr -s ' ')"
+    echo "swap:    $(free -m 2>/dev/null | sed -n '3p' | tr -s ' ')"
+    echo "swap io: $(swap_io_line)"
+    echo "java:    $(ps w 2>/dev/null | grep -c '[j]ava') process(es)"
+    echo ""
+    echo "The guest runs on an emulated CPU, so Prism's first window can"
+    echo "take several minutes. This message updates every minute."
+  }
+}
+
+watch_for_prism_window() {
+  # A launcher that outlived its window budget can still map, so the failure
+  # report must not keep sitting on top of the window the user is waiting for.
+  # Runs detached and only removes the message once Prism's own window exists.
+  (
+    n=0
+    while prism_alive && [ "$n" -lt 240 ]; do
+      case "$(prism_window_count)" in
+        ''|0|2|*[!0-9]*) ;;
+        *) for stale in $(pidof xmessage 2>/dev/null); do kill "$stale" 2>/dev/null || true; done
+           exit 0 ;;
+      esac
+      sleep 10
+      n=$((n + 1))
+    done
+  ) >/dev/null 2>&1 &
+}
+
 start_prism() {
   # Prism used to be exec'd, so a launcher that never drew anything left one
   # trace only: the screen stayed on the root paint. Run it in the background,
@@ -792,29 +909,32 @@ Prism can take minutes to open under software CPU emulation. This
 message updates every 30 seconds."
   prismlauncher "$@" >>"$PRISM_LOG" 2>&1 &
   prism_pid=$!
+  # Green root: Prism exists and is starting. Blue would keep saying "the
+  # display works and nothing is running", which is the wrong diagnosis while
+  # an emulated JVM is still loading its classes.
+  command -v xsetroot >/dev/null 2>&1 && xsetroot -solid '#14532d' 2>/dev/null &&
+    audit "painted the X root window #14532d: Prism is running, waiting for its window"
   n=0
-  windows=2
+  windows=0
+  no_window_tool=0
   while [ "$n" -lt "$PRISM_WINDOW_WAIT" ]; do
     if ! prism_alive; then
       windows=none
       audit "prism launcher: exited after ${n}s at $(elapsed)"
       break
     fi
-    windows=$(prism_window_count)
-    case "$windows" in
+    count=$(prism_window_count)
+    case "$count" in
       ''|*[!0-9]*) windows=unknown ;;
-      2) windows=unknown; break ;;
-      0)
-        if [ "$n" -gt 0 ] && [ $((n % 30)) -eq 0 ]; then
-          status_window "WebPC guest display" "Prism Launcher is still starting (${n} s).
-
-Seeing this window means the guest display and its window manager work:
-Xorg paints, the manager maps windows, and the canvas shows them. Prism
-itself has not opened its window yet."
-        fi
-        ;;
-      *) break ;;
+      2) windows=unknown; no_window_tool=1 ;;
+      0) windows=0 ;;
+      *) windows=$count; break ;;
     esac
+    # A minute-by-minute message instead of a 30 s one: every redraw is work
+    # this emulated CPU has to do while Prism is starting.
+    if [ $((n % 60)) -eq 0 ]; then
+      status_window "WebPC guest display" "$(prism_wait_message "$n")"
+    fi
     sleep 5
     n=$((n + 5))
   done
@@ -822,11 +942,24 @@ itself has not opened its window yet."
   prism_alive && alive=yes
   audit "prism launcher: pid $prism_pid alive=$alive windows=$windows after ${n}s at $(elapsed)"
   audit "prism launcher output: $(grep -m 3 -iE 'error|cannot|could not|failed|abort|no qt platform' "$PRISM_LOG" 2>/dev/null | tr '\n' '|')"
+  report_memory
   case "$windows" in
-    none|0) show_report ;;
-    unknown) audit "prism launcher: no window list tool, so a mapped window cannot be confirmed" ;;
+    none|0)
+      show_report
+      # Prism is often still alive and merely slower than the budget. Keep the
+      # process and keep looking, so a late window still replaces the report.
+      watch_for_prism_window
+      ;;
+    unknown)
+      if [ "$no_window_tool" -eq 1 ]; then
+        audit "prism launcher: xwininfo is missing, so a mapped window cannot be confirmed; leaving Prism running"
+      else
+        audit "prism launcher: could not count windows, leaving Prism running"
+      fi
+      ;;
     *)
       close_status_window
+      command -v xsetroot >/dev/null 2>&1 && xsetroot -solid '#203a5f' 2>/dev/null || true
       audit "prism launcher: window mapped after ${n}s at $(elapsed)"
       ;;
   esac
