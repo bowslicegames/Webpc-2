@@ -452,6 +452,7 @@ resume_stage() {
   variant=$(stage_variant)
   if [ -s "$STAGE_CONF" ] && [ "$variant" != autodetect ]; then
     cp "$STAGE_CONF" "$CONFIG" 2>/dev/null || return 1
+    ensure_font_path
     start_xorg "$variant" -config "$CONFIG" || return 1
   else
     start_xorg "$variant" || return 1
@@ -531,12 +532,25 @@ ensure_window_manager() {
   return 1
 }
 
+ensure_font_path() {
+  # xmessage draws with a core X font, and the saved stage config was written
+  # before this section existed. Naming the misc font directory in the server
+  # configuration keeps every on-canvas message drawable whatever the server's
+  # built-in default path turns out to be.
+  [ -f "$CONFIG" ] || return 0
+  grep -q 'FontPath' "$CONFIG" 2>/dev/null && return 0
+  printf '\nSection "Files"\n  FontPath "/usr/share/fonts/misc/"\nEndSection\n' >> "$CONFIG" 2>/dev/null || true
+}
+
 write_xorg_conf() {
   # $1 driver, $2 optional AccelMethod, $3 optional extra Option line.
   driver=$1
   accel=${2:-}
   extra=${3:-}
   {
+    echo 'Section "Files"'
+    echo '  FontPath "/usr/share/fonts/misc/"'
+    echo 'EndSection'
     echo 'Section "Device"'
     echo '  Identifier "WebPC VGA"'
     echo "  Driver \"$driver\""
@@ -697,8 +711,9 @@ paint_root() {
   # The root colour is a state code the user can read off the canvas when no
   # window can be drawn: blue means the stack is ready, orange means graphics
   # packages never installed, purple means the guest has no input device at
-  # all, and green (set by start_prism) means Prism is running but has not
-  # mapped its window yet. A colour needs no window manager, no font and no
+  # all, green (set by start_prism) means Prism is running but has not mapped
+  # its window yet, and red (#7f1d1d, also set by start_prism) means Prism
+  # exited. A colour needs no window manager, no font and no
   # client, so it is the one progress report that survives every failure.
   # That is the difference between another blind round trip and one word back.
   color='#203a5f'
@@ -724,14 +739,71 @@ prism_alive() {
   return 0
 }
 
+prism_stat_field() {
+  # $1 is a field of /proc/PID/status. Busybox ps cannot show a thread count or
+  # a resident set, and those are what separate "loading" from "thrashing".
+  awk -v key="$1" '$1 == key {print $2; exit}' "/proc/$prism_pid/status" 2>/dev/null
+}
+
+prism_state_line() {
+  # One line that answers "is Prism working or parked": its scheduler state,
+  # resident memory, thread count, CPU ticks and the kernel wait channel. A
+  # process that has used no CPU for minutes is not still loading a library.
+  state=$(awk '{print $3}' "/proc/$prism_pid/stat" 2>/dev/null)
+  case "${state:-}" in
+    ''|*[!A-Za-z]*) echo 'state: unavailable (no such process)'; return 0 ;;
+  esac
+  echo "state: $state rss: $(prism_stat_field VmRSS) threads: $(prism_stat_field Threads) cpu ticks: $(awk '{print $14 + $15}' "/proc/$prism_pid/stat" 2>/dev/null) wchan: $(cat "/proc/$prism_pid/wchan" 2>/dev/null)"
+}
+
+prism_syscall_line() {
+  # The syscall Prism is parked in, plus what its first descriptor argument
+  # points at. This is the difference between a launcher that is slowly drawing
+  # its window and one waiting for a reply that will never arrive.
+  line=$(cat "/proc/$prism_pid/syscall" 2>/dev/null)
+  if [ -z "$line" ]; then
+    echo 'syscall: unavailable (process gone or not permitted)'
+    return 0
+  fi
+  fd=$(printf '%s\n' "$line" | awk '{print $2}')
+  target=
+  case "$fd" in
+    ''|*[!0-9]*) ;;
+    *) target=$(readlink "/proc/$prism_pid/fd/$fd" 2>/dev/null) ;;
+  esac
+  echo "syscall: $(printf '%s' "$line" | cut -c1-64)${target:+ arg0-> $target}"
+}
+
+prism_log_tail() {
+  # $1 is how many lines of Prism's own stderr to show. A Qt platform failure,
+  # a missing library and a crash all name themselves there, and a screenshot of
+  # the canvas is the only way that text reaches this user.
+  lines=${1:-6}
+  if [ -s "$PRISM_LOG" ]; then
+    tail -n "$lines" "$PRISM_LOG" 2>/dev/null | cut -c1-108
+  else
+    echo '(Prism has written nothing to its own log yet)'
+  fi
+}
+
 prism_window_count() {
   # A mapped window is the only local proof that Prism reached its user
   # interface: the guest framebuffer shows the root paint whether Prism drew
   # nothing or never started. Echoes 2 when the guest has no window list tool.
   # The launcher's own status window is named "webpcstatus" with the title
   # "WebPC guest display" so it can never be mistaken for Prism's window here.
+  #
+  # A Qt application creates windows before it maps its main one, and
+  # xwininfo -root -tree lists created windows too. Counting those would report
+  # a window the user cannot see, so every match is asked for its map state.
   command -v xwininfo >/dev/null 2>&1 || { echo 2; return 0; }
-  DISPLAY=:0 timeout 8 xwininfo -root -tree 2>/dev/null | grep -ciE 'prism|minecraft|java'
+  ids=$(DISPLAY=:0 timeout 8 xwininfo -root -tree 2>/dev/null | grep -iE 'prism|minecraft|java' | awk '{print $1}')
+  [ -n "$ids" ] || { echo 0; return 0; }
+  mapped=0
+  for id in $ids; do
+    DISPLAY=:0 timeout 5 xwininfo -id "$id" 2>/dev/null | grep -q 'Map State: IsViewable' && mapped=$((mapped + 1))
+  done
+  echo "$mapped"
 }
 
 status_window() {
@@ -740,12 +812,27 @@ status_window() {
   # being written to a serial log nobody can see while X owns the framebuffer.
   # The title deliberately avoids the word Prism: prism_window_count() greps
   # window names, and a status window must never count as Prism's own.
+  # Starting xmessage is not proof that a readable window exists: a missing
+  # font, a full fork table or a server that never receives the map request all
+  # leave the bare root paint this window exists to prevent. The window is
+  # therefore looked up in the server's own tree before the caller is told the
+  # message is visible, and the caller can fall back to the console.
   command -v xmessage >/dev/null 2>&1 || return 1
   close_status_window
   printf '%s\n' "$2" > "$STATUS_FILE" || return 1
-  xmessage -name webpcstatus -title "$1" -file "$STATUS_FILE" -geometry 96x22+10+10 >/dev/null 2>&1 &
+  xmessage -name webpcstatus -title "$1" -file "$STATUS_FILE" -geometry 110x30+0+0 >/dev/null 2>&1 &
   STATUS_PID=$!
   sleep 1
+  if command -v xwininfo >/dev/null 2>&1; then
+    tries=0
+    while [ "$tries" -lt 8 ]; do
+      DISPLAY=:0 timeout 5 xwininfo -name "$1" >/dev/null 2>&1 && return 0
+      sleep 2
+      tries=$((tries + 1))
+    done
+    audit "status window: '$1' never appeared in the X window tree"
+    return 1
+  fi
   kill -0 "$STATUS_PID" 2>/dev/null
 }
 
@@ -779,21 +866,31 @@ report_on_console() {
 show_report() {
   # What the serial log knows, on the canvas: a tablet cannot paste a
   # transcript, and a screenshot of the guest screen is the report that works.
+  # The Prism process and the syscall it is parked in come first: "alive with
+  # no window" is either a very slow start or a launcher waiting for something
+  # that will never arrive, and only those lines tell the two apart.
   {
     echo "Prism Launcher is not showing a window."
-    echo "waited ${n}s  windows=$windows  alive=$alive"
+    echo "waited ${n}s  windows=$windows  alive=$alive${prism_rc:+  exit=$prism_rc}"
+    echo ""
+    echo "--- Prism process ---"
+    echo "pid: ${prism_pid:-none}"
+    prism_state_line
+    prism_syscall_line
+    echo ""
+    echo "--- Prism output (last 10) ---"
+    prism_log_tail 10
     echo ""
     echo "--- launcher ---"
-    grep -E 'graphics support|stage:|udev at|input config|input devices|input nodes|usb:|window manager|painted the X root|memory at|swap at|prism launcher' "$AUDIT" 2>/dev/null | tail -n 11
-    echo "--- prism output ---"
-    tail -n 8 "$PRISM_LOG" 2>/dev/null || echo '(empty)'
-    echo "--- Xorg input ---"
-    grep -iE 'input device|pointer|tablet|mouse|evdev' "$LOG" 2>/dev/null | tail -n 6 || echo '(no Xorg input lines)'
+    grep -E 'graphics support|stage:|udev at|input config|input devices|input nodes|usb:|window manager|painted the X root|memory at|swap at|prism launcher|prism process|prism wait|status window' "$AUDIT" 2>/dev/null | tail -n 10
     echo "--- X windows ---"
-    DISPLAY=:0 timeout 8 xwininfo -root -tree 2>/dev/null | head -n 5 || echo '(xwininfo unavailable)'
+    DISPLAY=:0 timeout 8 xwininfo -root -tree 2>/dev/null | head -n 6 || echo '(xwininfo unavailable)'
   } > "$REPORT_FILE"
   cat "$REPORT_FILE" >> "$AUDIT"
-  status_window "WebPC guest display" "$(cat "$REPORT_FILE")" || report_on_console
+  # The caller decides whether the console is a usable fallback: it needs Xorg,
+  # and stopping Xorg while a slow Prism is still starting would remove the
+  # window the watcher is waiting for.
+  status_window "WebPC guest display" "$(cat "$REPORT_FILE")"
 }
 
 limit_prism_memory() {
@@ -842,23 +939,27 @@ swap_io_line() {
 
 prism_wait_message() {
   # $1 is the elapsed seconds. The canvas is the only report channel this user
-  # has, so the message carries the memory and swap numbers that decide whether
-  # Prism is slow because it is still starting or slow because it is paging
-  # through the emulated disk.
+  # has, so the message carries what decides the next step: how long Prism has
+  # been starting, whether it is burning CPU or parked in a syscall, and the
+  # last lines it printed itself.
   {
-    echo "Prism Launcher is still starting (${1} s)."
+    echo "Prism Launcher has not opened its window yet (${1} s)."
     echo ""
-    echo "This window is drawn by the guest's own X server: the display,"
-    echo "its window manager and the canvas all work. Prism has not opened"
-    echo "its own window yet."
+    echo "This window is drawn by the guest's own X server, so the display,"
+    echo "its window manager and this canvas all work."
     echo ""
     echo "memory:  $(free -m 2>/dev/null | sed -n '2p' | tr -s ' ')"
     echo "swap:    $(free -m 2>/dev/null | sed -n '3p' | tr -s ' ')"
     echo "swap io: $(swap_io_line)"
+    echo "prism:   $(prism_state_line)"
+    echo "         $(prism_syscall_line)"
     echo "java:    $(ps w 2>/dev/null | grep -c '[j]ava') process(es)"
     echo ""
-    echo "The guest runs on an emulated CPU, so Prism's first window can"
-    echo "take several minutes. This message updates every minute."
+    echo "--- Prism output ---"
+    prism_log_tail 5
+    echo ""
+    echo "The guest runs on an emulated CPU, so the first window can take"
+    echo "several minutes. This message updates every minute."
   }
 }
 
@@ -906,7 +1007,7 @@ display, its window manager and this canvas all work, and that only
 Prism's own window would be missing.
 
 Prism can take minutes to open under software CPU emulation. This
-message updates every 30 seconds."
+message updates every minute."
   prismlauncher "$@" >>"$PRISM_LOG" 2>&1 &
   prism_pid=$!
   # Green root: Prism exists and is starting. Blue would keep saying "the
@@ -917,10 +1018,16 @@ message updates every 30 seconds."
   n=0
   windows=0
   no_window_tool=0
+  prism_rc=
+  message_shown=
   while [ "$n" -lt "$PRISM_WINDOW_WAIT" ]; do
     if ! prism_alive; then
       windows=none
-      audit "prism launcher: exited after ${n}s at $(elapsed)"
+      # Reap it here so the report can name the exit status instead of saying
+      # only that the process is gone.
+      wait "$prism_pid" 2>/dev/null
+      prism_rc=$?
+      audit "prism launcher: exited after ${n}s at $(elapsed) with status ${prism_rc}"
       break
     fi
     count=$(prism_window_count)
@@ -930,10 +1037,26 @@ message updates every 30 seconds."
       0) windows=0 ;;
       *) windows=$count; break ;;
     esac
+    # A Qt platform failure names itself in Prism's first lines while the clock
+    # would keep running for the whole budget. Reading the log turns a fifteen
+    # minute wait into a thirty second report.
+    if [ "$n" -ge 20 ] && grep -qiE 'no qt platform plugin|could not load the qt platform|failed to load platform plugin|cannot connect to x server|error while loading shared libraries' "$PRISM_LOG" 2>/dev/null; then
+      audit "prism launcher: fatal startup error in its log after ${n}s"
+      windows=0
+      break
+    fi
     # A minute-by-minute message instead of a 30 s one: every redraw is work
-    # this emulated CPU has to do while Prism is starting.
+    # this emulated CPU has to do while Prism is starting. Whether the message
+    # actually reached the screen is recorded once: it is the difference between
+    # a user who could not read the report and a report that was never drawn.
     if [ $((n % 60)) -eq 0 ]; then
-      status_window "WebPC guest display" "$(prism_wait_message "$n")"
+      if status_window "WebPC guest display" "$(prism_wait_message "$n")"; then
+        [ "$message_shown" = yes ] || audit "prism launcher: on-canvas status window mapped at ${n}s"
+        message_shown=yes
+      else
+        [ "$message_shown" = no ] || audit "prism launcher: the on-canvas status window could not be mapped at ${n}s"
+        message_shown=no
+      fi
     fi
     sleep 5
     n=$((n + 5))
@@ -941,11 +1064,23 @@ message updates every 30 seconds."
   alive=no
   prism_alive && alive=yes
   audit "prism launcher: pid $prism_pid alive=$alive windows=$windows after ${n}s at $(elapsed)"
+  audit "prism process: $(prism_state_line)"
+  audit "prism wait: $(prism_syscall_line)"
   audit "prism launcher output: $(grep -m 3 -iE 'error|cannot|could not|failed|abort|no qt platform' "$PRISM_LOG" 2>/dev/null | tr '\n' '|')"
   report_memory
   case "$windows" in
     none|0)
-      show_report
+      # Red root: Prism is gone. Green would keep promising a window that no
+      # process can still open, and the report window is not guaranteed to draw.
+      if [ "$windows" = none ]; then
+        command -v xsetroot >/dev/null 2>&1 && xsetroot -solid '#7f1d1d' 2>/dev/null &&
+          audit "painted the X root window #7f1d1d: Prism exited without a window"
+      fi
+      if ! show_report && [ "$alive" = no ]; then
+        # Nothing is competing for the CPU now, so a report that did not reach
+        # the screen has one channel left: the guest console.
+        report_on_console
+      fi
       # Prism is often still alive and merely slower than the budget. Keep the
       # process and keep looking, so a late window still replaces the report.
       watch_for_prism_window
@@ -963,7 +1098,10 @@ message updates every 30 seconds."
       audit "prism launcher: window mapped after ${n}s at $(elapsed)"
       ;;
   esac
-  wait "$prism_pid"
+  # A child reaped above cannot be waited for again. An alive one blocks here,
+  # which is what keeps the launcher running for as long as Prism does.
+  [ -n "$prism_rc" ] || { wait "$prism_pid"; prism_rc=$?; }
+  audit "prism launcher: final status ${prism_rc}"
 }
 
 ensure_mounts
@@ -1005,6 +1143,20 @@ if pidof Xorg >/dev/null 2>&1; then
     sleep 1
   fi
   rm -f /tmp/.X11-unix/X0 /tmp/.X0-lock
+fi
+
+# A Prism left over from an earlier attempt keeps its data directory locked and
+# holds the memory the new attempt needs, and the page restarts the display on
+# every Launch press. Clearing it is what makes each press a clean run instead of
+# a second launcher competing with a first one that nobody can see.
+if pidof prismlauncher >/dev/null 2>&1; then
+  audit "stopping the previous Prism Launcher ($(pidof prismlauncher)) because the display is restarting"
+  kill $(pidof prismlauncher) 2>/dev/null || true
+  sleep 2
+  if pidof prismlauncher >/dev/null 2>&1; then
+    kill -9 $(pidof prismlauncher) 2>/dev/null || true
+    sleep 1
+  fi
 fi
 
 display_ok=1
